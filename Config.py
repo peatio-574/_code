@@ -1,0 +1,33 @@
+# -*- coding: utf-8 -*-
+import sys
+from pathlib import Path
+
+# 把项目根目录 D:\robot 加入Python路径
+sys.path.append(str(Path(__file__).parent.parent))
+
+
+import os
+import configparser
+
+config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
+
+def get_config_value(section='login', option='order_cookie', file=None):
+    """获取配置项"""
+    file = config_file if not file else file
+    Config = configparser.ConfigParser(interpolation=None)
+    Config.read(file, encoding='utf-8')
+    return Config[section][option]
+
+def write_config_value(section='login', option: dict = None, file=None):
+    """写入配置项"""
+    file = config_file if not file else file
+    if option is None:
+        option = {'cookie': get_config_value('login', 'order_cookie')}
+    Config = configparser.ConfigParser(interpolation=None)
+    Config.read(file, encoding='utf-8')
+    if section not in Config.sections():
+        Config.add_section(section)
+    for key, value in option.items():
+        Config[section][key] = value
+    with open(file, mode='w', encoding='utf-8') as f:
+        Config.write(f)
