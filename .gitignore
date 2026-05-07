@@ -1,0 +1,41 @@
+
+# IDE 配置
+.idea/
+
+# Python 环境
+python3.13.11/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 日志文件
+logs/
+
+# 临时文件和截图
+photo/
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器配置
+.vscode/
+*.swp
+*.swo
+*~
+
+# 历史文件
+历史/
+
+# 其他临时文件
+*.tmp
+*.temp
