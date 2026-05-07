@@ -9,6 +9,9 @@ import os
 import time
 from logging.handlers import RotatingFileHandler
 
+dirname = os.path.join(os.path.dirname(__file__), 'logs')
+os.makedirs(dirname, exist_ok=True)
+
 class Logger(object):
     level = {
         'debug': logging.DEBUG,
@@ -19,7 +22,7 @@ class Logger(object):
     }
 
     def __init__(self, name='main', con_level='info', file_level='debug'):
-        filename = os.path.join(os.path.dirname(__file__), 'logs', time.strftime('%Y-%m-%d') + '.log')
+        filename = os.path.join(dirname, time.strftime('%Y-%m-%d') + '.log')
 
         # 创建一个logger
         self.logger = logging.getLogger(name)

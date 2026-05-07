@@ -73,7 +73,7 @@ def to_xlsx(keywords):
     #     ['German', 'Germany']
     # ]
 
-    file = './爬虫数据2.xlsx'
+    file = 'd:/_code/spider_cgtn/爬虫数据2.xlsx'
     columns = ['标题', '时间', '作者', '分享链接']
 
     info = get_pages(keywords=keywords)
@@ -98,10 +98,10 @@ def to_xlsx(keywords):
 def main():
     keywords2 = [
         # ['Brazil', 'Brazilian'],
-        ['Russia', 'Russian'],
+        # ['Kenya'],
         # ['India', 'Indian'],
-        ['China', 'Chinese'],
-        ['South Africa', 'South African']
+        # ['Chile'],
+        ['Indonesia']
     ]
     for mysql in keywords2:
         to_xlsx(mysql)

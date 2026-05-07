@@ -5,7 +5,7 @@ from pathlib import Path
 # 把项目根目录 D:\robot 加入Python路径
 sys.path.append(str(Path(__file__).parent.parent))
 
-from Spider_gemi import login
+from spider_gemi.Spider_gemi import login
 from Logger import logger
 
 def logins():

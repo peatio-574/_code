@@ -6,17 +6,16 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 
-import os
 import configparser
 
-config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
+config_file = 'd:/_code/config.ini'
 
 def get_config_value(section='login', option='order_cookie', file=None):
     """获取配置项"""
     file = config_file if not file else file
     Config = configparser.ConfigParser(interpolation=None)
     Config.read(file, encoding='utf-8')
-    return Config[section][option]
+    return Config.get(section, option, fallback="")
 
 def write_config_value(section='login', option: dict = None, file=None):
     """写入配置项"""

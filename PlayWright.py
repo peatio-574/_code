@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
 import sys
+
+import os
 from pathlib import Path
 
 # 把项目根目录 D:\robot 加入Python路径
 sys.path.append(str(Path(__file__).parent.parent))
+
+from Config import get_config_value, write_config_value
+
 
 import time
 import random
@@ -115,7 +120,8 @@ class Playwright(object):
             self.start_borwser()
         for i in range(3):
             try:
-                self.page.goto(url, timeout=self.timeout if not timeout else timeout)
+                self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='domcontentloaded')
+                time.sleep(1)
                 return True
             except Exception as e:
                 print('%s地址访问失败：%s' % (url, e))
@@ -128,8 +134,10 @@ class Playwright(object):
                 self.page.locator(location).click(force=force)
             else:
                 self.page.click(location, timeout=self.timeout)
-            time.sleep(random.randint(8, 20))
+            time.sleep(random.randint(0, 1))
         except Exception as e:
+            os.makedirs('d:/_code/photo', exist_ok=True)
+            os.makedirs('d:/_code/photo/error', exist_ok=True)
             file = f'd:/_code/photo/error/{time.strftime("%Y%m%d%H%M%S")}_error.png'
             logger.error( f'点击失败，截图：{file}\n{e}')
             self.exit = True
@@ -161,6 +169,9 @@ class Playwright(object):
             self.clear_cookie()
         if self.context.cookies() != cookie:
             self.context.add_cookies(cookie)
+
+    def wait_for_timeout(self, timeout=3000):
+       self.page.wait_for_timeout(timeout)
 
     def get_count(self, location):
         try:
@@ -195,6 +206,30 @@ class Playwright(object):
     def screenshot(self,file):
         self.page.screenshot(path=file)
 
+    def login(self, url, location, key='login.xiaohognshu', way='xpath'):
+        """初始登录，并进行页面cookie、接口cookie持久化
+        url 登录地址
+        location 判断登录成功的元素定位
+        way 元素定位方式，默认xpath
+        key ini配置文件对应section及option，使用.进行分割
+        """
+        section, option = key.split('.')
+        cookie = get_config_value(section, option)
+        if cookie:
+            Playwright_.add_cookie(eval(cookie))
+        Playwright_.goto(url)
+        time.sleep(5)
+        element = Playwright_.wait_for_selector(location, timeout=3 * 60 * 1000, way=way)
+        if not element:
+            return False
+
+        # 页面cookie
+        cookie_list = Playwright_.context.cookies()
+
+        # api_cookie
+        api_cookie = "; ".join([f"{cookie['name']}={cookie['value']}" for cookie in cookie_list])
+        write_config_value(section, {option: str(cookie_list), f'{option}_api': api_cookie})
+        return True
 
 
 Playwright_ = Playwright()

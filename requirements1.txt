@@ -1,0 +1,7 @@
+playwright
+screeninfo
+pillow
+requests
+pandas
+openpyxl
+screeninfo
