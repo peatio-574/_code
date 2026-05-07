@@ -206,7 +206,7 @@ class Playwright(object):
     def screenshot(self,file):
         self.page.screenshot(path=file)
 
-    def login(self, url, location, key='login.xiaohognshu', way='xpath'):
+    def login(self, url, location, key='login.xiaohognshu', way='xpath', storage=False):
         """初始登录，并进行页面cookie、接口cookie持久化
         url 登录地址
         location 判断登录成功的元素定位
@@ -217,7 +217,12 @@ class Playwright(object):
         cookie = get_config_value(section, option)
         if cookie:
             Playwright_.add_cookie(eval(cookie))
+
         Playwright_.goto(url)
+        if storage:
+            storage = get_config_value(section, 'storage')
+            if storage:
+                Playwright_.add_storage(key=f'{section}.storage')
         time.sleep(5)
         element = Playwright_.wait_for_selector(location, timeout=3 * 60 * 1000, way=way)
         if not element:
@@ -229,7 +234,32 @@ class Playwright(object):
         # api_cookie
         api_cookie = "; ".join([f"{cookie['name']}={cookie['value']}" for cookie in cookie_list])
         write_config_value(section, {option: str(cookie_list), f'{option}_api': api_cookie})
+
+        if storage:
+            Playwright_.save_sessionstorage(key=f'{section}.storage')
+
         return True
+
+    def save_sessionstorage(self, key='login.storage'):
+        section, option = key.split('.')
+        data = Playwright_.page.evaluate("""() => {
+            let data = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                let key = localStorage.key(i);
+                data[key] = localStorage.getItem(key);
+            }
+            return data;
+        }""")
+        write_config_value(section, {option: data})
+
+    def add_storage(self, key='login.storage'):
+        section, option = key.split('.')
+        data = get_config_value(section, option)
+        Playwright_.page.evaluate("""(storage) => {
+                Object.entries(storage).forEach(([k, v]) => {
+                    localStorage.setItem(k, v);
+                });
+            }""", eval(data))
 
 
 Playwright_ = Playwright()

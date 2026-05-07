@@ -27,6 +27,9 @@ def write_config_value(section='login', option: dict = None, file=None):
     if section not in Config.sections():
         Config.add_section(section)
     for key, value in option.items():
-        Config[section][key] = value
+        if isinstance(value, (dict, list)):
+            Config[section][key] = str(value)
+        else:
+            Config[section][key] = str(value) if value is not None else ''
     with open(file, mode='w', encoding='utf-8') as f:
         Config.write(f)
