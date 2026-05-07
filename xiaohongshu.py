@@ -4,11 +4,8 @@
 小红书封装函数
 """
 import re
-import requests
-from PlayWright import Playwright_
+from PlayWright import Playwright_, logger
 import time
-from Logger import logger
-
 
 host = 'https://www.xiaohongshu.com/'
 
