@@ -58,9 +58,12 @@ class PhoneQueryWorker:
         """查询单个手机号"""
         try:
             # 输入手机号
-            await self.page.fill('(//input[@iprompt="请输入手机号码"])[1]', str(phone))
+            input_location = '(//input[@iprompt="请输入手机号码"])[1]'
+            await self.page.click(input_location)
+            await self.page.fill(input_location, "")
+            await self.page.fill(input_location, str(phone))
             await asyncio.sleep(0.5)
-            await self.page.press('(//input[@iprompt="请输入手机号码"])[1]', 'Enter')
+            await self.page.press(input_location, 'Enter')
             await asyncio.sleep(2)  # 等待响应
 
             # 获取结果
