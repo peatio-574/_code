@@ -6,7 +6,7 @@ cd /d "%~dp0"
 echo ======================================
 echo 开始合并数据...
 echo ======================================
-python merge_data.py
+d:\_code\python3.13.11\python.exe d:/_code/spider_telephone/merge_data.py
 if errorlevel 1 (
     echo 数据合并失败，请检查 merge_data.py
     pause
