@@ -8,6 +8,7 @@ from PlayWright import Playwright_, logger
 import time
 
 host = 'https://www.xiaohongshu.com/'
+comment_ids = list()
 
 
 def login():
@@ -151,7 +152,6 @@ def deal_date(date):
     date = date.replace('今天', today)
     return date
 
-
 def get_reply(comment_ele, comment_, reply_):
     """获取单条回复信息，返回字典"""
     try:
@@ -200,16 +200,26 @@ def reply_click_expand(comment_ele, comment_):
                 break
             Playwright_.click(expand_ele)  # 点击展开查看更多
             time_ += 1
-            time.sleep(2)
-        logger.info(f'第{comment_}条评论，点击查看更多回复信息成功')
+            # logger.info(f'第{comment_}条评论，第{time_}次点击<查看更多回复>按钮')
+            time.sleep(1)
+        logger.info(f'第{comment_}条评论，点击<查看更多回复信息>成功')
         return True
     except Exception as e:
-        logger.error(f'第{comment_}条评论，点击查看更多回复信息失败：{e}')
+        logger.error(f'第{comment_}条评论，点击<查看更多回复信息>失败：{e}')
         return False
 
 def get_comment(comment_ele, comment_):
     """获取单条评论信息（不含回复信息），返回字典"""
+    global comment_ids
     try:
+        # 评论id
+        comment_id_ele = f'({comment_ele})[{comment_}]/div[1]'
+        comment_id = Playwright_.get_attribute(comment_id_ele, 'id')
+        if comment_id in comment_ids:
+            # logger.info(f'id为{comment_id}的评论已获取，跳过')
+            return dict()
+
+        # 评论内容
         comment_msg_ele = f'({comment_ele})[{comment_}]/div[1]//div[@class="content"][1]/span/span'
         comment_msg_count = Playwright_.get_count(comment_msg_ele)
         comment_text = ''
@@ -234,6 +244,7 @@ def get_comment(comment_ele, comment_):
         comment_replay_count = comment_replay_count if comment_replay_count != '回复' else '0'
 
         comment_info = {
+            'comment_id': comment_id,
             'comnent_text': comment_text,
             'comement_author': comement_author,
             'comement_author_url': comement_author_url,
@@ -242,22 +253,24 @@ def get_comment(comment_ele, comment_):
             'comment_like_count': comment_like_count,
             'comment_replay_count': comment_replay_count,
         }
-        logger.info(f'第{comment_}条评论：{comment_info}')
+        logger.info(f'id为{comment_id}的评论：{comment_info["comnent_text"]}')
         return comment_info
     except Exception as e:
         logger.error(f'第{comment_}条评论信息获取失败：{e}')
         return dict()
 
-def get_page_comment(index=1):
+def get_page_comment(reply_falg=False):
     """获取当前页评论"""
     comment_ele = '//div[@class="parent-comment"]'
     comment_count = Playwright_.get_count(comment_ele)
     comments = list()
     for comment_ in range(1, comment_count+1):
-        if comment_ < index:
-            continue
         # 获取评论信息
         comment_info = get_comment(comment_ele, comment_)
+        if not reply_falg:
+            comments.append(comment_info)
+            continue
+
         comment_replay_count = comment_info.get('comment_replay_count', '0')
 
         # 没有回复
@@ -290,21 +303,24 @@ def get_all_comments():
     """获取作品所有评论"""
     page_roll_ele = '//div[@class="comments-container"]/..'
     page_roll = Playwright_.page.locator(page_roll_ele)
-    box = page_roll.bounding_box()
+    page_roll.click()
     end_ele = '//div[@class="end-container"]'
-    index = 1
-    comment_count = 0
+
+    global comment_ids
+
     while True:
         # 获取单页评论数量
-        # comment_count += len(get_page_comment(index))
-        # index += comment_count + 1
-        # end_count = Playwright_.get_count(end_ele)
-        # if end_count:
-        #     break
-        if box:
-            Playwright_.page.mouse.move(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
-            Playwright_.page.mouse.down()
-        logger.info(f'第{index}页滚动加载完成')
+        comments = get_page_comment(reply_falg=True)
+        comment_ids += [comment.get('comment_id', '') for comment in comments]
+        comment_ids = list(set(comment_ids))
+
+        end_count = Playwright_.get_count(end_ele)
+        if end_count:
+            time.sleep(1000)
+            break
+        for i in range(11):
+            Playwright_.page.keyboard.press('PageDown')
+        time.sleep(1)
 
 if __name__ == '__main__':
     login()
