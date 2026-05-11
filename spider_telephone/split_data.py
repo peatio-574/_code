@@ -4,9 +4,10 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from Config import get_config_value
+from Config import get_config_value, write_config_value
 from Logger import logger
 import pandas as pd
+
 
 
 def deal_data():
@@ -24,11 +25,11 @@ def deal_data():
     logger.info(f"表头: {list(df.columns)}")
 
     # 计算每个文件的数据量
-    chunk_size = total_rows // 5
-    remainder = total_rows % 5
+    chunk_size = total_rows // 9
+    remainder = total_rows % 9
 
     # 分割数据
-    for i in range(5):
+    for i in range(9):
         # 计算起始和结束索引
         start_idx = i * chunk_size + min(i, remainder)
         end_idx = (i + 1) * chunk_size + min(i + 1, remainder)
@@ -38,6 +39,7 @@ def deal_data():
 
         # 生成新文件名
         output_file = f'{dirname}/电话号码判断{i + 1}.xlsx'
+        write_config_value('login', {f'file{i + 1}': output_file})
 
         # 保存文件
         chunk_df.to_excel(output_file, index=False)
@@ -45,7 +47,7 @@ def deal_data():
         logger.info(f"✅ 文件 {output_file} 已保存，共 {len(chunk_df)} 条数据 (行 {start_idx + 2} - {end_idx + 1})")
 
     logger.info(f"\n{'=' * 60}")
-    logger.info(f"数据分割完成！共生成 5 个文件")
+    logger.info(f"数据分割完成！共生成 {9} 个文件")
     logger.info(f"总数据量: {total_rows} 条")
     logger.info(f"平均每个文件: {chunk_size} 条")
     if remainder:

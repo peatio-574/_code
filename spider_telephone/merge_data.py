@@ -16,6 +16,10 @@ def merge_data():
         get_config_value('login', 'file3'),
         get_config_value('login', 'file4'),
         get_config_value('login', 'file5'),
+        get_config_value('login', 'file6'),
+        get_config_value('login', 'file7'),
+        get_config_value('login', 'file8'),
+        get_config_value('login', 'file9'),
     ]
     # 输出文件（移除末尾的逗号）
     output_file = 'd:/_code/spider_telephone/最终数据.xlsx'

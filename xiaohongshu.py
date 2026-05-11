@@ -25,12 +25,13 @@ def search(keyword):
     Playwright_.input('(//input[@placeholder="搜索小红书"])[2]', keyword, enter=True)
     time.sleep(10)
 
+
 def get_search_info():
     """获取搜索后的页面信息"""
     count_ele = '//section[@data-height]'
     count = Playwright_.get_count(count_ele)
     infos = list()
-    for number in range(1, count+1):
+    for number in range(1, count + 1):
         # 判断是图文还是视频
         video = Playwright_.get_count(f'({count_ele})[{number}]//span[@class="play-icon"]')
         product_type = 'video' if video == 1 else 'picture'
@@ -82,6 +83,7 @@ def get_search_info():
         # logger.info('搜索页', info)
     return infos
 
+
 def get_product_info(url, product_type='picture'):
     """获取作品的详情"""
     try:
@@ -96,7 +98,7 @@ def get_product_info(url, product_type='picture'):
         tag_ele = '//a[@class="tag"]'
         tag_count = Playwright_.get_count(tag_ele)
         tags = list()
-        for tag_ in range(1, tag_count+1):
+        for tag_ in range(1, tag_count + 1):
             tag = Playwright_.get_text(f'({tag_ele})[{tag_}]')
             tags.append(tag)
 
@@ -117,7 +119,7 @@ def get_product_info(url, product_type='picture'):
         pictures = list()
         picture_ele = '//meta[@name="og:url"]/preceding-sibling::meta[@name="og:image"]'
         picture_count = Playwright_.get_count(picture_ele)
-        for picture_ in range(1, picture_count+1):
+        for picture_ in range(1, picture_count + 1):
             picture = Playwright_.get_attribute(f'({picture_ele})[{picture_}]', 'content')
             pictures.append(picture)
 
@@ -141,6 +143,7 @@ def get_product_info(url, product_type='picture'):
         logger.error(f'获取作品详情失败：{e}')
         return dict()
 
+
 def deal_date(date):
     """处理发布、评论、回复时间"""
     today = time.strftime('%Y-%m-%d', time.localtime())
@@ -152,6 +155,7 @@ def deal_date(date):
     date = date.replace('今天', today)
     return date
 
+
 def get_reply(comment_ele, comment_, reply_):
     """获取单条回复信息，返回字典"""
     try:
@@ -160,7 +164,7 @@ def get_reply(comment_ele, comment_, reply_):
         reply_text_ele = f'{tmp_ele}/div/span/*'
         reply_text_count = Playwright_.get_count(reply_text_ele)
         reply_text = ''
-        for reply_text_ in range(1, reply_text_count+1):
+        for reply_text_ in range(1, reply_text_count + 1):
             reply_text += Playwright_.get_text(f'{reply_text_ele}[{reply_text_}]')
 
         # 回复人
@@ -187,7 +191,8 @@ def get_reply(comment_ele, comment_, reply_):
         return reply_info
     except Exception as e:
         logger.error(f'第{comment_}条评论的第{reply_}条回复信息，获取失败：{e}')
-        return  dict()
+        return dict()
+
 
 def reply_click_expand(comment_ele, comment_):
     """回复区点击查看更多，返回bool"""
@@ -208,6 +213,7 @@ def reply_click_expand(comment_ele, comment_):
         logger.error(f'第{comment_}条评论，点击<查看更多回复信息>失败：{e}')
         return False
 
+
 def get_comment(comment_ele, comment_):
     """获取单条评论信息（不含回复信息），返回字典"""
     global comment_ids
@@ -215,9 +221,11 @@ def get_comment(comment_ele, comment_):
         # 评论id
         comment_id_ele = f'({comment_ele})[{comment_}]/div[1]'
         comment_id = Playwright_.get_attribute(comment_id_ele, 'id')
+
+        # 立即检查是否已存在，避免重复处理
         if comment_id in comment_ids:
-            # logger.info(f'id为{comment_id}的评论已获取，跳过')
-            return dict()
+            logger.debug(f'id为{comment_id}的评论已获取，跳过')
+            return None
 
         # 评论内容
         comment_msg_ele = f'({comment_ele})[{comment_}]/div[1]//div[@class="content"][1]/span/span'
@@ -227,17 +235,18 @@ def get_comment(comment_ele, comment_):
             comment_msg = Playwright_.get_text(f'({comment_msg_ele})[{comment_msg_}]')
             comment_text += comment_msg
         # 评论人
-        comement_author = Playwright_.get_text(f'({comment_ele})[{comment_}]/div[1]//div[@class="author"]/a')
+        comment_author = Playwright_.get_text(f'({comment_ele})[{comment_}]/div[1]//div[@class="author"]/a')
         # 评论人链接
-        comement_author_url = Playwright_.get_attribute(f'({comment_ele})[{comment_}]/div[1]//div[@class="author"]/a',
-                                                        'href')
+        comment_author_url = Playwright_.get_attribute(f'({comment_ele})[{comment_}]/div[1]//div[@class="author"]/a',
+                                                       'href')
         # 评论时间
         comment_time = Playwright_.get_text(f'({comment_ele})[{comment_}]/div[1]//div[@class="date"]/span[1]')
         comment_time = deal_date(comment_time)
         # 评论地点
         comment_addr = Playwright_.get_text(f'({comment_ele})[{comment_}]/div[1]//div[@class="date"]/span[2]')
         # 评论点赞数
-        comment_like_count = Playwright_.get_text(f'({comment_ele})[{comment_}]/div[1]//div[@class="like"]/span/span[2]')
+        comment_like_count = Playwright_.get_text(
+            f'({comment_ele})[{comment_}]/div[1]//div[@class="like"]/span/span[2]')
         # 评论回复数
         comment_replay_count = Playwright_.get_text(
             f'({comment_ele})[{comment_}]/div[1]//div[@class="reply icon-container"]/span')
@@ -245,29 +254,39 @@ def get_comment(comment_ele, comment_):
 
         comment_info = {
             'comment_id': comment_id,
-            'comnent_text': comment_text,
-            'comement_author': comement_author,
-            'comement_author_url': comement_author_url,
+            'comment_text': comment_text,
+            'comment_author': comment_author,
+            'comment_author_url': comment_author_url,
             'comment_time': comment_time,
             'comment_addr': comment_addr,
             'comment_like_count': comment_like_count,
             'comment_replay_count': comment_replay_count,
         }
-        logger.info(f'id为{comment_id}的评论：{comment_info["comnent_text"]}')
+        logger.info(f'第{comment_}条，id为{comment_id}的评论：{comment_info["comment_text"]}')
+
+        # 立即更新comment_ids，防止重复
+        comment_ids.append(comment_id)
+
         return comment_info
     except Exception as e:
         logger.error(f'第{comment_}条评论信息获取失败：{e}')
-        return dict()
+        return None
 
-def get_page_comment(reply_falg=False):
+
+def get_page_comment(reply_flag=False):
     """获取当前页评论"""
     comment_ele = '//div[@class="parent-comment"]'
     comment_count = Playwright_.get_count(comment_ele)
     comments = list()
-    for comment_ in range(1, comment_count+1):
+    for comment_ in range(1, comment_count + 1):
         # 获取评论信息
         comment_info = get_comment(comment_ele, comment_)
-        if not reply_falg:
+
+        # 跳过已存在的评论或获取失败的评论
+        if comment_info is None:
+            continue
+
+        if not reply_flag:
             comments.append(comment_info)
             continue
 
@@ -278,6 +297,7 @@ def get_page_comment(reply_falg=False):
             comment_info['reply_details'] = list()
             comment_info['expand'] = False
             comment_info['reply_count'] = 0
+            comments.append(comment_info)
             continue
 
         # 有回复，点击展开查看更多
@@ -299,36 +319,56 @@ def get_page_comment(reply_falg=False):
         comments.append(comment_info)
     return comments
 
+
+def reset_comment_ids():
+    """重置评论ID列表，用于新的爬取任务"""
+    global comment_ids
+    comment_ids = list()
+    logger.info('评论ID列表已重置')
+
+
 def get_all_comments():
     """获取作品所有评论"""
-    page_roll_ele = '//div[@class="comments-container"]/..'
-    page_roll = Playwright_.page.locator(page_roll_ele)
+    page_roll = Playwright_.click('//div[@class="comments-container"]/..')
     page_roll.click()
     end_ele = '//div[@class="end-container"]'
 
-    global comment_ids
+    all_comments = list()
+    page_num = 0
 
     while True:
-        # 获取单页评论数量
-        comments = get_page_comment(reply_falg=True)
-        comment_ids += [comment.get('comment_id', '') for comment in comments]
-        comment_ids = list(set(comment_ids))
+        page_num += 1
+        # 获取单页评论
+        page_comments = get_page_comment(reply_flag=True)
+        all_comments.extend(page_comments)
+
+        logger.info(f'第{page_num}页，当前已获取 {len(all_comments)} 条评论')
 
         end_count = Playwright_.get_count(end_ele)
         if end_count:
-            time.sleep(1000)
+            logger.info('已到达评论区底部')
             break
         for i in range(11):
             Playwright_.page.keyboard.press('PageDown')
         time.sleep(1)
 
+    logger.info(f'总共获取 {len(all_comments)} 条评论')
+    return all_comments
+
+
 if __name__ == '__main__':
+    # 重置评论ID列表
+    reset_comment_ids()
+
     login()
     url = 'https://www.xiaohongshu.com/explore/69e0b0cf000000001b001ba3?xsec_token=ABT97hHGpC3Ci_HspNOJ1LviYm7K8ezD33S6zGzWadYwo=&xsec_source=pc_cfeed'
 
     Playwright_.goto(url)
-    get_product_info(url, 'video')
-    get_all_comments()
+    product_info = get_product_info(url, 'video')
+
+    # 获取所有评论并保存结果
+    all_comments = get_all_comments()
+    logger.info(f'爬取完成，共获取 {len(all_comments)} 条评论')
 
     # search('成都')
     # search_info = get_search_info()
@@ -340,4 +380,3 @@ if __name__ == '__main__':
     #         get_product_info(url, product_type)
     #         get_all_comments()
     #         break
-

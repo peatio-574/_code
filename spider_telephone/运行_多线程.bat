@@ -18,7 +18,7 @@ if errorlevel 1 (
 
 
 echo ======================================
-echo 正在启动5个爬虫线程...
+echo 正在启动9个爬虫线程...
 echo ======================================
 
 :: 启动5个爬虫进程（无多余引号）
@@ -27,6 +27,10 @@ start "Spider-2" cmd /c d:\_code\python3.13.11\python.exe d:/_code/spider_teleph
 start "Spider-3" cmd /c d:\_code\python3.13.11\python.exe d:/_code/spider_telephone/spider_3.py
 start "Spider-4" cmd /c d:\_code\python3.13.11\python.exe d:/_code/spider_telephone/spider_4.py
 start "Spider-5" cmd /c d:\_code\python3.13.11\python.exe d:/_code/spider_telephone/spider_5.py
+start "Spider-6" cmd /c d:\_code\python3.13.11\python.exe d:/_code/spider_telephone/spider_6.py
+start "Spider-7" cmd /c d:\_code\python3.13.11\python.exe d:/_code/spider_telephone/spider_7.py
+start "Spider-8" cmd /c d:\_code\python3.13.11\python.exe d:/_code/spider_telephone/spider_8.py
+start "Spider-9" cmd /c d:\_code\python3.13.11\python.exe d:/_code/spider_telephone/spider_9.py
 
 :: 等待所有 python 进程结束
 echo ======================================
