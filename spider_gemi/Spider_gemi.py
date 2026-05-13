@@ -52,53 +52,57 @@ def clean():
     user32.CloseClipboard()
 
 def execute(word_info, account, first=False):
-    login(account, clear=first)
+    try:
+        login(account, clear=first)
 
-    logger.info('开始执行提示词：%s' % word_info[1])
+        logger.info('开始执行提示词：%s' % word_info[1])
 
-    logger.info('勾选pro模式')
-    Playwright_.click('//mat-icon[@fonticon="keyboard_arrow_down"]')
-    Playwright_.click('//span[text()=" Pro "]')
-    if Playwright_.exit:
+        logger.info('勾选pro模式')
+        Playwright_.click('//mat-icon[@fonticon="keyboard_arrow_down"]', force=True)
+        Playwright_.click('//span[text()=" Pro "]')
+        if Playwright_.exit:
+            return False
+
+        logger.info('勾选图片生成')
+        Playwright_.click('//div[contains(text(), "Create image")]', force=True)
+
+        logger.info('输入提示词')
+        Playwright_.input('//div[@data-placeholder="Describe your image"]', word_info[1], enter=True)
+        logger.info('等待图片生成....')
+
+
+        location = '//model-response//mat-icon[@fonticon="content_copy"]'
+        Playwright_.wait_for_selector(location, timeout=3 * 60 * 1000)
+
+
+        picture_count = Playwright_.get_count(location)
+        logger.info(f'图片数量：{picture_count}')
+
+        if picture_count == 0:
+            file = f'd:/_code/photo/error/{time.strftime("%Y%m%d%H%M%S")}_{word_info[0]}_error.png'
+            Playwright_.screenshot(file=file)
+            logger.info(f'提示词未生成图片，请查看截图：{file}')
+            return False
+        for i in range(1, picture_count+1):
+            clean()  # 清空粘贴板
+
+            logger.info(f'开始下载第{i}张图片')
+            Playwright_.click(f'({location})[{i}]')
+            img = ImageGrab.grabclipboard()
+
+            if not img:
+                file = f'd:/_code/photo/error/{time.strftime("%Y%m%d%H%M%S")}_{word_info[0]}_{i}_error.png'
+                Playwright_.page.screenshot(path=file)
+                logger.error(f'图片保存失败，请查看截图：{file}')
+                continue
+            file = f'd:/_code/photo/{time.strftime("%Y%m%d%H%M%S")}_{word_info[0]}_{i}.png'
+            img.save(file)
+            logger.info(f'下载{file}图片下载完成')
+            time.sleep(10)
+        return  True
+    except Exception as e:
+        logger.error(f'提示词运行失败：{word_info[1]}：{e}')
         return False
-
-    logger.info('勾选图片生成')
-    Playwright_.click('//div[contains(text(), "Create image")]')
-
-    logger.info('输入提示词')
-    Playwright_.input('//div[@data-placeholder="Describe your image"]', word_info[1], enter=True)
-    logger.info('等待图片生成....')
-
-
-    location = '//model-response//mat-icon[@fonticon="content_copy"]'
-    Playwright_.wait_for_selector(location, timeout=3 * 60 * 1000)
-
-
-    picture_count = Playwright_.get_count(location)
-    logger.info(f'图片数量：{picture_count}')
-
-    if picture_count == 0:
-        file = f'd:/_code/photo/error/{time.strftime("%Y%m%d%H%M%S")}_{word_info[0]}_error.png'
-        Playwright_.screenshot(file=file)
-        logger.info(f'提示词未生成图片，请查看截图：{file}')
-        return False
-    for i in range(1, picture_count+1):
-        clean()  # 清空粘贴板
-
-        logger.info(f'开始下载第{i}张图片')
-        Playwright_.click(f'({location})[{i}]')
-        img = ImageGrab.grabclipboard()
-
-        if not img:
-            file = f'd:/_code/photo/error/{time.strftime("%Y%m%d%H%M%S")}_{word_info[0]}_{i}_error.png'
-            Playwright_.page.screenshot(path=file)
-            logger.error(f'图片保存失败，请查看截图：{file}')
-            continue
-        file = f'd:/_code/photo/{time.strftime("%Y%m%d%H%M%S")}_{word_info[0]}_{i}.png'
-        img.save(file)
-        logger.info(f'下载{file}图片下载完成')
-        time.sleep(10)
-    return  True
 
 def main():
     account = ['google1', 'google2', 'google3', 'google4', 'google5', 'google6']

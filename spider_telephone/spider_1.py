@@ -17,7 +17,7 @@ def get_info(phone, row_idx, ws, wb, file, first=False):
         input_location = '(//input[@iprompt="请输入手机号码"])[1]'
         Playwright_.wait_for_selector(input_location, state='visible', timeout=10000)
         Playwright_.input(input_location, str(phone), enter=True)
-        time.sleep(1.25)
+        time.sleep(1.5)
         count = Playwright_.get_count('//div[text()="请正确输入移动手机号码"]')
     except Exception as e:
         logger.error(f"❌ 查询 {phone} 失败: {e}")

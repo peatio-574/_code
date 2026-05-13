@@ -153,7 +153,8 @@ class Playwright(object):
             location = location if way == 'xpath' else f'{way}={location}'
             self.page.wait_for_selector(location, state=state, timeout=timeout)
             return True
-        except TimeoutError:
+        except Exception as e:
+            logger.error(f'等待元素失败：{e}')
             return False
 
     def reload(self):
