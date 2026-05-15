@@ -9,6 +9,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from PlayWright import Playwright_, logger, get_config_value
 import os
+import requests
 
 def upload(file_path):
     try:
@@ -55,5 +56,49 @@ def main():
         for file_path in infos[line][company]:
             upload(file_path)
 
+def upload_api(file_path):
+    try:
+        url = 'https://api.gptzero.me/v2/predict/text'
+        headers = {
+            'Content-Type': 'multipart/form-data',
+            'x-api-key': '8e66a22fd06a4957a01f843bdda1fe62'
+        }
+
+        proxies = {
+            'http': 'http://127.0.0.1:7892',
+            'https': 'http://127.0.0.1:7892',
+        }
+
+        data = {
+            'version': '',
+            'modelVersion': '',
+            'apiVersion': '',
+
+        }
+        files = list()
+        file_handles = list()
+
+        for file in file_path:
+            file_obj = open(file, 'rb')
+            file_handles.append(file_obj)
+            files.append(
+                ('files', (os.path.basename(file_path), file_obj, 'application/pdf'))
+            )
+
+
+        response = requests.post(
+            url,
+            files=files,
+            data=data,
+            headers=headers,
+            proxies=proxies,
+            timeout=60  # 多文件上传增加超时时间
+        )
+        logger.info(f'上传文件：{file_path}，结果：{response}')
+    except Exception as e:
+        logger.error(f'上传文件失败：{file_path}，失败原因：{e}')
+
 if __name__ == '__main__':
-    main()
+    # main()
+    files = ['d:/_code/spider_sec/files/5Broadcom-Inc--(AVGO)/2025-11-02--10-K.pdf']
+    upload_api(files)

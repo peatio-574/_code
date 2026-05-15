@@ -37,7 +37,7 @@ def login(key='google1', clear=False):
     url = 'https://gemini.google.com/app'
     Playwright_.goto(url)
     time.sleep(5)
-    element = Playwright_.wait_for_selector('//span[text()="PRO"]', timeout=3 * 60 * 1000, way='xpath')
+    element = Playwright_.wait_for_selector('//span[@class="gb_ge"]', timeout=3 * 60 * 1000, way='xpath')
     if not element:
         return False
     cookie_list = Playwright_.context.cookies()

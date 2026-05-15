@@ -55,7 +55,7 @@ class Playwright(object):
             # 禁用首次运行提示
             '--no-first-run',
             # 随机窗口尺寸（避免固定值）
-            '--start-maximized'
+            '--start-maximized',
             # '--window-size={},{}'.format(
             #     self.width + random.randint(-20, 20),
             #     self.height + random.randint(-20, 20)
@@ -125,6 +125,48 @@ class Playwright(object):
                 return True
             except Exception as e:
                 print('%s地址访问失败：%s' % (url, e))
+                continue
+        return False
+
+    def new_goto(self, url, timeout=None):
+        """新开一个页面访问，并关闭上一个页面（若有）"""
+        if not self.playwright:
+            self.start_borwser()
+
+        # 关闭上一个页面（如果存在）
+        if self.page:
+            try:
+                self.page.close()
+            except Exception as e:
+                logger.error(f'关闭旧页面失败：{e}')
+
+        # 创建新页面
+        self.page = self.context.new_page()
+
+        # 添加初始化脚本（与start_borwser中保持一致）
+        self.page.add_init_script("""
+            // 禁用 webdriver 检测
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+            });
+            // 强制语言为英文
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en'],
+            });
+            // 设置文档语言
+            document.documentElement.lang = 'en-US';
+            // 删除定位 API
+            delete navigator.geolocation;
+        """)
+
+        # 访问新URL
+        for i in range(3):
+            try:
+                self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='domcontentloaded')
+                time.sleep(1)
+                return True
+            except Exception as e:
+                logger.error(f'{url}地址访问失败：{e}')
                 continue
         return False
 
