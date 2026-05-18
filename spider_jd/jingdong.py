@@ -18,7 +18,8 @@ file = 'd:/_code/spider_jd/京东手机评论爬取.xlsx'
 exist_data = ReadData.read_xlsx_col(file)
 column = exist_data['评论人']
 column_ = exist_data['机型']
-exist_data = [column[i]+ column_[i] for i in range(len(column))]
+comtent = exist_data['评论内容']
+exist_data = [comtent[i][:10]+ column[i]+ column_[i] for i in range(len(column))]
 
 exist_count = len(exist_data)  # 已爬取数据行数
 current_row_id = exist_count + 1  # 当前行号
@@ -60,19 +61,19 @@ def get_info(phone_id):
         comment_name_ele = f'({comment_count_ele})[{comement_}]//span[@class="jdc-pc-rate-card-nick"]'
         comment_name = Playwright_.get_text(comment_name_ele)
 
-        # 评论ID：评论人名+型号作为唯一标识，避免重复爬取，
-        comment_id = comment_name + phone_type
-        if comment_id in exist_data:
-            logger.info(f'已爬取过该条数据，评论ID：{comment_id}')
-            continue
+        # 评论时间
+        comment_time_ele = f'({comment_count_ele})[{comement_}]//span[@class="date list"]'
+        comment_time = Playwright_.get_text(comment_time_ele)
 
         # 评论内容
         comment_text_ele = f'({comment_count_ele})[{comement_}]//span[@class="jdc-pc-rate-card-main-desc"]'
         comment_text = Playwright_.get_text(comment_text_ele)
 
-        # 评论时间
-        comment_time_ele = f'({comment_count_ele})[{comement_}]//span[@class="date list"]'
-        comment_time = Playwright_.get_text(comment_time_ele)
+        # 评论ID：评论人名+型号作为唯一标识，避免重复爬取，
+        comment_id = comment_text[:10] + comment_name + phone_type
+        if comment_id in exist_data:
+            logger.info(f'已爬取过该条数据，评论ID：{comment_id}')
+            continue
 
         # 写入数据
         row_number = current_row_id + 1
@@ -81,9 +82,11 @@ def get_info(phone_id):
         ws.cell(row=row_number, column=3, value=phone_type)
         ws.cell(row=row_number, column=4, value=comment_text)
         ws.cell(row=row_number, column=5, value=phone_id)
+        ws.cell(row=row_number, column=6, value='352空气净化器 家用除甲醛异味细菌病毒雾霾过敏原认证 甲醛精准数显 双塔式大空间Z90 Z90')
         wb.save(file)
 
         current_valid_id += 1
+        current_row_id += 1
         logger.info(f'第{current_valid_id}条有效数据，已保存第 {current_row_id} 行，合计条数：{current_row_id-1}，评论ID：{comment_id}')
 
         flag = True
@@ -110,10 +113,10 @@ def spider_url(url):
     
     flag = 0  # 是否有新数据
     roll_time = 0  # 滚动次数
-    limit_roll_time = 6
+    # limit_roll_time = 6
     while True:
         # 爬取数据足够就退出，获取连续6次未获取到新数据就退出
-        if exist_count == 10000:
+        if exist_count == 1000:
             logger.info('已爬取所有评论')
             return True
 
@@ -125,16 +128,21 @@ def spider_url(url):
         roll_time += 1
 
 
-        if roll_time % limit_roll_time == 0:
-            if flag == 0:
-                logger.info(f'已连续滚动{limit_roll_time}次未获取到新数据，退出')
-                return False
-            flag = 0
+        # if roll_time % limit_roll_time == 0:
+        #     if flag == 0:
+        #         logger.info(f'已连续滚动{limit_roll_time}次未获取到新数据，退出')
+        #         return False
+        #     flag = 0
 
         # 睡眠
-        sleep_sec = random.randint(20, 30)
+        if flag != 0:
+
+            sleep_sec = random.randint(15, 20)
+        else:
+            sleep_sec = random.randint(1, 3)
         logger.info(f'已滚动{roll_time}次，睡眠{sleep_sec}秒')
         time.sleep(sleep_sec)
+        flag = 0
 
 
 if __name__ == '__main__':
@@ -177,7 +185,7 @@ if __name__ == '__main__':
         # 'https://item.jd.com/100252256925.html',
         # 'https://item.jd.com/10155241534544.html',
         # 'https://item.jd.com/10216974212917.html',
-        'https://item.jd.com/100025015868.html',
+        'https://item.jd.com/10114677013390.html',
         # 'https://item.jd.com/100183353902.html',
         # 'https://item.jd.com/100307090484.html',
     ]
