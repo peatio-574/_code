@@ -47,7 +47,6 @@ def main():
             file_path = os.path.join(dir_path, file_)
             line.append(file_path)
         infos.append({dir_: line})
-    print(infos)
     for line in range(len(infos)):
         if line < int(index):
             continue
@@ -90,13 +89,14 @@ def upload_api(file_path):
                 files=files,
                 data=data,
                 headers=headers,
-                proxies=proxies,
+                # proxies=proxies,
                 timeout=60
             )
-            logger.info(f'上传文件：{file_path}，结果：{response.status_code}，响应：{response.text}')
+            logger.info(f'上传文件成功：{file_path}，结果：{response.status_code}')
+            return True
     except Exception as e:
         logger.error(f'上传文件失败：{file_path}，失败原因：{e}')
-
+        return False
 
 if __name__ == '__main__':
     main()

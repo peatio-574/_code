@@ -39,7 +39,7 @@ def login():
     logger.info('京东登录成功')
 
 
-def get_info(phone_id):
+def get_info(phone_id, url_text):
     global exist_data  # 已爬取数据
     global current_row_id  # 当前行号
     global current_valid_id  # 当前有效行数
@@ -54,8 +54,8 @@ def get_info(phone_id):
     comment_count = min(comment_count, 6)  # 每次最多爬取5条数据
     for comement_ in range(1, comment_count):
         # 商品型号
-        phone_type_ele = f'({comment_count_ele})[{comement_}]//span[@class="info"]'
-        phone_type = Playwright_.get_text(phone_type_ele)
+        # phone_type_ele = f'({comment_count_ele})[{comement_}]//span[@class="info"]'
+        # phone_type = Playwright_.get_text(phone_type_ele)
         
         # 评论人名
         comment_name_ele = f'({comment_count_ele})[{comement_}]//span[@class="jdc-pc-rate-card-nick"]'
@@ -70,7 +70,7 @@ def get_info(phone_id):
         comment_text = Playwright_.get_text(comment_text_ele)
 
         # 评论ID：评论人名+型号作为唯一标识，避免重复爬取，
-        comment_id = comment_text[:10] + comment_name + phone_type
+        comment_id = comment_text[:10] + comment_name
         if comment_id in exist_data:
             logger.info(f'已爬取过该条数据，评论ID：{comment_id}')
             continue
@@ -79,10 +79,10 @@ def get_info(phone_id):
         row_number = current_row_id + 1
         ws.cell(row=row_number, column=1, value=comment_time)
         ws.cell(row=row_number, column=2, value=comment_name)
-        ws.cell(row=row_number, column=3, value=phone_type)
+        # ws.cell(row=row_number, column=3, value=phone_type)
         ws.cell(row=row_number, column=4, value=comment_text)
         ws.cell(row=row_number, column=5, value=phone_id)
-        ws.cell(row=row_number, column=6, value='352空气净化器 家用除甲醛异味细菌病毒雾霾过敏原认证 甲醛精准数显 双塔式大空间Z90 Z90')
+        ws.cell(row=row_number, column=6, value=url_text)
         wb.save(file)
 
         current_valid_id += 1
@@ -94,7 +94,7 @@ def get_info(phone_id):
     return 1 if flag else 0
         
         
-def spider_url(url):
+def spider_url(url, url_text):
     # 登录
     login()
     
@@ -113,7 +113,7 @@ def spider_url(url):
     
     flag = 0  # 是否有新数据
     roll_time = 0  # 滚动次数
-    # limit_roll_time = 6
+    limit_roll_time = 6
     while True:
         # 爬取数据足够就退出，获取连续6次未获取到新数据就退出
         if exist_count == 1000:
@@ -121,76 +121,51 @@ def spider_url(url):
             return True
 
         # 获取评论
-        flag += get_info(phone_id)
+        flag += get_info(phone_id, url_text)
         # 滚动页面
         down_size = random.randint(900, 1500)
         Playwright_.page.mouse.wheel(0, down_size)  # 向下滚动
         roll_time += 1
 
 
-        # if roll_time % limit_roll_time == 0:
-        #     if flag == 0:
-        #         logger.info(f'已连续滚动{limit_roll_time}次未获取到新数据，退出')
-        #         return False
-        #     flag = 0
+        if roll_time % limit_roll_time == 0 and roll_time >200:
+            if flag == 0:
+                logger.info(f'已连续滚动{limit_roll_time}次未获取到新数据，退出')
+                return False
+            flag = 0
 
         # 睡眠
         if flag != 0:
 
-            sleep_sec = random.randint(15, 20)
+            sleep_sec = random.randint(10, 15)
         else:
-            sleep_sec = random.randint(1, 3)
+            sleep_sec = random.randint(5, 8)
         logger.info(f'已滚动{roll_time}次，睡眠{sleep_sec}秒')
         time.sleep(sleep_sec)
         flag = 0
 
 
 if __name__ == '__main__':
-    urls = [
-        # 'https://item.jd.com/100331677354.html',
-        # 'https://item.jd.com/100335522888.html',
-        # 'https://item.jd.com/100251446817.html',
-        # 'https://item.jd.com/100334589938.html',
-        # 'https://item.jd.com/100251526387.html',
-        # 'https://item.jd.com/100288840752.html',
-        # 'https://item.jd.com/100331677404.html',
-        # 'https://item.jd.com/100333436660.html',
-        # 'https://item.jd.com/100307090484.html',
-        # 'https://item.jd.com/100164212291.html',
-        # 'https://item.jd.com/100300133968.html',
-        # 'https://item.jd.com/100232754967.html',
-        # 'https://item.jd.com/100249883337.html',
-        # 'https://item.jd.com/100342703604.html',
-        # 'https://item.jd.com/100224133343.html',
-        # 'https://item.jd.com/100307090484.html',
-        # 'https://item.jd.com/100257288238.html',
-        # 'https://item.jd.com/100278264242.html',
-        # 'https://item.jd.com/100251446863.html',
-        # 'https://item.jd.com/10187587238729.html',
-        # 'https://item.jd.com/100257288238.html',
-        # 'https://item.jd.com/10199734655343.html',
-        # 'https://item.jd.com/10196624110223.html',
-        # 'https://item.jd.com/100219670879.html',
-        # 'https://item.jd.com/10082141614576.html',
-        # 'https://item.jd.com/100250023001.html',
-        # 'https://item.jd.com/100256502833.html',
-        # 'https://item.jd.com/100041689524.html',
-        # 'https://item.jd.com/100303346690.html',
-        # 'https://item.jd.com/100186787559.html',
-        # 'https://item.jd.com/100324659982.html',
-        # 'https://item.jd.com/100324470246.html',
-        # 'https://item.jd.com/100232839373.html',
-        # 'https://item.jd.com/10215101425662.html',
-        # 'https://item.jd.com/100246101314.html',
-        # 'https://item.jd.com/100252256925.html',
-        # 'https://item.jd.com/10155241534544.html',
-        # 'https://item.jd.com/10216974212917.html',
-        'https://item.jd.com/10114677013390.html',
-        # 'https://item.jd.com/100183353902.html',
-        # 'https://item.jd.com/100307090484.html',
-    ]
 
-    for url in urls:
-        spider_url(url)
+    url_dict = {
+        # 'https://item.jd.com/10122849689934.html': '352 H301加湿器空气净化器无雾加湿净化一体机【滤芯配件】 H301加湿滤网',
+        # 'https://item.jd.com/10116339176210.html': '352空气净化加湿器 超大加湿量 无雾加湿器+专业空气净化器一机多能 四季可用H301 H301',
+        # 'https://item.jd.com/10101252435118.html': '352H300/H301加湿器空气净化器无雾加湿净化一体机 高效除醛过滤器 配件',
+        # 'https://item.jd.com/10089842490086.html': '352 标配抑菌模块 无雾加湿器空气净化器专用配件 适用于H70/H80/H300/H301/H500',
+        # 'https://item.jd.com/10089841142845.html': '352加湿器无雾加湿器标配滤网 适用于H70/H80 配件',
+        # 'https://item.jd.com/10066903506375.html': '352 H300加湿器空气净化器无雾加湿净化一体机【滤芯配件】 H300加湿滤网',
+        # 'https://item.jd.com/10066903506376.html': '352 H300加湿器空气净化器无雾加湿净化一体机【滤芯配件】 H300/H301空净滤网',
+        # 'https://item.jd.com/10090762282714.html': '352X63 Pet宠物净化器滤芯 家用杀菌消毒吸猫毛宠物除尘螨杀菌消毒除臭家用滤芯 高效除味过滤器（内：黑）',
+        # 'https://item.jd.com/10090762282715.html': '352X63 Pet宠物净化器滤芯 家用杀菌消毒吸猫毛宠物除尘螨杀菌消毒除臭家用滤芯 高效空气过滤器（外：白）',
+        # 'https://item.jd.com/10088090061995.html': '352X50滤芯pro标准版滤芯【适用于X50/X50S】 50pro滤芯',
+        # 'https://item.jd.com/10051465849921.html': '352 X66C/X63C滤芯 空气净化器原装滤芯 除甲醛滤芯 除雾霾灰尘异味 滤网',
+        # 'https://item.jd.com/10033095845995.html': '352 Y106C家用空气净化器滤芯 2片装 Y106C过滤器套装',
+        # 'https://item.jd.com/10033095433012.html': '352 Y106/Y100家用空气净化器滤芯 2片装 Y106/Y100过滤器套装',
+        # 'https://item.jd.com/68068751599.html': '352 Y100C空气净化器滤芯套装 2片装 专业除醛款 Y100C滤芯',
+        'https://item.jd.com/47779981996.html': '352 X83C Plus顶层高效复合过滤器Ⅰ空气净化器家用 除甲醛 除雾霾 滤芯'
+    }
+
+    for url, url_text in url_dict.items():
+        spider_url(url, url_text)
         # time.sleep(120)
 
