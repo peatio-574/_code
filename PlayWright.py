@@ -267,6 +267,9 @@ class Playwright(object):
             if storage:
                 Playwright_.add_storage(key=f'{section}.storage')
         time.sleep(5)
+        count = Playwright_.get_count(location)
+        if count == 0:
+            logger.info('请登录......')
         element = Playwright_.wait_for_selector(location, timeout=3 * 60 * 1000, way=way)
         if not element:
             return False
