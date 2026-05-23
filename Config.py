@@ -7,8 +7,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 
 import configparser
+import os
 
-config_file = 'd:/_code/config.ini'
+config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
 
 def get_config_value(section='login', option='order_cookie', file=None):
     """获取配置项"""
