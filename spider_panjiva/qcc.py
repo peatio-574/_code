@@ -63,4 +63,7 @@ def qcc_get_data():
     logger.info('企查查数据获取完成！！！')
 
 if __name__ == '__main__':
-    qcc_get_data()
+    # qcc_get_data()
+    qcc_login()
+    info = qcc_search('Zhongpin Intelligent Machinery Co.. Ltd.')
+    print(info)

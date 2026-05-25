@@ -10,7 +10,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from PlayWright import Playwright_, logger
 import openpyxl
 
-file = 'c:/_code/spider_panjiva/数据.xlsx'
+file = 'd:/_code/spider_panjiva/数据.xlsx'
 
 wb = openpyxl.load_workbook(file)
 ws = wb['Sheet1']

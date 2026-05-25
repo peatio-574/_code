@@ -3,7 +3,7 @@
 .idea/
 
 # Python 环境
-python3.13.11/
+python/
 
 # Python 缓存
 __pycache__/
