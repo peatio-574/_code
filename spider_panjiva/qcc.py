@@ -29,7 +29,7 @@ def qcc_search(company):
                 continue
 
             tmp_rule = [' Co.. Ltd.', ' Co., Ltd.', ' Co. Ltd.', ' Co. Lt', ' . Co.', ' Ltd.', ' Co.', ' Co .',
-                        ' Co. L', ' C', ' .',]
+                        ' Co. L', ' C', ' .', ' Imp.&Exp.', ' E Comme']
             for tmp in tmp_rule:
                 if company.endswith(tmp):
                     company = company.replace(tmp, '')
