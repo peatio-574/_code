@@ -28,6 +28,13 @@ def qcc_search(company):
             if status == '注销':
                 continue
 
+            tmp_rule = [' Co.. Ltd.', ' Co., Ltd.', ' Co. Ltd.', ' Co. Lt', ' . Co.', ' Ltd.', ' Co.', ' Co .',
+                        ' Co. L', ' C', ' .',]
+            for tmp in tmp_rule:
+                if company.endswith(tmp):
+                    company = company.replace(tmp, '')
+                    break
+
             company_en_ele = f'{ele}//span[@class="sf"][1]/span'
             company_en = Playwright_.get_text(company_en_ele) if Playwright_.get_count(company_en_ele) else ''
             if company in company_en:
@@ -63,7 +70,4 @@ def qcc_get_data():
     logger.info('企查查数据获取完成！！！')
 
 if __name__ == '__main__':
-    # qcc_get_data()
-    qcc_login()
-    info = qcc_search('Zhongpin Intelligent Machinery Co.. Ltd.')
-    print(info)
+    qcc_get_data()
