@@ -2,3 +2,4 @@ playwright
 pandas
 openpyxl
 screeninfo
+requests

@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import sys
+
+import random
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
@@ -14,7 +16,9 @@ def qcc_search(company):
     """获取企查查单条数据"""
     try:
         Playwright_.input('(//input)[1]', company, enter=True)
-        time.sleep(5)
+        sleep_time = random.randint(20, 35)
+        logger.info(f'休眠{sleep_time}秒....')
+        time.sleep(sleep_time)
 
         result_count = Playwright_.get_count('//table/tr')
         result_count = min(result_count, 5)

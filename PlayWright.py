@@ -55,7 +55,7 @@ class Playwright(object):
             # 禁用首次运行提示
             '--no-first-run',
             # 随机窗口尺寸（避免固定值）
-            '--start-maximized',
+            # '--start-maximized',
             # '--window-size={},{}'.format(
             #     self.width + random.randint(-20, 20),
             #     self.height + random.randint(-20, 20)
@@ -86,7 +86,8 @@ class Playwright(object):
         # 创建上下文
         self.context = self.browser.new_context(
             viewport=None,
-            user_agent=self.user_agent)
+            user_agent=self.user_agent,
+            accept_downloads=True)
         # 创建页面
         self.page = self.context.new_page()
         self.page.set_viewport_size({"width": self.width, "height": self.height})
@@ -249,7 +250,7 @@ class Playwright(object):
     def screenshot(self,file):
         self.page.screenshot(path=file)
 
-    def login(self, url, location, key='login.xiaohognshu', way='xpath', storage=False):
+    def login(self, url, location, key='login.xiaohognshu', way='xpath', storage=False, extra=None):
         """初始登录，并进行页面cookie、接口cookie持久化
         url 登录地址
         location 判断登录成功的元素定位
@@ -273,6 +274,11 @@ class Playwright(object):
         element = Playwright_.wait_for_selector(location, timeout=3 * 60 * 1000, way=way)
         if not element:
             return False
+
+        if extra:
+            if Playwright_.get_count(extra):
+                Playwright_.click(extra)
+                time.sleep(3)
 
         # 页面cookie
         cookie_list = Playwright_.context.cookies()
