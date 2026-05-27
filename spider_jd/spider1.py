@@ -7,7 +7,6 @@ from pathlib import Path
 
 import os
 import pandas as pd
-from openpyxl import load_workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 
 sys.path.append(str(Path(__file__).parent.parent))
@@ -168,7 +167,7 @@ def search(title, price, url):
 
     return new_title, new_price, new_url
 def main():
-    file = 'd:/_code/spider_jd/标题.xlsx'
+    file = 'd:/_code/spider_jd/标题1.xlsx'
     from openpyxl import load_workbook
     login()
     all_sheets_data = read_data(file)
@@ -176,10 +175,10 @@ def main():
     Playwright_.goto('https://search.jd.com/Search?keyword=%E8%8B%B9%E6%9E%9C%E6%89%8B%E6%9C%BA')
     time.sleep(5)
     for sheet_name, sheet_data in all_sheets_data.items():  # , '个护清洁'
-        if sheet_name  not in ['美妆护肤']:
+        if sheet_name  not in ('美妆护肤', ):
             continue
         ws = wb[sheet_name]
-        for row in sheet_data:
+        for row in sheet_data[::-1]:
             row_id = row[0]
             title = row[1].get('商品标准名称')
             price = row[1].get('京东零售价金额')
@@ -200,7 +199,6 @@ def main():
 if __name__ == '__main__':
     # 配置输入输出文件路径
     # input_file = r'D:\software\wechat_file\xwechat_files\wxid_tye1h8rj4god29_27e0\msg\file\2026-05\(已瘦身)链动蔚来全品类商品明细2026版-ljy.xlsx'  # 替换为你的输入文件路径
-    # output_file = 'd:/_code/spider_jd/标题.xlsx'  # 替换为你的输出文件路径
-    #
+    # output_file = 'd:/_code/spider_jd/标题.xlsx'
     # extract_jd_data(input_file, output_file)
     main()

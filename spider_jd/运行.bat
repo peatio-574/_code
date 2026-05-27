@@ -1,5 +1,5 @@
 chcp 65001
 @echo off
 cd /d "%~dp0"
-d:\_code\python\python.exe  d:/_code/spider_jd/jingdong.py
+d:\_code\python\python.exe  d:/_code/spider_jd/spider.py
 pause
