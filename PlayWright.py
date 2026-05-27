@@ -16,6 +16,8 @@ from playwright.sync_api import sync_playwright, TimeoutError
 from screeninfo import get_monitors
 from Logger import logger
 
+EDGE_PATH = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+
 class Playwright(object):
     """playwright登录实例"""
     def __init__(self):
@@ -73,7 +75,8 @@ class Playwright(object):
 
         # 2. 启动浏览器（隐藏自动化标识）
         self.browser = self.playwright.chromium.launch(
-            channel=self.browser_type,
+            executable_path=EDGE_PATH,
+            # channel=self.browser_type,
             headless=False,
             args=browser_args,
             # 移除Playwright默认的自动化参数
@@ -90,7 +93,7 @@ class Playwright(object):
             accept_downloads=True)
         # 创建页面
         self.page = self.context.new_page()
-        self.page.set_viewport_size({"width": self.width, "height": self.height})
+        # self.page.set_viewport_size({"width": self.width, "height": self.height})
         js_code = """
         () => {
             // 唯一需要的核心操作：覆盖 getter

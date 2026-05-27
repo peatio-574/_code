@@ -303,13 +303,14 @@ def download(filename):
     Playwright_.click('//span[text()="消息"]')
     Playwright_.click('(//span[text()="店铺"])[last()]')
     judge_ele = '(//div[@class="list-item-wrapper"])[1]//div[@class="date-wrap unread"]/span'
-    judge = Playwright_.get_text(judge_ele)
-    if judge in ('1分钟前', '刚刚'):
-        href = Playwright_.get_attribute('(//div[@class="list-item-wrapper"])[1]//a', 'href')
-        with open(filename, mode='wb') as f:
-            f.write(requests.get(href).content)
-            return True
-    Playwright_.click('//div[@class="ark-message-title-wrap"]/span[2]')
+    if Playwright_.get_count(judge_ele):
+        judge = Playwright_.get_text(judge_ele)
+        if judge in ('1分钟前', '刚刚'):
+            href = Playwright_.get_attribute('(//div[@class="list-item-wrapper"])[1]//a', 'href')
+            with open(filename, mode='wb') as f:
+                f.write(requests.get(href).content)
+                return True
+        Playwright_.click('//div[@class="ark-message-title-wrap"]/span[2]')
     return False
 
 
