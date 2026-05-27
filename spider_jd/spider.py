@@ -112,7 +112,7 @@ def login():
     logger.info('开始登录京东....')
     url = 'https://www.jd.com/'
     ele = '//li[@id="ttbar-login-2024"]/div[1]'
-    key = 'login.jd_cookie2'
+    key = 'login.jd_cookie6'
     Playwright_.login(url, ele, key)
     logger.info('京东登录成功')
 
@@ -155,7 +155,7 @@ def read_data(file = 'd:/_code/spider_jd/标题.xlsx'):
 
 def search(title, price, url):
     Playwright_.input('//input[@aria-label="搜索"]', title, enter=True)
-    time.sleep(random.randint(12, 20))
+    time.sleep(random.randint(30, 50))
     ele = '(//div[contains(@class,"goodsContainer")]/div[@data-point-id])[1]'
     new_title = Playwright_.get_attribute(f'{ele}//div[contains(@class,"goods_title")]/span', 'title')
 
