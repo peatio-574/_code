@@ -179,16 +179,14 @@ def tb_deal_data(shopname, file):
 
         logger.info(f'数据汇总完成，共汇总{len(df_summary) - 1}天的数据，已保存到: {file}')
 
-        logger.info(f'总收入: {df_summary["日收入"].sum():.2f}，总支出: {df_summary["日支出"].sum():.2f} '
-                    f'总提现: {df_summary["提现金额"].sum():.2f}，，总转账: {df_summary["转账净额"].sum():.2f}，'
-                    f'总净收入: {df_summary["日净收入"].sum():.2f}\n')
+        logger.info(f'总收入: {df_summary["日收入"].sum()/2:.2f}，总支出: {df_summary["日支出"].sum()/2:.2f} '
+                    f'总提现: {df_summary["提现金额"].sum()/2:.2f}，，总转账: {df_summary["转账净额"].sum()/2:.2f}，'
+                    f'总净收入: {df_summary["日净收入"].sum()/2:.2f}\n')
 
         return df_summary
 
     except Exception as e:
         logger.error(f'{shopname}数据处理失败: {e}\n')
-        import traceback
-        logger.error(traceback.format_exc())
         return None
 
 

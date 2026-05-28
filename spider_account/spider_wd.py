@@ -23,15 +23,14 @@ def wd_login(shop_id=1):
         url = 'https://d.weidian.com/weidian-pc/login/?spider_token=35ed#/shopSelect'
         ele = '//div[@class="nick-name"]'
         key = f'login.wd_cookie{shop_id}'
-        extra = f'(//div[@data-spider-mode="trackAction"])[{shop_id}]/div[1]'
+        shop_id_ = (shop_id - 1) % 5 + 1
+        extra = f'(//div[@data-spider-mode="trackAction"])[{shop_id_}]/div[1]'
         Playwright_.login(url, ele, key, extra=extra, file=config_file)
         logger.info('微店登录成功....')
         return True
     except Exception as e:
         logger.error(f'微店登录失败：{e[:50]}')
         return False
-
-
 
 
 
@@ -53,11 +52,17 @@ def wd_save(start, end, filename):
     try:
         Playwright_.goto('https://d.weidian.com/weidian-pc/weidian-loader/#/pc-vue-balance/exportList?shopType=master')
         time.sleep(5)
-        date_ifno = Playwright_.get_text('(//div[@class="record-item"])[1]//div[@class="item-bd"]/div[2]')
-        if start in date_ifno and end in date_ifno:
-            Playwright_.click('(//div[@class="record-item"])[1]//span[text()="下载报表"]')
+        date_info = Playwright_.get_text('(//div[@class="record-item"])[1]//div[@class="item-bd"]/div[2]')
+
+        end = time.strptime(end, '%Y-%m-%d')
+        end = time.mktime(end) + 86400  # 加一天
+        end = time.strftime('%Y-%m-%d', time.localtime(end))
+
+        if start in date_info and end in date_info:
+            # Playwright_.click('(//div[@class="record-item"])[1]//span[text()="下载报表"]')
             # 直接导出
-            with Playwright_.page.expect_download(timeout=15000) as download_info:
+            with Playwright_.page.expect_download(timeout=30000) as download_info:
+                Playwright_.click('(//div[@class="record-item"])[1]//span[text()="下载报表"]')
                 pass  # 等待下载触发
             download = download_info.value
             # 获取文件名并保存
@@ -71,62 +76,69 @@ def wd_save(start, end, filename):
 def wd_deal_data(shopname, file):
     """
     使用pandas处理微店数据：
-    1. 按转账、提现单独一列
-    最后进行统计
+    1. 按提现单独一列
+    收入-手续费=净收入
     """
     try:
         # 读取Excel文件
         df = pandas.read_excel(file)
 
         # 将数值列转换为数字类型（处理可能的文本格式数字）
-        df['收入金额（元）'] = df['收入金额（元）'].astype(str).str.replace(',', '').str.strip()
-        df['收入金额（元）'] = pandas.to_numeric(df['收入金额（元）'].replace('', '0'), errors='coerce').fillna(0)
-
-        df['支出金额'] = df['支出金额'].astype(str).str.replace(',', '').str.strip()
-        df['支出金额'] = pandas.to_numeric(df['支出金额'].replace('', '0'),errors='coerce').fillna(0)
+        df['收入(元)'] = df['收入(元)'].astype(str).str.replace(',', '').str.strip()
+        df['收入(元)'] = pandas.to_numeric(df['收入(元)'].replace('', '0'), errors='coerce').fillna(0)
 
         # 提取日期（从入账时间）
-        df['日期'] = pandas.to_datetime(df['入账时间']).dt.date
-        # 分离不同类型的交易
-        df_transfer = df[df['入账类型'].apply(lambda x: '转账' in x)]
-        df_withdraw = df[df['入账类型'].apply(lambda x: '提现' in x)]
-        df_other = df[~df['入账类型'].apply(lambda x: '转账' in x or '提现' in x)]
+        df['日期'] = pandas.to_datetime(df['时间']).dt.date
 
-        logger.info(f'总数据量: {len(df)}, 提现数据: {len(df_withdraw)}, 转账数据: {len(df_transfer)}, '
-                    f'日数据: {len(df_other)}')
+        # 根据账单类型分类
+        # 1. 提现数据
+        df_withdraw = df[df['账单类型'] == '提现']
 
-        # 汇总转账数据（按日）
-        df_transfer_summary = df_transfer.groupby('日期').agg({
-            '收入金额（元）': 'sum',
-            '支出金额': 'sum'
-        }).reset_index()
-        df_transfer_summary.columns = ['日期', '转账收入', '转账支出']
-        df_transfer_summary['转账净额'] = df_transfer_summary['转账收入'] - df_transfer_summary['转账支出']
+        # 2. 货款收入数据
+        df_goods_income = df[df['账单类型'] == '货款收入']
 
-        # 汇总提现数据（按日）
-        df_withdraw_summary = df_withdraw.groupby('日期').agg({
-            '支出金额': 'sum'
-        }).reset_index()
-        df_withdraw_summary.columns = ['日期', '提现支出']
-        df_withdraw_summary['提现金额'] = df_withdraw_summary['提现支出']
+        # 3. 交易手续费数据
+        df_fee = df[df['账单类型'] == '交易手续费']
 
-        # 汇总其他交易数据（按日）
-        df_other_summary = df_other.groupby('日期').agg({
-            '收入金额（元）': 'sum',
-            '支出金额': 'sum'
-        }).reset_index()
-        df_other_summary.columns = ['日期', '日收入', '日支出']
-        df_other_summary['日净收入'] = df_other_summary['日收入'] - df_other_summary['日支出']
+
+        # 按日汇总提现金额
+        if len(df_withdraw) > 0:
+            df_withdraw_summary = df_withdraw.groupby('日期').agg({
+                '收入(元)': 'sum'
+            }).reset_index()
+            df_withdraw_summary.columns = ['日期', '提现金额']
+        else:
+            df_withdraw_summary = pandas.DataFrame(columns=['日期', '提现金额'])
+
+        # 按日汇总货款收入
+        if len(df_goods_income) > 0:
+            df_goods_summary = df_goods_income.groupby('日期').agg({
+                '收入(元)': 'sum' }).reset_index()
+            df_goods_summary.columns = ['日期', '货款收入']
+        else:
+            df_goods_summary = pandas.DataFrame(columns=['日期', '货款收入'])
+
+        # 按日汇总交易手续费
+        if len(df_fee) > 0:
+            df_fee_summary = df_fee.groupby('日期').agg({
+                '收入(元)': 'sum'
+            }).reset_index()
+            df_fee_summary.columns = ['日期', '交易手续费']
+        else:
+            df_fee_summary = pandas.DataFrame(columns=['日期', '交易手续费'])
 
         # 合并三个汇总表
-        df_summary = pandas.merge(df_other_summary, df_transfer_summary, on='日期', how='outer')
+        df_summary = df_goods_summary.copy()
         df_summary = pandas.merge(df_summary, df_withdraw_summary, on='日期', how='outer')
+        df_summary = pandas.merge(df_summary, df_fee_summary, on='日期', how='outer')
+
 
         # 填充空值为0
         df_summary = df_summary.fillna(0)
 
+
         # 计算每日总净收入
-        df_summary['日净收入'] = df_summary['日净收入']
+        df_summary['日净收入'] = df_summary['货款收入'] + df_summary['交易手续费']
 
         # 按日期排序
         df_summary = df_summary.sort_values('日期', ascending=False).reset_index(drop=True)
@@ -134,18 +146,15 @@ def wd_deal_data(shopname, file):
         # 添加汇总行
         total_row = pandas.DataFrame({
             '日期': ['所有汇总'],
-            '日收入': [df_summary['日收入'].sum()],
-            '日支出': [df_summary['日支出'].sum()],
+            '货款收入': [df_summary['货款收入'].sum()],
             '提现金额': [df_summary['提现金额'].sum()],
-            '转账收入': [df_summary['转账收入'].sum()],
-            '转账支出': [df_summary['转账支出'].sum()],
-            '转账净额': [df_summary['转账净额'].sum()],
+            '交易手续费': [df_summary['交易手续费'].sum()],
             '日净收入': [df_summary['日净收入'].sum()]
         })
         df_summary = pandas.concat([df_summary, total_row], ignore_index=True)
 
         # 重新排列列顺序
-        columns_order = ['日期', '日收入', '日支出', '提现金额', '转账收入', '转账支出', '转账净额', '日净收入']
+        columns_order = ['日期', '货款收入', '提现金额', '交易手续费', '日净收入']
         df_summary = df_summary[columns_order]
 
         # 使用 ExcelWriter 追加到现有文件，保留原有的 Sheet
@@ -190,16 +199,13 @@ def wd_deal_data(shopname, file):
 
         logger.info(f'数据汇总完成，共汇总{len(df_summary) - 1}天的数据，已保存到: {file}')
 
-        logger.info(f'总收入: {df_summary["日收入"].sum():.2f}，总支出: {df_summary["日支出"].sum():.2f} '
-                    f'总提现: {df_summary["提现金额"].sum():.2f}，，总转账: {df_summary["转账净额"].sum():.2f}，'
-                    f'总净收入: {df_summary["日净收入"].sum():.2f}\n')
+        logger.info(f'总收入: {df_summary["货款收入"].sum()/2:.2f}，交易手续费: {df_summary["交易手续费"].sum()/2:.2f} '
+                    f'总提现: {df_summary["提现金额"].sum()/2:.2f}，总净收入: {df_summary["日净收入"].sum()/2:.2f}\n')
 
         return df_summary
 
     except Exception as e:
-        logger.error(f'{shopname}数据处理失败: {e}\n')
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.error(f'{shopname}店铺数据处理失败: {e}\n')
         return None
 
 
@@ -218,31 +224,47 @@ def main_(account_id=1):
 
     logger.info(f'{shop_name}店铺开始导出明细....')
     status = False
+    st_time = time.time()
     for roll in range(1, 6):
         logger.info(f'第{roll}次导出明细....')
         Playwright_.click('//span[text()="导出报表"]')
         Playwright_.click('//span[text()="生成报表"]')
         time.sleep(5)
-        if Playwright_.get_count('(//div[@class="record-item"])[1]//span[text()="报表生成中"]'):
+        date_ = Playwright_.get_text('(//div[@class="record-item"])[1]/div[1]/div[1]')[9:]
+        time_struct = time.strptime(date_, "%Y-%m-%d %H:%M:%S")
+        timestamp = int(time.mktime(time_struct))
+        if timestamp >= st_time:
             status = True
             break
+        else:
+            Playwright_.reload()
 
-    text = f'✅️ {shop_name}明细数据预生成中....' if status else f'❌️ {shop_name}明细数据预生成失败'
+    text = f'✅️ {shop_name}店铺明细数据预生成中....' if status else f'❌️ {shop_name}店铺明细数据预生成失败'
     logger.info(text)
     Playwright_.clear_cookie()
-    return [account_id, shop_name, start, end] if status else None
+    return [shop_name, start, end] if status else None
 
 
 
-def main_save_deal_data(shop_id):
+def main_save_deal_data(shop_id, shop_name, start, end, filename):
     logger.info(f'{shop_name}店铺开始导出明细....')
-    logger.info(title)
     wd_login(shop_id)
+    save_flag = False
     for roll in range(1, 6):
         logger.info(f'第{roll}次导出明细....')
+        save_flag = wd_save(start, end, filename)
+        if save_flag:
+            break
+    if save_flag:
+        logger.info(f'✅️ {shop_name}店铺明细数据下载成功')
+        wd_deal_data(shop_name, filename)
+    else:
+        logger.info(f'❌️ {shop_name}店铺明细数据下载失败')
+
+
 
 if __name__ == '__main__':
-    # wd_deal_data('测试', './数据/测试2.xlsx')
+    # wd_deal_data('测试', './数据/测试微店.xlsx')
     shop_count_ = get_config_value('login', 'wd_shop_count', file=config_file)
     shop_flag = input('请输入查询店铺序号（0默认查询全部）：')
     if shop_flag == '0':
@@ -255,14 +277,16 @@ if __name__ == '__main__':
     for account_id in range(start_id, end_id):
         shop_reuslt = main_(account_id)
         current_info.append(shop_reuslt)
+    wait_mins = 1
+    logger.info(f'等待{wait_mins}分钟，正在预生成报表，请勿关闭程序')
+    time.sleep(wait_mins*60)
 
-    logger.info('等待10分钟，正在预生成报表，请勿关闭程序')
-    time.sleep(10*60)
-
-    for shopinfo in current_info:
+    for shop_id, shopinfo in enumerate(current_info, start=1):
         if shopinfo:
-            shop_id, shop_name, start, end = shopinfo
+            shop_name, start, end = shopinfo
             dirname = 'd:/_code/spider_account/数据'
             filename = f'微店-{shop_name}店铺{end}明细.xlsx'
             filename = os.path.join(dirname, filename)
-            save_flag = wd_save(shop_name, start, end, filename)
+            main_save_deal_data(shop_id, shop_name, start, end, filename)
+        else:
+            logger.info(f'❌️ 第{shop_id}个店铺明细数据预生成失败')

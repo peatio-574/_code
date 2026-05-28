@@ -30,7 +30,7 @@ def xhs_login(account_id=1):
 
         key = f'login.xhs_cookie_{account_id}'
         sub_account = f'(//span[text()="子账号"])[{account_id}]/../div/div[1]'
-        Playwright_.login(url, ele, key, extra=sub_account)
+        Playwright_.login(url, ele, key, extra=sub_account, file=config_file)
         logger.info('小红书登录成功....')
         return True
     except Exception as e:
@@ -73,50 +73,6 @@ def xhs_search(start, end):
     Playwright_.input('//input[@placeholder="结束时间"]', end)
     Playwright_.click('//span[text()="查询"]')
     return shop_name
-
-
-def xhs_save_data(shopname, all_data, filename):
-    wb = Workbook()
-    ws = wb.active
-    ws.title = '账单数据'
-
-    # 自定义表头
-    headers = ['创建时间', '交易类型描述', '收入', '支出', '账户余额', '业务编号', '备注']
-    ws.append(headers)
-
-    # 设置表头样式
-    header_font = Font(bold=True, color='FFFFFF', size=12)
-    header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
-    header_alignment = Alignment(horizontal='center', vertical='center')
-
-    for cell in ws[1]:
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_alignment
-
-    # 写入数据
-    data_alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
-    for row_data in all_data:
-        ws.append(row_data)
-        # 设置数据行样式
-        for cell in ws[ws.max_row]:
-            cell.alignment = data_alignment
-
-    # 自动调整列宽
-    for column in ws.columns:
-        max_length = 0
-        column_letter = column[0].column_letter
-        for cell in column:
-            if len(str(cell.value)) > max_length:
-                max_length = len(str(cell.value))
-        adjusted_width = min(max_length + 2, 50)
-        ws.column_dimensions[column_letter].width = adjusted_width
-
-    # 保存文件
-    wb.save(filename)
-    logger.info(f'{shopname}账单数据已保存到: {filename}')
-    return filename
-
 
 
 def xhs_deal_data(shopname, file):
@@ -219,14 +175,12 @@ def xhs_deal_data(shopname, file):
         logger.info(f'数据汇总完成，共汇总{len(df_summary)}天的数据，已保存到: {file}')
 
         # 打印汇总统计
-        logger.info(f'总收入: {df_summary["日收入"].sum():.2f}，总支出: {df_summary["日支出"].sum():.2f} '
-                    f'总提现: {df_summary["日提现金额"].sum():.2f}，总净收入: {df_summary["日净收入"].sum():.2f}\n')
+        logger.info(f'总收入: {df_summary["日收入"].sum()/2:.2f}，总支出: {df_summary["日支出"].sum()/2:.2f} '
+                    f'总提现: {df_summary["日提现金额"].sum()/2:.2f}，总净收入: {df_summary["日净收入"].sum()/2:.2f}\n')
         return df_summary
 
     except Exception as e:
         logger.error(f'{shopname}数据处理失败: {e}\n')
-        import traceback
-        logger.error(traceback.format_exc())
         return None
 
 
@@ -298,7 +252,7 @@ def main_(account_id=1):
     if status:
         xhs_deal_data(shop_name, filename)
     Playwright_.clear_cookie()
-    return True
+    return True if status else False
 
 
 if __name__ == '__main__':
