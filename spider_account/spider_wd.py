@@ -17,49 +17,60 @@ warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
 
-def tb_login(shop_id=1):
+def wd_login(shop_id=1):
     try:
-        logger.info('开始登录千牛....')
-        url = 'https://myseller.taobao.com/home.htm/QnworkbenchHome/'
-        ele = '//span[contains(text(),"首页")]'
-        key = f'login.tb_cookie{shop_id}'
-
-        Playwright_.login(url, ele, key, file=config_file)
-        logger.info('千牛登录成功....')
+        logger.info('开始登录微店....')
+        url = 'https://d.weidian.com/weidian-pc/login/?spider_token=35ed#/shopSelect'
+        ele = '//div[@class="nick-name"]'
+        key = f'login.wd_cookie{shop_id}'
+        extra = f'(//div[@data-spider-mode="trackAction"])[{shop_id}]/div[1]'
+        Playwright_.login(url, ele, key, extra=extra, file=config_file)
+        logger.info('微店登录成功....')
         return True
     except Exception as e:
-        logger.error(f'千牛登录失败：{e[:50]}')
+        logger.error(f'微店登录失败：{e[:50]}')
         return False
 
-def tb_save(filename):
-    """直接导出"""
-    try:
-        # 直接导出
-        with Playwright_.page.expect_download(timeout=15000) as download_info:
-            pass  # 等待下载触发
-        download = download_info.value
-        # 获取文件名并保存
-        download.save_as(filename)
-        return True
-    except Exception as e:
-        logger.info(f'{filename}临时下载异常：{e}')
-        return False
 
-def tb_search(start, end):
-    Playwright_.goto('https://qn.taobao.com/home.htm/whale-accountant/pay/capital/home?active=fund_detail')
-    shop_name = Playwright_.get_text('//div[@class="user-area-pop-up-panel"]/div[1]/div/div[1]')
-    shop_name = shop_name.replace('账号信息店铺信息页面设置退出当前账号', '')
+
+
+
+def wd_search(start, end):
+    shop_name = Playwright_.get_text('//div[@class="user-name"]')
+    shop_name = shop_name.strip()
     logger.info(f'当前店铺名称：{shop_name}')
+    Playwright_.goto('https://d.weidian.com/weidian-pc/weidian-loader/#/pc-vue-balance/overview')
     time.sleep(8)
 
-    Playwright_.input('//input[@placeholder="起始日期"]', start)
+    Playwright_.input('//input[@placeholder="开始日期"]', start)
     Playwright_.input('//input[@placeholder="结束日期"]', end, enter=True)
-    Playwright_.click('//span[text()="搜索"]')
+    Playwright_.click('//span[text()="筛选"]')
     return shop_name
 
-def tb_deal_data(shopname, file):
+
+def wd_save(start, end, filename):
+    """直接导出"""
+    try:
+        Playwright_.goto('https://d.weidian.com/weidian-pc/weidian-loader/#/pc-vue-balance/exportList?shopType=master')
+        time.sleep(5)
+        date_ifno = Playwright_.get_text('(//div[@class="record-item"])[1]//div[@class="item-bd"]/div[2]')
+        if start in date_ifno and end in date_ifno:
+            Playwright_.click('(//div[@class="record-item"])[1]//span[text()="下载报表"]')
+            # 直接导出
+            with Playwright_.page.expect_download(timeout=15000) as download_info:
+                pass  # 等待下载触发
+            download = download_info.value
+            # 获取文件名并保存
+            download.save_as(filename)
+            return True
+    except Exception as e:
+        logger.info(f'{filename}下载异常：{e}')
+    return False
+
+
+def wd_deal_data(shopname, file):
     """
-    使用pandas处理千牛数据：
+    使用pandas处理微店数据：
     1. 按转账、提现单独一列
     最后进行统计
     """
@@ -193,42 +204,46 @@ def tb_deal_data(shopname, file):
 
 
 def main_(account_id=1):
-    title = f'========================开始爬取千牛第{account_id}个店铺======================='
+    title = f'========================开始爬取微店第{account_id}个店铺======================='
     logger.info(title)
     end = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
     start = f"{end[:-3]}-01"
-    dirname = 'd:/_code/spider_account/数据'
 
-    login = tb_login(account_id)
+    login = wd_login(account_id)
     if not login:
         return False
-    shop_name = tb_search(start, end)
-
-    filename = f'千牛-{shop_name}店铺{end}明细.xlsx'
-    filename = os.path.join(dirname, filename)
+    shop_name = wd_search(start, end)
 
     time.sleep(10)
 
     logger.info(f'{shop_name}店铺开始导出明细....')
-    status = 0
+    status = False
     for roll in range(1, 6):
         logger.info(f'第{roll}次导出明细....')
-        Playwright_.click('//span[text()="导出"]')
-        status = tb_save(filename)
-        if status:
+        Playwright_.click('//span[text()="导出报表"]')
+        Playwright_.click('//span[text()="生成报表"]')
+        time.sleep(5)
+        if Playwright_.get_count('(//div[@class="record-item"])[1]//span[text()="报表生成中"]'):
+            status = True
             break
-    text = f'✅️ {shop_name}明细数据下载成功：{filename}' if status else f'❌️ {shop_name}明细数据下载失败'
+
+    text = f'✅️ {shop_name}明细数据预生成中....' if status else f'❌️ {shop_name}明细数据预生成失败'
     logger.info(text)
-    if status:
-        tb_deal_data(shop_name, filename)
     Playwright_.clear_cookie()
-    return True
+    return [account_id, shop_name, start, end] if status else None
 
 
+
+def main_save_deal_data(shop_id):
+    logger.info(f'{shop_name}店铺开始导出明细....')
+    logger.info(title)
+    wd_login(shop_id)
+    for roll in range(1, 6):
+        logger.info(f'第{roll}次导出明细....')
 
 if __name__ == '__main__':
-    # tb_deal_data('测试', './数据/测试2.xlsx')
-    shop_count_ = get_config_value('login', 'tb_shop_count', file=config_file)
+    # wd_deal_data('测试', './数据/测试2.xlsx')
+    shop_count_ = get_config_value('login', 'wd_shop_count', file=config_file)
     shop_flag = input('请输入查询店铺序号（0默认查询全部）：')
     if shop_flag == '0':
         start_id = 1
@@ -236,5 +251,18 @@ if __name__ == '__main__':
     else:
         start_id = int(shop_flag)
         end_id = start_id + 1
+    current_info = []
     for account_id in range(start_id, end_id):
-        main_(account_id)
+        shop_reuslt = main_(account_id)
+        current_info.append(shop_reuslt)
+
+    logger.info('等待10分钟，正在预生成报表，请勿关闭程序')
+    time.sleep(10*60)
+
+    for shopinfo in current_info:
+        if shopinfo:
+            shop_id, shop_name, start, end = shopinfo
+            dirname = 'd:/_code/spider_account/数据'
+            filename = f'微店-{shop_name}店铺{end}明细.xlsx'
+            filename = os.path.join(dirname, filename)
+            save_flag = wd_save(shop_name, start, end, filename)

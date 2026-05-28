@@ -253,7 +253,7 @@ class Playwright(object):
     def screenshot(self,file):
         self.page.screenshot(path=file)
 
-    def login(self, url, location, key='login.xiaohognshu', way='xpath', storage=False, extra=None):
+    def login(self, url, location, key='login.xiaohognshu', way='xpath', storage=False, extra=None, file=None):
         """初始登录，并进行页面cookie、接口cookie持久化
         url 登录地址
         location 判断登录成功的元素定位
@@ -261,43 +261,43 @@ class Playwright(object):
         key ini配置文件对应section及option，使用.进行分割
         """
         section, option = key.split('.')
-        cookie = get_config_value(section, option)
+        cookie = get_config_value(section, option, file)
         if cookie:
-            Playwright_.add_cookie(eval(cookie))
+            self.add_cookie(eval(cookie))
 
-        Playwright_.goto(url)
+        self.goto(url)
         if storage:
-            storage = get_config_value(section, 'storage')
+            storage = get_config_value(section, 'storage', file)
             if storage:
-                Playwright_.add_storage(key=f'{section}.storage')
+                self.add_storage(key=f'{section}.storage')
         time.sleep(5)
-        count = Playwright_.get_count(location)
+        count = self.get_count(location)
         if count == 0:
             logger.info('请登录......')
-        element = Playwright_.wait_for_selector(location, timeout=3 * 60 * 1000, way=way)
+        element = self.wait_for_selector(location, timeout=3 * 60 * 1000, way=way)
         if not element:
             return False
 
         if extra:
-            if Playwright_.get_count(extra):
-                Playwright_.click(extra)
+            if self.get_count(extra):
+                self.click(extra)
                 time.sleep(3)
 
         # 页面cookie
-        cookie_list = Playwright_.context.cookies()
+        cookie_list = self.context.cookies()
 
         # api_cookie
         api_cookie = "; ".join([f"{cookie['name']}={cookie['value']}" for cookie in cookie_list])
-        write_config_value(section, {option: str(cookie_list), f'{option}_api': api_cookie})
+        write_config_value(section, {option: str(cookie_list), f'{option}_api': api_cookie}, file)
 
         if storage:
-            Playwright_.save_sessionstorage(key=f'{section}.storage')
+            self.save_sessionstorage(key=f'{section}.storage')
 
         return True
 
-    def save_sessionstorage(self, key='login.storage'):
+    def save_sessionstorage(self, key='login.storage', file=None):
         section, option = key.split('.')
-        data = Playwright_.page.evaluate("""() => {
+        data = self.page.evaluate("""() => {
             let data = {};
             for (let i = 0; i < localStorage.length; i++) {
                 let key = localStorage.key(i);
@@ -305,12 +305,12 @@ class Playwright(object):
             }
             return data;
         }""")
-        write_config_value(section, {option: data})
+        write_config_value(section, {option: data}, file)
 
-    def add_storage(self, key='login.storage'):
+    def add_storage(self, key='login.storage', file=None):
         section, option = key.split('.')
-        data = get_config_value(section, option)
-        Playwright_.page.evaluate("""(storage) => {
+        data = get_config_value(section, option, file)
+        self.page.evaluate("""(storage) => {
                 Object.entries(storage).forEach(([k, v]) => {
                     localStorage.setItem(k, v);
                 });

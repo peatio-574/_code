@@ -19,6 +19,9 @@ import time
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 
+config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
+
+
 def xhs_login(account_id=1):
     try:
         logger.info('开始登录小红书....')
@@ -35,7 +38,7 @@ def xhs_login(account_id=1):
         return False
 
 
-def search(start, end):
+def xhs_search(start, end):
     Playwright_.goto('https://ark.xiaohongshu.com/app-merchant/third-settle/account')
     shop_name = Playwright_.get_text('//div[@class="avatar-wrapper"]/div')[:-2]
     logger.info(f'当前店铺名称：{shop_name}')
@@ -69,12 +72,10 @@ def search(start, end):
     Playwright_.input('//input[@placeholder="开始时间"]', start)
     Playwright_.input('//input[@placeholder="结束时间"]', end)
     Playwright_.click('//span[text()="查询"]')
-    Playwright_.click('(//div[@class="slot-right"])[last()]')
-    Playwright_.click('//div[text()="30条/页 "]')
     return shop_name
 
 
-def save_data(shopname, all_data, filename):
+def xhs_save_data(shopname, all_data, filename):
     wb = Workbook()
     ws = wb.active
     ws.title = '账单数据'
@@ -117,44 +118,8 @@ def save_data(shopname, all_data, filename):
     return filename
 
 
-def get_data(shopname):
-    all_data = []
 
-    while True:
-        time.sleep(2)
-        curent_page_ele = '//button[contains(@class,"page-selected")]/span'
-        curent_page = Playwright_.get_text(curent_page_ele)
-        page_info = get_page()
-        logger.info(f'店铺：{shopname}，当前页码：{curent_page}，共{len(page_info)}条数据')
-        all_data += page_info
-        next_page_ele = '//button[@aria-label="下一页" and not (@disabled)]'
-        if Playwright_.get_count(next_page_ele):
-            Playwright_.click(next_page_ele)
-        else:
-            break
-    return all_data
-
-
-def get_page():
-    """获取单页数据"""
-    page_info = []
-    list_ele = '//div[@role="rowgroup"]/div'
-    list_count = Playwright_.get_count(list_ele)
-    for line in range(1, list_count+1):
-        create_time = Playwright_.get_text(f'({list_ele})[{line}]/div[1]')
-        create_time = create_time.split(' ')[0]
-        type = Playwright_.get_text(f'({list_ele})[{line}]/div[2]')
-        income = Playwright_.get_text(f'({list_ele})[{line}]/div[3]')
-        expense = Playwright_.get_text(f'({list_ele})[{line}]/div[4]')
-        balance = Playwright_.get_text(f'({list_ele})[{line}]/div[5]')
-        order_id = Playwright_.get_text(f'({list_ele})[{line}]/div[6]')
-        comment = Playwright_.get_text(f'({list_ele})[{line}]/div[7]')
-        row = [create_time, type, income, expense, balance, order_id, comment]
-        page_info.append(row)
-    return page_info
-
-
-def deal_data(shopname, file):
+def xhs_deal_data(shopname, file):
     """
     使用pandas处理数据：
     1. 按每日汇总交易类型描述不为"提现"的收入和支出
@@ -265,25 +230,8 @@ def deal_data(shopname, file):
         return None
 
 
-def main(account_id=1):
-    logger.info('='.count(f'开始爬取第{account_id}个店铺', 80))
-    end = time.strftime("%Y-%m-%d")
-    start = f"{end[:-3]}-01"
-    dirname = 'd:/_code/spider_account'
 
-    xhs_login(account_id)
-    shop_name = search(start, end)[:-2]
-
-    filename = f'{shop_name}店铺{start}--{end}明细.xlsx'
-    file = os.path.join(dirname, filename)
-
-    all_data = get_data(shop_name)
-    save_data(shop_name, all_data, file)
-    deal_data(shop_name, file)
-    Playwright_.clear_cookie()
-
-
-def save(filename):
+def xhs_save(filename):
     """直接导出"""
     try:
         # 直接导出
@@ -298,7 +246,7 @@ def save(filename):
         return False
 
 
-def download(filename):
+def xhs_download(filename):
     """接口导出"""
     Playwright_.click('//span[text()="消息"]')
     Playwright_.click('(//span[text()="店铺"])[last()]')
@@ -306,10 +254,12 @@ def download(filename):
     if Playwright_.get_count(judge_ele):
         judge = Playwright_.get_text(judge_ele)
         if judge in ('1分钟前', '刚刚'):
-            href = Playwright_.get_attribute('(//div[@class="list-item-wrapper"])[1]//a', 'href')
-            with open(filename, mode='wb') as f:
-                f.write(requests.get(href).content)
-                return True
+            ele = '(//div[@class="list-item-wrapper"])[1]//a'
+            if Playwright_.get_count(ele):
+                href = Playwright_.get_attribute(ele, 'href')
+                with open(filename, mode='wb') as f:
+                    f.write(requests.get(href).content)
+                    return True
         Playwright_.click('//div[@class="ark-message-title-wrap"]/span[2]')
     return False
 
@@ -324,9 +274,9 @@ def main_(account_id=1):
     login = xhs_login(account_id)
     if not login:
         return False
-    shop_name = search(start, end)
+    shop_name = xhs_search(start, end)
 
-    filename = f'{shop_name}店铺{end}明细.xlsx'
+    filename = f'小红书-{shop_name}店铺{end}明细.xlsx'
     filename = os.path.join(dirname, filename)
 
     time.sleep(10)
@@ -336,24 +286,24 @@ def main_(account_id=1):
     for roll in range(1, 6):
         logger.info(f'第{roll}次导出明细....')
         Playwright_.click('//span[text()="导出"]')
-        status = save(filename)
+        status = xhs_save(filename)
         if status:
             break
 
-        status = download(filename)
+        status = xhs_download(filename)
         if status:
             break
     text = f'✅️ {shop_name}明细数据下载成功：{filename}' if status else f'❌️ {shop_name}明细数据下载失败'
     logger.info(text)
     if status:
-        deal_data(shop_name, filename)
+        xhs_deal_data(shop_name, filename)
     Playwright_.clear_cookie()
     return True
 
 
 if __name__ == '__main__':
-    # deal_data('甜心花栗店铺', file='./甜心花栗店铺2026-05-25明细.xlsx')
-    shop_count_ = get_config_value('login', 'shop_count')
+    # xhs_deal_data('甜心花栗店铺', file='./数据/meow meow店铺2026-05-27明细.xlsx')
+    shop_count_ = get_config_value('login', 'xhs_shop_count', file=config_file)
     shop_flag = input('请输入查询店铺序号（0默认查询全部）：')
     if shop_flag == '0':
         start_id = 1
