@@ -58,8 +58,8 @@ def dd_deal_data(shopname, file):
     2. 统计每日净收入
     """
     try:
+
         # 读取Excel文件
-        print(1)
         df = pandas.read_excel(file)
 
         # 将数值列转换为数字类型（处理可能的文本格式数字）
@@ -191,11 +191,11 @@ def dd_deal_data(shopname, file):
         return None
 
 
-
 def dd_save(end, shop_name):
     """直接导出"""
     dirname = 'd:/_code/spider_account/数据'
-    filename = f'抖店-{shop_name}店铺{end}明细.xlsx'
+    filename = f'抖店-{shop_name}店铺{end}明细.csv'
+    filename_ = f'抖店-{shop_name}店铺{end}明细.xlsx'
     filename = os.path.join(dirname, filename)
     try:
         Playwright_.click('//span[text()="生成报表"]')
@@ -209,7 +209,11 @@ def dd_save(end, shop_name):
         download = download_info.value
         # 获取文件名并保存
         download.save_as(filename)
-        return filename
+        df = pandas.read_csv(filename, encoding="utf-8")
+        filename_ = os.path.join(dirname, filename_)
+        df.to_excel(filename_, index=False, engine="openpyxl")
+        os.remove(filename)
+        return filename_
     except Exception as e:
         logger.info(f'{filename}临时下载异常：{e}')
         return False
@@ -220,7 +224,6 @@ def main_(account_id=1):
     logger.info(title)
     end = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
     start = f"{end[:-3]}-01"
-
 
     login = dd_login(account_id)
     if not login:
