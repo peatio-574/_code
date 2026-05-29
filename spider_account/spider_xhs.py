@@ -190,6 +190,7 @@ def xhs_save(filename):
     try:
         # 直接导出
         with Playwright_.page.expect_download(timeout=15000) as download_info:
+            Playwright_.click('//span[text()="导出"]')
             pass  # 等待下载触发
         download = download_info.value
         # 获取文件名并保存
@@ -239,7 +240,6 @@ def main_(account_id=1):
     status = 0
     for roll in range(1, 6):
         logger.info(f'第{roll}次导出明细....')
-        Playwright_.click('//span[text()="导出"]')
         status = xhs_save(filename)
         if status:
             break
