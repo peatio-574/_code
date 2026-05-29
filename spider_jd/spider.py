@@ -181,6 +181,8 @@ def main():
         ws = wb[sheet_name]
         for row in sheet_data:
             row_id = row[0]
+            if row_id <310:
+                continue
             title = row[1].get('商品标准名称')
             price = row[1].get('京东零售价金额')
             url = row[1].get('链接')
