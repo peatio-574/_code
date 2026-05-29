@@ -17,7 +17,6 @@ import time
 
 
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
-pandas.set_option('future.no_silent_downcasting', True)
 
 config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
 
@@ -314,6 +313,10 @@ if __name__ == '__main__':
     shop_flag = input('请输入查询店铺序号（0默认查询全部）：')
     if shop_flag == '0':
         start_id = 1
+        end_id = int(shop_count_) + 1
+    elif ':' in shop_flag or '：' in shop_flag:
+        shop_flag = shop_flag.replace('：', '').replace(':', '')
+        start_id = int(shop_flag)
         end_id = int(shop_count_) + 1
     else:
         start_id = int(shop_flag)
