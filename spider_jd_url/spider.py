@@ -7,7 +7,6 @@ from pathlib import Path
 
 import os
 import pandas as pd
-from openpyxl import load_workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 
 sys.path.append(str(Path(__file__).parent.parent))
@@ -15,6 +14,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 from PlayWright import Playwright_, logger
 
 import pandas
+
+current_dir = os.path.dirname(__file__)
+config_file = os.path.join(current_dir, 'config.ini')
 
 def extract_jd_data(input_file, output_file):
     """
@@ -88,11 +90,8 @@ def extract_jd_data(input_file, output_file):
                     max_length = 0
                     col_letter = column[0].column_letter
                     for cell in column:
-                        try:
-                            if len(str(cell.value)) > max_length:
+                        if len(str(cell.value)) > max_length:
                                 max_length = len(str(cell.value))
-                        except:
-                            pass
                     ws.column_dimensions[col_letter].width = min(max_length + 2, 50)
 
                 logger.info(f'Sheet "{sheet_name}" 处理完成，共 {len(new_df)} 行数据')
@@ -112,11 +111,11 @@ def login():
     logger.info('开始登录京东....')
     url = 'https://www.jd.com/'
     ele = '//li[@id="ttbar-login-2024"]/div[1]'
-    key = 'login.jd_cookie6'
-    Playwright_.login(url, ele, key)
+    key = 'login.jd_cookie'
+    Playwright_.login(url, ele, key, file=config_file)
     logger.info('京东登录成功')
 
-def read_data(file = 'd:/_code/spider_jd/标题.xlsx'):
+def read_data(file = 'd:/_code/spider_jd_url/标题.xlsx'):
 
     file = os.path.abspath(file)
     try:
@@ -153,7 +152,7 @@ def read_data(file = 'd:/_code/spider_jd/标题.xlsx'):
         return None
 
 
-def search(title, price, url):
+def search(title):
     Playwright_.input('//input[@aria-label="搜索"]', title, enter=True)
     time.sleep(random.randint(30, 50))
     ele = '(//div[contains(@class,"goodsContainer")]/div[@data-point-id])[1]'
@@ -167,8 +166,10 @@ def search(title, price, url):
     new_url = 'https://item.jd.com/' + new_url + '.html'
 
     return new_title, new_price, new_url
+
+
 def main():
-    file = 'd:/_code/spider_jd/标题.xlsx'
+    file = os.path.join(current_dir, '标题.xlsx')
     from openpyxl import load_workbook
     login()
     all_sheets_data = read_data(file)
@@ -190,7 +191,7 @@ def main():
                 continue
             else:
                 logger.info(f'{sheet_name}:第{row_id}行数据处理开始：{title}')
-                new_title, new_price, new_url = search(title, price, url)
+                new_title, new_price, new_url = search(title)
                 ws.cell(row=row_id+1, column=2, value=new_price)
                 ws.cell(row=row_id+1, column=3, value=new_url)
                 wb.save(file)
@@ -200,9 +201,4 @@ def main():
 
 
 if __name__ == '__main__':
-    # 配置输入输出文件路径
-    # input_file = r'D:\software\wechat_file\xwechat_files\wxid_tye1h8rj4god29_27e0\msg\file\2026-05\(已瘦身)链动蔚来全品类商品明细2026版-ljy.xlsx'  # 替换为你的输入文件路径
-    # output_file = 'd:/_code/spider_jd/标题.xlsx'  # 替换为你的输出文件路径
-    #
-    # extract_jd_data(input_file, output_file)
     main()
