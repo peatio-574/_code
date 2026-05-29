@@ -281,7 +281,7 @@ if __name__ == '__main__':
     for account_id in range(start_id, end_id):
         shop_reuslt = main_(account_id)
         current_info.append(shop_reuslt)
-    wait_mins = 1
+    wait_mins = 10
     logger.info(f'等待{wait_mins}分钟，正在预生成报表，请勿关闭程序')
     time.sleep(wait_mins*60)
 

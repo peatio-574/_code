@@ -11,7 +11,6 @@ import openpyxl
 import warnings
 import os
 import pandas
-import requests
 import time
 import zipfile
 
