@@ -53,7 +53,10 @@ def get_company_info(company_name):
             Playwright_.click(action_ele)
             info['add_crm'] = '是'
             time.sleep(1)
-            Playwright_.click('(//div[@class="ant-drawer-body"]//button[@class="ant-btn ant-btn-primary"])[last()]')
+            sure_ele = '(//div[@class="ant-drawer-body"]//button[@class="ant-btn ant-btn-primary"])[last()]'
+            Playwright_.click(sure_ele)
+            if Playwright_.get_count(sure_ele):
+                Playwright_.click(sure_ele)
 
 
         company_url = Playwright_.get_attribute(f'{ele}//h3/a', 'href')

@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 import sys
+
+import copy
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
 
-from PlayWright import Playwright_, logger, get_config_value
+from PlayWright import Playwright_, logger, get_config_value, write_config_value
 from openpyxl.styles import Font, Alignment, PatternFill
 import openpyxl
 import warnings
@@ -15,20 +17,73 @@ import time
 
 
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
-
+pandas.set_option('future.no_silent_downcasting', True)
 
 config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
 
 
+shop_names = [
+    '来口大米饭',
+    'wawa同人社',
+    '甜心花栗',
+    'meow meow',
+    'Meow市集',
+    '海苔不睡'
+]
+old_ = copy.deepcopy(shop_names)
+
+
 def dd_login(account_id=1):
     try:
+        global shop_names
         logger.info('开始登录抖店....')
-        url = 'https://fxg.jinritemai.com/login/common?channel=zhaoshang'
-        ele = '//div[text()="请选择店铺"]'
 
-        key = f'login.dd_cookie_{account_id}'
-        sub_account = f'(//div[contains(@class,"index_roleItem")])[{account_id}]//img[2]'
-        Playwright_.login(url, ele, key, extra=sub_account, file=config_file)
+        cookie = get_config_value('login', 'dd_cookie', file=config_file)
+        if cookie:
+            Playwright_.add_cookie(eval(cookie))
+
+        url = 'https://fxg.jinritemai.com/login/common?channel=zhaoshang'
+        Playwright_.goto(url)
+        time.sleep(20)
+
+        login_ele = '//div[contains(@class,"index_userName")]'
+        element = Playwright_.wait_for_selector(login_ele, timeout=30 * 1000)
+
+
+        # 未登录
+        if not element:
+            logger.info('请登录......')
+            sub_account = f'(//div[contains(@class,"index_roleItem")])[1]//img[2]'
+            element = Playwright_.wait_for_selector(sub_account, timeout=3 * 60 * 1000)
+            if not element:
+                return False
+            Playwright_.click(sub_account)
+            time.sleep(8)
+        if account_id != 1:
+
+            Playwright_.click(login_ele)
+            Playwright_.click('//div[text()="切换组织/店铺"]')
+            time.sleep(8)
+            choose_shop = old_[account_id-1]
+            sub_account = f'//div[contains(@class,"index_introName") and text()="{choose_shop}"]'
+            Playwright_.click(sub_account)
+            time.sleep(8)
+
+        choose_shop = Playwright_.get_text(login_ele)
+        shop_names.remove(choose_shop)
+        logger.info(f'当前店铺名称：{choose_shop}')
+        logger.info(f'剩余店铺名称：{shop_names}')
+        # 页面cookie
+        cookie_list = Playwright_.context.cookies()
+
+        # api_cookie
+        api_cookie = "; ".join([f"{cookie['name']}={cookie['value']}" for cookie in cookie_list])
+        config_info = {
+            'dd_cookie': cookie_list,
+            'dd_cookie_api': api_cookie
+        }
+        write_config_value('login', config_info, file=config_file)
+
         logger.info('抖店登录成功....')
         return True
     except Exception as e:
@@ -75,8 +130,8 @@ def dd_deal_data(shopname, file):
         # 2. 提现
         df_withdraw = df[df['动账场景'] == '提现']
 
-        # 3. 其他交易（排除充值保证金和提现）
-        df_other = df[~df['动账场景'].apply(lambda x: '充值保证金' in x or '提现' in x)]
+        # 3. 其他交易（排除提现）
+        df_other = df[~df['动账场景'].apply(lambda x: '提现' in x)]
 
         # 按日汇总充值保证金（仅展示）
         if len(df_recharge) > 0:
@@ -128,14 +183,14 @@ def dd_deal_data(shopname, file):
         df_summary = df_summary.fillna(0)
 
         # 按日期排序
-        df_summary = df_summary.sort_values('日期', ascending=False).reset_index(drop=True)
+        df_summary = df_summary.sort_values('日期', ascending=True).reset_index(drop=True)
         # 汇总数据
         total_row = pandas.DataFrame({
             '日期': ['所有汇总'],
             '入账金额': [df_summary['入账金额'].sum()],
             '出账金额': [df_summary['出账金额'].sum()],
-            '日净收入': [df_summary['日净收入'].sum()],
             '充值保证金': [df_summary['充值保证金'].sum()],
+            '日净收入': [df_summary['日净收入'].sum()],
             '提现金额': [df_summary['提现金额'].sum()]
         })
         df_summary = pandas.concat([df_summary, total_row], ignore_index=True)
@@ -182,8 +237,8 @@ def dd_deal_data(shopname, file):
         logger.info(f'数据汇总完成，共汇总{len(df_summary)}天的数据，已保存到: {file}')
 
         # 打印汇总统计
-        logger.info(f'总收入: {df_summary["日收入"].sum()/2:.2f}，总支出: {df_summary["日支出"].sum()/2:.2f} '
-                    f'总提现: {df_summary["日提现金额"].sum()/2:.2f}，总净收入: {df_summary["日净收入"].sum()/2:.2f}\n')
+        logger.info(f'总收入: {df_summary["入账金额"].sum()/2:.2f}，总支出: {df_summary["出账金额"].sum()/2:.2f} '
+                    f'总提现: {df_summary["提现金额"].sum()/2:.2f}，总净收入: {df_summary["日净收入"].sum()/2:.2f}\n')
         return df_summary
 
     except Exception as e:
@@ -200,8 +255,13 @@ def dd_save(end, shop_name):
     try:
         Playwright_.click('//span[text()="生成报表"]')
         Playwright_.click('//span[text()="生成"]')
-        down_ele = '(//div[contains(@class,"cardList")])[1]//span[text()="下载"]'
-        Playwright_.wait_for_selector(down_ele)
+        wait_ele = '(//div[contains(@class,"cardList")]/li)[1]//div[text()="生成中"]'
+        if Playwright_.get_count(wait_ele):
+            logger.info('正在生成报表，等待30秒....')
+            time.sleep(30)
+            Playwright_.reload()
+        down_ele = '(//div[contains(@class,"cardList")]/li)[1]//span[text()="下载"]'
+        Playwright_.wait_for_selector(down_ele, timeout=15000)
         Playwright_.click(down_ele)
         with Playwright_.page.expect_download(timeout=15000) as download_info:
             Playwright_.click(down_ele)
@@ -249,15 +309,15 @@ def main_(account_id=1):
 
 
 if __name__ == '__main__':
-    dd_deal_data('甜心花栗店铺', file='./数据/抖店-甜心花栗店铺2026-05-27明细.xlsx')
-    # shop_count_ = get_config_value('login', 'dd_shop_count', file=config_file)
-    # shop_flag = input('请输入查询店铺序号（0默认查询全部）：')
-    # if shop_flag == '0':
-    #     start_id = 1
-    #     end_id = int(shop_count_) + 1
-    # else:
-    #     start_id = int(shop_flag)
-    #     end_id = start_id + 1
-    # for account_id in range(start_id, end_id):
-    #     main_(account_id)
+    # dd_deal_data('甜心花栗店铺', file='./数据/抖店-wawa同人社店铺2026-05-28明细.xlsx')
+    shop_count_ = get_config_value('login', 'dd_shop_count', file=config_file)
+    shop_flag = input('请输入查询店铺序号（0默认查询全部）：')
+    if shop_flag == '0':
+        start_id = 1
+        end_id = int(shop_count_) + 1
+    else:
+        start_id = int(shop_flag)
+        end_id = start_id + 1
+    for account_id in range(start_id, end_id):
+        main_(account_id)
 

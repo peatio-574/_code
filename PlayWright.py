@@ -235,9 +235,12 @@ class Playwright(object):
 
     def switch_to_page(self):
         time.sleep(2)
-        self.page = self.context.pages[-1]
-        self.page.bring_to_front()
-        time.sleep(3)
+        old_page = self.page
+        if len(self.context.pages) > 1:
+            self.page = self.context.pages[-1]
+            self.page.bring_to_front()
+            old_page.close()
+            time.sleep(5)
 
     def element_screenshot(self, location, file, right=0):
         ele = self.page.locator(location)
@@ -315,6 +318,20 @@ class Playwright(object):
                     localStorage.setItem(k, v);
                 });
             }""", eval(data))
+
+    def mouse_wheel(self, delta_y, delta_x=0):
+        """鼠标滚轮滑动
+        delta_y: 垂直滑动距离，正数向下滚动，负数向上滚动
+        delta_x: 水平滑动距离（可选），正数向右，负数向左
+        """
+        try:
+            self.page.mouse.wheel(delta_x, delta_y)
+            time.sleep(random.uniform(0.5, 1.0))
+            return True
+        except Exception as e:
+            logger.error(f'鼠标滑动失败：{e}')
+            return False
+
 
 
 Playwright_ = Playwright()

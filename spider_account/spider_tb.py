@@ -14,6 +14,7 @@ import warnings
 
 
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
+pandas.set_option('future.no_silent_downcasting', True)
 
 config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
 
@@ -118,7 +119,7 @@ def tb_deal_data(shopname, file):
         df_summary['日净收入'] = df_summary['日净收入']
 
         # 按日期排序
-        df_summary = df_summary.sort_values('日期', ascending=False).reset_index(drop=True)
+        df_summary = df_summary.sort_values('日期', ascending=True).reset_index(drop=True)
 
         # 添加汇总行
         total_row = pandas.DataFrame({
