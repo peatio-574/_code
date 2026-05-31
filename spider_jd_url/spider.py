@@ -154,7 +154,7 @@ def read_data(file = 'd:/_code/spider_jd_url/标题.xlsx'):
 
 def search(title):
     Playwright_.input('//input[@aria-label="搜索"]', title, enter=True)
-    time.sleep(random.randint(30, 50))
+    time.sleep(random.randint(55, 60))
     ele = '(//div[contains(@class,"goodsContainer")]/div[@data-point-id])[1]'
     new_title = Playwright_.get_attribute(f'{ele}//div[contains(@class,"goods_title")]/span', 'title')
 
@@ -169,6 +169,7 @@ def search(title):
 
 
 def main():
+    result_count = 0
     file = os.path.join(current_dir, '标题.xlsx')
     from openpyxl import load_workbook
     login()
@@ -176,14 +177,12 @@ def main():
     wb = load_workbook(file)
     Playwright_.goto('https://search.jd.com/Search?keyword=%E8%8B%B9%E6%9E%9C%E6%89%8B%E6%9C%BA')
     time.sleep(5)
-    for sheet_name, sheet_data in all_sheets_data.items():  # , '个护清洁'
-        if sheet_name  not in ['美妆护肤']:
-            continue
+    for sheet_name, sheet_data in all_sheets_data.items():
         ws = wb[sheet_name]
+        if result_count == 100:
+            logger.info('已爬取100条')
         for row in sheet_data:
             row_id = row[0]
-            if row_id <310:
-                continue
             title = row[1].get('商品标准名称')
             price = row[1].get('京东零售价金额')
             url = row[1].get('链接')
@@ -195,10 +194,8 @@ def main():
                 ws.cell(row=row_id+1, column=2, value=new_price)
                 ws.cell(row=row_id+1, column=3, value=new_url)
                 wb.save(file)
+                result_count += 1
                 logger.info(f'{sheet_name}:第{row_id}行数据处理完成：{title}， 新数据：{new_title}')
-
-
-
 
 if __name__ == '__main__':
     main()

@@ -214,7 +214,7 @@ class Playwright(object):
             self.start_borwser()
         if clear:
             self.clear_cookie()
-        if self.context.cookies() != cookie:
+        if str(self.context.cookies()) != str(cookie):
             self.context.add_cookies(cookie)
 
     def wait_for_timeout(self, timeout=3000):
@@ -331,7 +331,6 @@ class Playwright(object):
         except Exception as e:
             logger.error(f'鼠标滑动失败：{e}')
             return False
-
 
 
 Playwright_ = Playwright()

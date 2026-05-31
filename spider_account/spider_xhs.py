@@ -33,7 +33,7 @@ def xhs_login(account_id=1):
         logger.info('小红书登录成功....')
         return True
     except Exception as e:
-        logger.error(f'小红书登录失败：{e[:50]}')
+        logger.error(f'小红书登录失败：{e}')
         return False
 
 

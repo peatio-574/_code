@@ -86,7 +86,7 @@ def dd_login(account_id=1):
         logger.info('抖店登录成功....')
         return True
     except Exception as e:
-        logger.error(f'抖店登录失败：{e[:50]}')
+        logger.error(f'抖店登录失败：{e}')
         return False
 
 
