@@ -12,10 +12,10 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill
 import warnings
 
-
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
+
 
 def tb_login(shop_id=1):
     try:
@@ -31,6 +31,7 @@ def tb_login(shop_id=1):
         logger.error(f'千牛登录失败：{e}')
         return False
 
+
 def tb_save(filename):
     """直接导出"""
     try:
@@ -45,6 +46,7 @@ def tb_save(filename):
         logger.info(f'{filename}临时下载异常：{e}')
         return False
 
+
 def tb_search(start, end):
     Playwright_.goto('https://qn.taobao.com/home.htm/whale-accountant/pay/capital/home?active=fund_detail')
     shop_name = Playwright_.get_text('//div[@class="user-area-pop-up-panel"]/div[1]/div/div[1]')
@@ -56,6 +58,7 @@ def tb_search(start, end):
     Playwright_.input('//input[@placeholder="结束日期"]', end, enter=True)
     Playwright_.click('//span[text()="搜索"]')
     return shop_name
+
 
 def tb_deal_data(shopname, file):
     """
@@ -72,7 +75,7 @@ def tb_deal_data(shopname, file):
         df['收入金额（元）'] = pandas.to_numeric(df['收入金额（元）'].replace('', '0'), errors='coerce').fillna(0)
 
         df['支出金额'] = df['支出金额'].astype(str).str.replace(',', '').str.strip()
-        df['支出金额'] = pandas.to_numeric(df['支出金额'].replace('', '0'),errors='coerce').fillna(0)
+        df['支出金额'] = pandas.to_numeric(df['支出金额'].replace('', '0'), errors='coerce').fillna(0)
 
         # 提取日期（从入账时间）
         df['日期'] = pandas.to_datetime(df['入账时间']).dt.date
@@ -165,8 +168,7 @@ def tb_deal_data(shopname, file):
                 col_letter = column[0].column_letter
                 for cell in column:
                     if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-
+                        max_length = len(str(cell.value))
 
                 ws.column_dimensions[col_letter].width = min(max_length + 2, 50)
 
@@ -179,9 +181,9 @@ def tb_deal_data(shopname, file):
 
         logger.info(f'数据汇总完成，共汇总{len(df_summary) - 1}天的数据，已保存到: {file}')
 
-        logger.info(f'总收入: {df_summary["日收入"].sum()/2:.2f}，总支出: {df_summary["日支出"].sum()/2:.2f} '
-                    f'总提现: {df_summary["提现金额"].sum()/2:.2f}，，总转账: {df_summary["转账净额"].sum()/2:.2f}，'
-                    f'总净收入: {df_summary["日净收入"].sum()/2:.2f}\n')
+        logger.info(f'总收入: {df_summary["日收入"].sum() / 2:.2f}，总支出: {df_summary["日支出"].sum() / 2:.2f} '
+                    f'总提现: {df_summary["提现金额"].sum() / 2:.2f}，，总转账: {df_summary["转账净额"].sum() / 2:.2f}，'
+                    f'总净收入: {df_summary["日净收入"].sum() / 2:.2f}\n')
 
         return df_summary
 
@@ -201,6 +203,10 @@ def main_(account_id=1):
     if not login:
         return False
     shop_name = tb_search(start, end)
+    time.sleep(3)
+    if Playwright_.get_count('//div[text()="没有数据"]'):
+        logger.info(f'{shop_name}店铺报表暂无数据')
+        return False
 
     filename = f'千牛-{shop_name}店铺{end}明细.xlsx'
     filename = os.path.join(dirname, filename)
@@ -221,7 +227,6 @@ def main_(account_id=1):
         tb_deal_data(shop_name, filename)
     Playwright_.clear_cookie()
     return True
-
 
 
 if __name__ == '__main__':

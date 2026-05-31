@@ -12,10 +12,10 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill
 import warnings
 
-
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
+
 
 def wd_login(shop_id=1):
     try:
@@ -31,7 +31,6 @@ def wd_login(shop_id=1):
     except Exception as e:
         logger.error(f'微店登录失败：{e}')
         return False
-
 
 
 def wd_search(start, end):
@@ -100,7 +99,6 @@ def wd_deal_data(shopname, file):
         # 3. 交易手续费数据
         df_fee = df[df['账单类型'] == '交易手续费']
 
-
         # 按日汇总提现金额
         if len(df_withdraw) > 0:
             df_withdraw_summary = df_withdraw.groupby('日期').agg({
@@ -113,7 +111,7 @@ def wd_deal_data(shopname, file):
         # 按日汇总货款收入
         if len(df_goods_income) > 0:
             df_goods_summary = df_goods_income.groupby('日期').agg({
-                '收入(元)': 'sum' }).reset_index()
+                '收入(元)': 'sum'}).reset_index()
             df_goods_summary.columns = ['日期', '货款收入']
         else:
             df_goods_summary = pandas.DataFrame(columns=['日期', '货款收入'])
@@ -132,10 +130,8 @@ def wd_deal_data(shopname, file):
         df_summary = pandas.merge(df_summary, df_withdraw_summary, on='日期', how='outer')
         df_summary = pandas.merge(df_summary, df_fee_summary, on='日期', how='outer')
 
-
         # 填充空值为0
         df_summary = df_summary.fillna(0)
-
 
         # 计算每日总净收入
         df_summary['日净收入'] = df_summary['货款收入'] + df_summary['交易手续费']
@@ -185,8 +181,7 @@ def wd_deal_data(shopname, file):
                 col_letter = column[0].column_letter
                 for cell in column:
                     if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-
+                        max_length = len(str(cell.value))
 
                 ws.column_dimensions[col_letter].width = min(max_length + 2, 50)
 
@@ -199,8 +194,8 @@ def wd_deal_data(shopname, file):
 
         logger.info(f'数据汇总完成，共汇总{len(df_summary) - 1}天的数据，已保存到: {file}')
 
-        logger.info(f'总收入: {df_summary["货款收入"].sum()/2:.2f}，交易手续费: {df_summary["交易手续费"].sum()/2:.2f} '
-                    f'总提现: {df_summary["提现金额"].sum()/2:.2f}，总净收入: {df_summary["日净收入"].sum()/2:.2f}\n')
+        logger.info(f'总收入: {df_summary["货款收入"].sum() / 2:.2f}，交易手续费: {df_summary["交易手续费"].sum() / 2:.2f} '
+                    f'总提现: {df_summary["提现金额"].sum() / 2:.2f}，总净收入: {df_summary["日净收入"].sum() / 2:.2f}\n')
 
         return df_summary
 
@@ -245,7 +240,6 @@ def main_(account_id=1):
     return [shop_name, start, end] if status else None
 
 
-
 def main_save_deal_data(shop_id, shop_name, start, end, filename):
     logger.info(f'{shop_name}店铺开始导出明细....')
     wd_login(shop_id)
@@ -260,7 +254,6 @@ def main_save_deal_data(shop_id, shop_name, start, end, filename):
         wd_deal_data(shop_name, filename)
     else:
         logger.info(f'❌️ {shop_name}店铺明细数据下载失败')
-
 
 
 if __name__ == '__main__':
@@ -283,7 +276,7 @@ if __name__ == '__main__':
         current_info.append(shop_reuslt)
     wait_mins = 10
     logger.info(f'等待{wait_mins}分钟，正在预生成报表，请勿关闭程序')
-    time.sleep(wait_mins*60)
+    time.sleep(wait_mins * 60)
 
     for shop_id, shopinfo in enumerate(current_info, start=1):
         if shopinfo:
