@@ -5,6 +5,10 @@
     @时间：2026/5/31 19:07
 """
 import time
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).parent.parent))
 
 import os
 from PlayWright import Playwright_, logger, get_config_value, write_config_value
@@ -237,7 +241,7 @@ def main():
     while True:
         logger.info('=' * 80)
         detail, order, title = get_url()
-        if not detail:
+        if not title:
             logger.info('当前没有任务可领取')
             exit()
 
