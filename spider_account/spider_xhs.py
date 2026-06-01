@@ -28,7 +28,8 @@ def xhs_login(account_id=1):
         ele = '(//a[text()="学习中心"])[1]'
 
         key = f'login.xhs_cookie_{account_id}'
-        sub_account = f'(//span[text()="子账号"])[{account_id}]/../div/div[1]'
+        idx = (account_id - 1) % 10 + 1
+        sub_account = f'(//span[text()="子账号"])[{idx}]/../div/div[1]'
         Playwright_.login(url, ele, key, extra=sub_account, file=config_file)
         logger.info('小红书登录成功....')
         return True

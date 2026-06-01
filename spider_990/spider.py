@@ -26,4 +26,8 @@ def login():
 
 
 if __name__ == '__main__':
-    login()
+    import time
+    while True:
+        login()
+        print('休眠3小时')
+        time.sleep(60 * 60 * 3)
