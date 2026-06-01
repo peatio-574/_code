@@ -12,7 +12,7 @@ from Config import get_config_value, write_config_value
 
 import time
 import random
-from playwright.sync_api import sync_playwright, TimeoutError
+from playwright.sync_api import sync_playwright
 from screeninfo import get_monitors
 from Logger import logger
 

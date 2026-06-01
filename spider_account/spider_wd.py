@@ -147,6 +147,7 @@ def wd_deal_data(shopname, file):
             '交易手续费': [df_summary['交易手续费'].sum()],
             '日净收入': [df_summary['日净收入'].sum()]
         })
+
         df_summary = pandas.concat([df_summary, total_row], ignore_index=True)
 
         # 重新排列列顺序
@@ -223,7 +224,9 @@ def main_(account_id=1):
     for roll in range(1, 6):
         logger.info(f'第{roll}次导出明细....')
         Playwright_.click('//span[text()="导出报表"]')
-        Playwright_.click('//span[text()="生成报表"]')
+        time.sleep(2)
+        if Playwright_.get_count('//span[text()="生成报表"]'):
+            Playwright_.click('//span[text()="生成报表"]')
         time.sleep(5)
         date_ = Playwright_.get_text('(//div[@class="record-item"])[1]/div[1]/div[1]')[9:]
         time_struct = time.strptime(date_, "%Y-%m-%d %H:%M:%S")

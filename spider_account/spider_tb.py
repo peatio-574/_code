@@ -19,16 +19,16 @@ config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
 
 def tb_login(shop_id=1):
     try:
-        logger.info('开始登录千牛....')
+        logger.info('开始登录淘宝....')
         url = 'https://myseller.taobao.com/home.htm/QnworkbenchHome/'
         ele = '//span[contains(text(),"首页")]'
         key = f'login.tb_cookie{shop_id}'
 
         Playwright_.login(url, ele, key, file=config_file)
-        logger.info('千牛登录成功....')
+        logger.info('淘宝登录成功....')
         return True
     except Exception as e:
-        logger.error(f'千牛登录失败：{e}')
+        logger.error(f'淘宝登录失败：{e}')
         return False
 
 
@@ -62,7 +62,7 @@ def tb_search(start, end):
 
 def tb_deal_data(shopname, file):
     """
-    使用pandas处理千牛数据：
+    使用pandas处理淘宝数据：
     1. 按转账、提现单独一列
     最后进行统计
     """
@@ -193,7 +193,7 @@ def tb_deal_data(shopname, file):
 
 
 def main_(account_id=1):
-    title = f'========================开始爬取千牛第{account_id}个店铺======================='
+    title = f'========================开始爬取淘宝第{account_id}个店铺======================='
     logger.info(title)
     end = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
     start = f"{end[:-3]}-01"
@@ -201,14 +201,16 @@ def main_(account_id=1):
 
     login = tb_login(account_id)
     if not login:
+        Playwright_.clear_cookie()
         return False
     shop_name = tb_search(start, end)
     time.sleep(3)
     if Playwright_.get_count('//div[text()="没有数据"]'):
         logger.info(f'{shop_name}店铺报表暂无数据')
+        Playwright_.clear_cookie()
         return False
 
-    filename = f'千牛-{shop_name}店铺{end}明细.xlsx'
+    filename = f'淘宝-{shop_name}店铺{end}明细.xlsx'
     filename = os.path.join(dirname, filename)
 
     time.sleep(10)

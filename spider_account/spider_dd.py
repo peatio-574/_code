@@ -29,57 +29,45 @@ shop_names = [
     'Meow市集',
     '海苔不睡'
 ]
-old_ = copy.deepcopy(shop_names)
 
 
 def dd_login(account_id=1):
     try:
-        global shop_names
         logger.info('开始登录抖店....')
-
-        cookie = get_config_value('login', 'dd_cookie', file=config_file)
+        cookie = get_config_value('login', f'dd_cookie_{account_id}', file=config_file)
         if cookie:
             Playwright_.add_cookie(eval(cookie))
 
         url = 'https://fxg.jinritemai.com/login/common?channel=zhaoshang'
         Playwright_.goto(url)
-        time.sleep(20)
+        time.sleep(30)
 
         login_ele = '//div[contains(@class,"index_userName")]'
-        element = Playwright_.wait_for_selector(login_ele, timeout=30 * 1000)
-
+        element = Playwright_.wait_for_selector(login_ele, timeout=20 * 1000)
 
         # 未登录
         if not element:
             logger.info('请登录......')
-            sub_account = f'(//div[contains(@class,"index_roleItem")])[1]//img[2]'
+            choose =  ((account_id - 1) % 6)
+            sub_account = f'//div[text()="{shop_names[choose]}"]'
             element = Playwright_.wait_for_selector(sub_account, timeout=3 * 60 * 1000)
             if not element:
+                logger.error(f'抖店登录失败')
                 return False
             Playwright_.click(sub_account)
-            time.sleep(8)
-        if account_id != 1:
-
-            Playwright_.click(login_ele)
-            Playwright_.click('//div[text()="切换组织/店铺"]')
-            time.sleep(8)
-            choose_shop = old_[account_id-1]
-            sub_account = f'//div[contains(@class,"index_introName") and text()="{choose_shop}"]'
-            Playwright_.click(sub_account)
-            time.sleep(8)
+            time.sleep(20)
 
         choose_shop = Playwright_.get_text(login_ele)
-        shop_names.remove(choose_shop)
         logger.info(f'当前店铺名称：{choose_shop}')
-        logger.info(f'剩余店铺名称：{shop_names}')
+
         # 页面cookie
         cookie_list = Playwright_.context.cookies()
 
         # api_cookie
         api_cookie = "; ".join([f"{cookie['name']}={cookie['value']}" for cookie in cookie_list])
         config_info = {
-            'dd_cookie': cookie_list,
-            'dd_cookie_api': api_cookie
+            f'dd_cookie_{account_id}': cookie_list,
+            f'dd_cookie_{account_id}_api': api_cookie
         }
         write_config_value('login', config_info, file=config_file)
 
@@ -254,11 +242,13 @@ def dd_save(end, shop_name):
     try:
         Playwright_.click('//span[text()="生成报表"]')
         Playwright_.click('//span[text()="生成"]')
+        time.sleep(5)
         wait_ele = '(//div[contains(@class,"cardList")]/li)[1]//div[text()="生成中"]'
         if Playwright_.get_count(wait_ele):
             logger.info('正在生成报表，等待30秒....')
             time.sleep(30)
             Playwright_.reload()
+            time.sleep(3)
         down_ele = '(//div[contains(@class,"cardList")]/li)[1]//span[text()="下载"]'
         Playwright_.wait_for_selector(down_ele, timeout=15000)
         Playwright_.click(down_ele)
@@ -286,6 +276,7 @@ def main_(account_id=1):
 
     login = dd_login(account_id)
     if not login:
+        Playwright_.clear_cookie()
         return False
 
     status = 0
@@ -321,6 +312,6 @@ if __name__ == '__main__':
     else:
         start_id = int(shop_flag)
         end_id = start_id + 1
+
     for account_id in range(start_id, end_id):
         main_(account_id)
-
