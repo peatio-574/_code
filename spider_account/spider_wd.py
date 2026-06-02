@@ -22,9 +22,8 @@ def wd_login(shop_id=1):
         logger.info('开始登录微店....')
         url = 'https://d.weidian.com/weidian-pc/login/?spider_token=35ed#/shopSelect'
         ele = '//div[@class="nick-name"]'
-        key = f'login.wd_cookie{shop_id}'
-        shop_id_ = (shop_id - 1) % 5 + 1
-        extra = f'(//div[@data-spider-mode="trackAction"])[{shop_id_}]/div[1]'
+        key = 'login.wd_cookie'
+        extra = f'(//div[@data-spider-mode="trackAction"])[1]/div[1]'
         Playwright_.login(url, ele, key, extra=extra, file=config_file)
         logger.info('微店登录成功....')
         return True
