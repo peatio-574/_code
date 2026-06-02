@@ -195,7 +195,7 @@ class Playwright(object):
 
     def wait_for_selector(self, location, state='visible', timeout=5*1000, way='xpath'):
         try:
-
+            self.page.wait_for_load_state('domcontentloaded')
             location = location if way == 'xpath' else f'{way}={location}'
             self.page.wait_for_selector(location, state=state, timeout=timeout)
             return True
@@ -222,6 +222,8 @@ class Playwright(object):
 
     def get_count(self, location):
         try:
+            # 等待页面稳定后再获取元素数量
+            self.page.wait_for_load_state('networkidle', timeout=5000)
             return self.page.locator(location).count()
         except Exception as e:
             logger.error(f'获取元素数量失败：{e}')
