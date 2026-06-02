@@ -22,7 +22,7 @@ def tb_login(shop_id=1):
         logger.info('开始登录淘宝....')
         url = 'https://myseller.taobao.com/home.htm/QnworkbenchHome/'
         ele = '//span[contains(text(),"首页")]'
-        key = f'login.tb_cookie{shop_id}'
+        key = f'login.tb_cookie_{shop_id}'
 
         Playwright_.login(url, ele, key, file=config_file)
         logger.info('淘宝登录成功....')
