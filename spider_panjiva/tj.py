@@ -31,10 +31,10 @@ def get_company_info(company_name):
         if companyname != company_name:
             return info
 
-        status = Playwright_.get_text(f'{ele}//div[contains(@class, "M8")]')
+        status = Playwright_.get_text(f'{ele}//div[contains(@class, "M8")][1]')
         info['status'] = status
-        if status == '注销':
-            logger.info(f'【{company_name}】已注销')
+        if status in ['注销', '吊销']:
+            logger.info(f'【{company_name}】已{status}')
             return info
 
         permission_ele = f'{ele}//i[@class="anticon anticon-info-circle"]'
