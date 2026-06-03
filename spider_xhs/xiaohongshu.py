@@ -15,6 +15,9 @@ from PlayWright import Playwright_, logger
 import time
 import requests
 import os
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment
+
 
 
 config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
@@ -68,7 +71,7 @@ def get_comment(comment_ele, comment_):
 def get_page_comment():
     """获取20条评论"""
     comment_ele = '//div[@class="parent-comment"]'
-    comments = list()
+    comments = []
     record_count = 0
     while len(comments) < 20:
         comment_count = Playwright_.get_count(comment_ele)
@@ -80,10 +83,11 @@ def get_page_comment():
             if comment_info is None:
                 continue
             if comment_info not in comments:
+                logger.info(comment_info)
                 comments.append(comment_info)
 
         if record_count == len(comments):
-            logger.info('当前没有新评论了，已获取所有评论')
+            # logger.info('当前没有新评论了，已获取所有评论')
             break
 
         record_count = len(comments)
@@ -107,6 +111,7 @@ def get_author_info():
 
     user_ip_ele = '//span[@class="user-IP"]'
     user_ip = Playwright_.get_text(user_ip_ele) if Playwright_.get_count(user_ip_ele) else ''
+    user_ip = user_ip.strip()
 
     user_description_ele = '//div[@class="user-desc"]'
     user_description = Playwright_.get_text(user_description_ele) if Playwright_.get_count(user_description_ele) else ''
@@ -127,7 +132,7 @@ def get_author_info():
     }
 
 
-def get_author_urls():
+def get_author_title_urls():
     urls = []
     record_count = 0
     while len(urls) < 100:
@@ -144,10 +149,10 @@ def get_author_urls():
             title = Playwright_.get_text(f'({product_ele})[{product_}]/div/div/a[1]/span')
             product_url = Playwright_.get_attribute(f'({product_ele})[{product_}]/div/a[2]', 'href')
             product_url = host + product_url
-            if product_url not in urls:
+            if [title, product_url] not in urls:
                 urls.append([title, product_url])
         if record_count == len(urls):
-            logger.info('当前没有新作品了，已获取所有作品链接')
+            # logger.info('当前没有新作品了，已获取所有作品链接')
             break
 
         record_count = len(urls)
@@ -171,19 +176,18 @@ def deal_date(date):
     return date
 
 
-def get_product_info(url, currentDir='./数据'):
+def get_product_info(url, title, currentDir):
     """获取作品的详情"""
     try:
         Playwright_.goto(url)
 
         # 正文
-        content_ele = '(//div[@class="desc"]/span/a)[1]/preceding-sibling::span'
+        content_ele = '//div[@class="desc"]/span/span'
         content_count = Playwright_.get_count(content_ele)
-        content = Playwright_.get_text(content_ele) if content_count else ''
+        content = ''
+        for content_ in range(1, content_count + 1):
+            content += Playwright_.get_text(f'({content_ele})[{content_}]')
 
-        # 标题
-        title_ele = '//div[@class="note-content"]/div[@class="title"]'
-        title = Playwright_.get_text(title_ele)
 
         # 标签
         tag_ele = '//a[@class="tag"]'
@@ -192,6 +196,7 @@ def get_product_info(url, currentDir='./数据'):
         for tag_ in range(1, tag_count + 1):
             tag = Playwright_.get_text(f'({tag_ele})[{tag_}]')
             tags.append(tag)
+        tags = '，'.join(tags)
 
         # 发布时间
         publish_time = Playwright_.get_text('//span[@class="date"]')
@@ -199,10 +204,11 @@ def get_product_info(url, currentDir='./数据'):
 
         # 点赞数
         like_count = Playwright_.get_text('//div[@class="left"]/span[1]/span[2]')
-        # # 收藏数
-        # collect_count = Playwright_.get_text('//div[@class="left"]/span[2]/span')
+        like_count = like_count if like_count != '点赞' else '0'
+
         # 评论数
         comment_count = Playwright_.get_text('//div[@class="left"]/span[3]/span')
+        comment_count = comment_count if comment_count != '评论' else '0'
 
         # 作品图片
         pictures = list()
@@ -212,11 +218,12 @@ def get_product_info(url, currentDir='./数据'):
         for picture_ in range(1, picture_count + 1):
             picture = Playwright_.get_attribute(f'({picture_ele})[{picture_}]', 'content')
             pictures_date = requests.get(picture).content
-
-            pic_name = os.path.join(currentDir, f'{title[:18]}_{publish_time[:10]}_{picture_}.jpg')
+            pic = f'{title[:18]}_{publish_time[:10]}_{picture_}.jpg'
+            pic_name = os.path.join(currentDir, pic)
             with open(pic_name, 'wb') as f:
                 f.write(pictures_date)
-            pictures.append(pic_name)
+            pictures.append(pic)
+        pictures = ','.join(pictures)
 
         product_info = {
             'content': content,
@@ -232,22 +239,72 @@ def get_product_info(url, currentDir='./数据'):
         return dict()
 
 
-
-
-if __name__ == '__main__':
-    login()
-    search('909030373')
+def run(keyword='909030373'):
+    search(keyword)
     author_url = get_author_url()
     logger.info(f'作者链接：{author_url}')
     Playwright_.goto(author_url)
     author_info = get_author_info()
     logger.info(f'作者信息：{author_info}')
-    urls = get_author_urls()
-    logger.info(f'作品链接：{urls[:5]}')
-    for url in urls:
-        product_info = get_product_info(url[1])
-        logger.info(f'作品详情：{product_info}')
-        coments = get_page_comment
-        logger.info(f'作品评论：{coments}')
+    urls = get_author_title_urls()
+    logger.info(f'共{len(urls)}条作品链接')
 
-        break
+    userCode = author_info['user_code']
+    userName = author_info['user_name']
+    uerIp = author_info['user_ip']
+    userDescription = author_info['user_description']
+    userTag = author_info['user_tag']
+
+    currentDate = time.strftime('%Y-%m-%d', time.localtime())
+    currentDir = os.path.join(dirName, f'{userCode}_{userName}_{currentDate}')
+    os.makedirs(currentDir, exist_ok=True)
+
+    imageDir = os.path.join(currentDir, 'images')
+    os.makedirs(imageDir, exist_ok=True)
+
+    filename = os.path.join(currentDir, f'{userCode}_{userName}_{currentDate}.xlsx')
+
+    headers = ['用户ID', '用户名称', 'IP属地', '用户简介', '用户标签',
+               '笔记标题', '编辑时间', '正文文本', '标签', '点赞数',
+               '评论数', '评论列表', '笔记图片']
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '小红书笔记数据'
+    ws.append(headers)
+
+    # 设置表头样式
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+
+    for title_url in urls:
+        title, url = title_url
+        logger.info(f'\n\n\n作品链接：{url}')
+        product_info = get_product_info(url, title, imageDir)
+        logger.info(f'作品详情：{product_info}')
+        coments = get_page_comment()
+
+        row_data = [
+            userCode,
+            userName,
+            uerIp,
+            userDescription,
+            userTag,
+            title,
+            product_info['publish_time'],
+            product_info['content'],
+            product_info['tags'],
+            product_info['like_count'],
+            product_info['comment_count'],
+            '\n'.join(coments),
+            product_info['pictures']
+        ]
+        ws.append(row_data)
+        wb.save(filename)
+        logger.info(f'保存数据成功：{row_data}')
+        logger.info('等待20秒')
+        time.sleep(20)
+
+if __name__ == '__main__':
+    login()
+    run()
