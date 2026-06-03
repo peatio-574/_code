@@ -3,11 +3,21 @@
 """
 小红书封装函数
 """
-import re
+
+
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).parent.parent))
+
+
 from PlayWright import Playwright_, logger
 import time
 import requests
 import os
+
+
+config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
 
 host = 'https://www.xiaohongshu.com'
 
@@ -19,7 +29,7 @@ def login():
     logger.info('登录小红书....')
     ele = '//li/div/a//span[text()="我"]'
     key = 'login.xiaohongshu'
-    Playwright_.login(host, ele, key)
+    Playwright_.login(host, ele, key, file=config_file)
     logger.info('小红书登录成功')
 
 
