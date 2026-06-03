@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "评论抓取插件",
+  "version": "1.0",
+  "description": "一键爬取当前页面评论，导出CSV，可发Python",
+  "permissions": ["activeTab", "scripting", "downloads"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1:*"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
