@@ -214,7 +214,7 @@ def main_(account_id=1):
 
     login = wd_login(account_id)
     if not login:
-        return False
+        return [None, None, None]
     shop_name = wd_search(start, end)
 
     time.sleep(10)
@@ -225,7 +225,9 @@ def main_(account_id=1):
     for roll in range(1, 6):
         logger.info(f'第{roll}次导出明细....')
         Playwright_.click('//span[text()="导出报表"]')
-        time.sleep(2)
+        time.sleep(8)
+        if Playwright_.get_count('//span[text()="暂无数据"]'):
+            return [None, None, None]
         if Playwright_.get_count('//span[text()="生成报表"]'):
             Playwright_.click('//span[text()="生成报表"]')
         time.sleep(5)
@@ -241,7 +243,7 @@ def main_(account_id=1):
     text = f'✅️ {shop_name}店铺明细数据预生成中....' if status else f'❌️ {shop_name}店铺明细数据预生成失败'
     logger.info(text)
     Playwright_.clear_cookie()
-    return [shop_name, start, end] if status else None
+    return [shop_name, start, end] if status else [None, None, None]
 
 
 def main_save_deal_data(shop_id, shop_name, start, end, filename):
@@ -285,6 +287,8 @@ if __name__ == '__main__':
     for shop_id, shopinfo in enumerate(current_info, start=1):
         if shopinfo:
             shop_name, start, end = shopinfo
+            if not shop_name:
+                continue
             dirname = 'd:/_code/spider_account/数据'
             filename = f'微店-{shop_name}店铺{end}明细.xlsx'
             filename = os.path.join(dirname, filename)

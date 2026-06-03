@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>评论抓取</title>
+<style>
+body {width:320px; padding:10px; font-size:13px;}
+button {width:100%; padding:8px; margin:5px 0;}
+#log {max-height:200px; overflow:auto; border:1px solid #ccc; padding:5px;}
+.status {color: green; font-weight: bold; margin: 5px 0;}
+.status.stopping {color: red;}
+</style>
+</head>
+<body>
+<h3>评论抓取工具</h3>
+<button id="crawlBtn">1. 开始滚动抓取</button>
+<button id="stopBtn" style="display:none; background-color: #ff4444; color: white;">停止抓取</button>
+<button id="exportBtn">2. 导出CSV</button>
+<button id="sendBtn">3. 发送到Python</button>
+<div class="status" id="status">准备就绪</div>
+<div id="log">准备就绪</div>
+<script src="popup.js"></script>
+</body>
+</html>
