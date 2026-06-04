@@ -32,7 +32,7 @@ def login():
     """小红薯登录"""
     logger.info('登录小红书....')
     ele = '//li/div/a//span[text()="我"]'
-    key = 'login.xiaohongshu'
+    key = 'login.xiaohongshu1'
     Playwright_.login(host, ele, key, file=config_file)
     logger.info('小红书登录成功')
 
@@ -105,6 +105,7 @@ def get_author_url():
     author_url = Playwright_.get_attribute(author_ele, 'href')
     author_url = host + author_url
     return author_url
+
 
 def get_author_info():
     """获取博主信息"""
@@ -298,8 +299,8 @@ def run(keyword='909030373'):
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal='center', vertical='center')
     start_id = 0
-    if keyword == '103736623':
-        start_id = 37
+    if keyword == '26567723394':
+        start_id = 41
     for idx_, title_url in enumerate(urls[start_id:], start=start_id+1):
         title, url = title_url
         logger.info('\n')
@@ -331,15 +332,33 @@ def run(keyword='909030373'):
         time.sleep(20)
 
 if __name__ == '__main__':
-    userids = [
-        # '2287611602',
-        # '3865865599',
-        # '546543612w',
-        '103736623',
-        '26742064052,'
-        '264415901',
-        'Gw05161108'
-    ]
+
+    string = """
+26567723394
+261899829
+95189528582
+KIRAjia1125
+9746420503
+95063864829
+5609867723
+664058835
+6739556701
+11520351332
+27470970266
+1804669058
+388233831
+630301923
+8012070792
+9567548993
+1119387905
+95690338543
+2831365419
+6808323931
+267810408
+631136658
+9502256244
+"""
+    userids = string.strip().split('\n')
 
     for user_id_id in userids:
         login()
