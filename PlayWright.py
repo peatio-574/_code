@@ -227,8 +227,10 @@ class Playwright(object):
             logger.error(f'获取元素数量失败：{e}')
             return 0
 
-    def get_text(self, location):
-        return self.page.locator(location).text_content()
+    def get_text(self, location, timeout=5*1000):
+        element = self.page.locator(location)
+        element.wait_for(state='visible', timeout=timeout)
+        return element.text_content()
 
     def get_attribute(self, location, key):
         return self.page.locator(location).get_attribute(key)

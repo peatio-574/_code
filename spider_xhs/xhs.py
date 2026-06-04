@@ -134,7 +134,7 @@ def get_product_info(url, title, currentDir):
         tags = '，'.join(tags)
 
         # 发布时间
-        publish_time = Playwright_.get_text('//span[@class="date"]')
+        publish_time = Playwright_.get_text('//span[@class="date"]', timeout=5*1000)
         publish_time = deal_date(publish_time)
 
         # 点赞数
