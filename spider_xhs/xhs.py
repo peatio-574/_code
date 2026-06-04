@@ -32,7 +32,7 @@ def login():
     """小红薯登录"""
     logger.info('登录小红书....')
     ele = '//li/div/a//span[text()="我"]'
-    key = 'login.xiaohongshu1'
+    key = 'login.xiaohongshu'
     Playwright_.login(host, ele, key, file=config_file)
     logger.info('小红书登录成功')
 
@@ -207,7 +207,7 @@ def run(keyword, extra: list):
 
     userCode = author_info['user_code']
     userName = author_info['user_name']
-    uerIp = author_info['user_ip']
+    userIp = author_info['user_ip']
     userDescription = author_info['user_description']
     userTag = author_info['user_tag']
 
@@ -241,7 +241,7 @@ def run(keyword, extra: list):
         row_data = [
             userCode,
             userName,
-            uerIp,
+            userIp,
             userDescription,
             userTag,
             title,
