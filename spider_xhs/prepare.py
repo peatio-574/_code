@@ -132,9 +132,9 @@ def prepare(keywords):
 
         currentDate = time.strftime('%Y-%m-%d', time.localtime())
         currentDir = os.path.join(dirName, f'{userCode}_{userName}_{currentDate}')
-        if os.path.exists(currentDir):
-            logger.info(f'{keyword}：已处理过')
-            continue
+        # if os.path.exists(currentDir):
+        #     logger.info(f'{keyword}：已处理过')
+        #     continue
         os.makedirs(currentDir, exist_ok=True)
 
         imageDir = os.path.join(currentDir, 'images')
@@ -183,5 +183,5 @@ def prepare(keywords):
 if __name__ == '__main__':
     import pandas
     data_file = './第一批200用户2026.6.3.xlsx'
-    data_ids = pandas.read_excel(data_file, sheet_name=0)['user_id'][-20:]
+    data_ids = pandas.read_excel(data_file, sheet_name=0)['user_id']
     prepare(data_ids)

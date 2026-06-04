@@ -28,6 +28,14 @@ dirName = os.path.join(os.path.dirname(__file__), '数据')
 os. makedirs(dirName, exist_ok=True)
 
 
+def login():
+    """小红薯登录"""
+    logger.info('登录小红书....')
+    ele = '//li/div/a//span[text()="我"]'
+    key = 'login.xiaohongshu1'
+    Playwright_.login(host, ele, key, file=config_file)
+    logger.info('小红书登录成功')
+
 
 def get_comment(comment_ele, comment_):
     """获取单条评论信息（不含回复信息），返回字典"""
@@ -176,7 +184,7 @@ def get_product_info(url, title, currentDir):
         return dict()
 
 
-def run(keyword='909030373'):
+def run(keyword, extra: list):
     # Playwright_.clear_cookie()
     keyword = f'{str(keyword)}.json'
     file = [file for file in os.listdir(dirName) if keyword in file]
@@ -207,8 +215,9 @@ def run(keyword='909030373'):
     ws = wb.active
 
     start_id = 0
-    if '123464203' in str(keyword):
-        start_id = 48
+    if extra[1]:
+        if extra[0] in keyword:
+            start_id = extra[1]
     for idx_, title_url in enumerate(urls[start_id:], start=start_id+1):
         logger.info('\n')
         logger.info('='*80)
@@ -256,6 +265,7 @@ if __name__ == '__main__':
     import pandas
     data_file = './第一批200用户2026.6.3.xlsx'
     data_ids = pandas.read_excel(data_file, sheet_name=0)['user_id']
-    data_ids = data_ids[-12:]
+    extra = ['123464203', 48]
+    login()
     for keyword in data_ids:
-        run(keyword)
+        run(keyword, extra)
