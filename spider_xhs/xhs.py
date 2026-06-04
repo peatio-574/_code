@@ -15,8 +15,8 @@ from PlayWright import Playwright_, logger
 import time
 import requests
 import os
-from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment
+import json
+from openpyxl import load_workbook
 
 
 
@@ -27,20 +27,6 @@ host = 'https://www.xiaohongshu.com'
 dirName = os.path.join(os.path.dirname(__file__), '数据')
 os. makedirs(dirName, exist_ok=True)
 
-
-def login():
-    """小红薯登录"""
-    logger.info('登录小红书....')
-    ele = '//li/div/a//span[text()="我"]'
-    key = 'login.xiaohongshu1'
-    Playwright_.login(host, ele, key, file=config_file)
-    logger.info('小红书登录成功')
-
-
-def search(keyword):
-    """搜索商品"""
-    Playwright_.input('(//div[@class="textarea-wrapper"])[2]/textarea', keyword, enter=True)
-    time.sleep(5)
 
 
 def get_comment(comment_ele, comment_):
@@ -97,78 +83,6 @@ def get_page_comment():
     return comments
 
 
-def get_author_url():
-    """获取博主url"""
-    author_ele = '//div[@class="onebox"]/a'
-    if Playwright_.get_count(author_ele) == 0:
-        return ''
-    author_url = Playwright_.get_attribute(author_ele, 'href')
-    author_url = host + author_url
-    return author_url
-
-
-def get_author_info():
-    """获取博主信息"""
-    user_name = Playwright_.get_text('//div[@class="user-name"]')
-    user_name = user_name.replace(r'\\', '').replace(r'\n', '').replace(r'\r', '').replace(r'\t', '').strip()
-
-    user_code = Playwright_.get_text('//span[@class="user-redId"]')
-
-    user_ip_ele = '//span[@class="user-IP"]'
-    user_ip = Playwright_.get_text(user_ip_ele) if Playwright_.get_count(user_ip_ele) else ''
-    user_ip = user_ip.strip()
-
-    user_description_ele = '//div[@class="user-desc"]'
-    user_description = Playwright_.get_text(user_description_ele) if Playwright_.get_count(user_description_ele) else ''
-
-    tag_ele = '//div[@class="tag-item"]/div[not(contains(@class,"gender"))]'
-    tag_count = Playwright_.get_count(tag_ele)
-    user_tag = ''
-    if tag_count:
-        for tag_ in range(1, Playwright_.get_count(tag_ele) + 1):
-            user_tag += Playwright_.get_text(f'({tag_ele})[{tag_}]') + ','
-        user_tag = user_tag[:-1]
-    return {
-        'user_name': user_name,
-        'user_code': user_code,
-        'user_ip': user_ip,
-        'user_description': user_description,
-        'user_tag': user_tag,
-    }
-
-
-def get_author_title_urls():
-    urls = []
-    record_count = 0
-    while len(urls) < 100:
-        time.sleep(3)
-        product_ele = '//section[@data-height]'
-        product_count = Playwright_.get_count(product_ele)
-        if product_count == 0:
-            break
-
-
-        for product_ in range(1, product_count + 1):
-            if len(urls) == 100:
-                break
-            title = Playwright_.get_text(f'({product_ele})[{product_}]/div/div/a[1]/span')
-            product_url = Playwright_.get_attribute(f'({product_ele})[{product_}]/div/a[2]', 'href')
-            product_url = host + product_url
-            if [title, product_url] not in urls:
-                urls.append([title, product_url])
-        if record_count == len(urls):
-            # logger.info('当前没有新作品了，已获取所有作品链接')
-            break
-
-        record_count = len(urls)
-        if len(urls) >= 100:
-            break
-        Playwright_.page.keyboard.press('PageDown')
-        Playwright_.page.keyboard.press('PageDown')
-        Playwright_.page.keyboard.press('PageDown')
-    return urls
-
-
 def deal_date(date):
     """处理发布、评论、回复时间"""
     today = time.strftime('%Y-%m-%d', time.localtime())
@@ -180,9 +94,10 @@ def deal_date(date):
     date = date.replace('今天', today)
     return date
 
+
 def deal_str(title_text):
     import re
-    pattern = r'[^\u4e00-\u9fa5a-zA-Z0-9_\-=\+\.,，。&~！! ]'
+    pattern = r'[^\u4e00-\u9fa5a-zA-Z0-9_\-=\+\.,，。&~！!()（） ]'
     title_text = re.sub(pattern, '', title_text)
     return title_text
 
@@ -192,6 +107,15 @@ def get_product_info(url, title, currentDir):
     try:
         Playwright_.goto(url)
         time.sleep(3)
+        close_ele = '//div[contains(@class, "close-button")]'
+
+        error_ele = '//div[text()="访问频繁，请稍后再试"]'
+        if Playwright_.get_count(error_ele):
+            logger.error('❌️ 访问频繁，请稍后再试')
+            exit()
+
+        if Playwright_.get_count(close_ele):
+            Playwright_.click(close_ele)
 
         # 正文
         content_ele = '//div[@class="desc"]/span/span'
@@ -225,7 +149,7 @@ def get_product_info(url, title, currentDir):
         pictures = list()
         picture_ele = '//meta[@name="og:url"]/preceding-sibling::meta[@name="og:image"]'
         picture_count = Playwright_.get_count(picture_ele)
-        picture_count = min(picture_count, 5)
+        picture_count = min(picture_count, 3)
         for picture_ in range(1, picture_count + 1):
             picture = Playwright_.get_attribute(f'({picture_ele})[{picture_}]', 'content')
             pictures_date = requests.get(picture).content
@@ -253,16 +177,24 @@ def get_product_info(url, title, currentDir):
 
 
 def run(keyword='909030373'):
-    search(keyword)
-    author_url = get_author_url()
-    if not author_url:
-        logger.info(f'{keyword}：作者不存在')
-        return False
-    logger.info(f'作者链接：{author_url}')
-    Playwright_.goto(author_url)
-    author_info = get_author_info()
-    logger.info(f'作者信息：{author_info}')
-    urls = get_author_title_urls()
+    # Playwright_.clear_cookie()
+    keyword = f'{str(keyword)}.json'
+    file = [file for file in os.listdir(dirName) if keyword in file]
+    if not file:
+        logger.info(f'{keyword}搜索无结果')
+        return
+    with open(os.path.join(dirName, file[0]), 'r', encoding='utf-8') as f:
+        text = json.load(f)
+
+    author_url = text['博主链接']
+    author_info = text['博主详情']
+    urls = text['作品'][:80]
+    imageDir = text['图片保存目录']
+    filename = text['信息保存目录']
+
+    logger.info(f'当前关键字：{keyword}')
+    logger.info(f'博主链接：{author_url}')
+    logger.info(f'博主详情：{author_info}')
     logger.info(f'共{len(urls)}条作品链接')
 
     userCode = author_info['user_code']
@@ -271,42 +203,29 @@ def run(keyword='909030373'):
     userDescription = author_info['user_description']
     userTag = author_info['user_tag']
 
-    currentDate = time.strftime('%Y-%m-%d', time.localtime())
-    currentDir = os.path.join(dirName, f'{userCode}_{userName}_{currentDate}')
-    os.makedirs(currentDir, exist_ok=True)
+    wb = load_workbook(filename)
+    ws = wb.active
 
-    imageDir = os.path.join(currentDir, 'images')
-    os.makedirs(imageDir, exist_ok=True)
-
-    filename = os.path.join(currentDir, f'{userCode}_{userName}_{currentDate}.xlsx')
-
-    if os.path.exists(filename):
-        # 如果文件存在，加载现有工作簿
-        from openpyxl import load_workbook
-        wb = load_workbook(filename)
-        ws = wb.active
-    else:
-        headers = ['用户ID', '用户名称', 'IP属地', '用户简介', '用户标签',
-                   '笔记标题', '编辑时间', '正文文本', '标签', '点赞数',
-                   '评论数', '评论列表', '笔记图片']
-        wb = Workbook()
-        ws = wb.active
-        ws.title = '小红书笔记数据'
-        ws.append(headers)
-
-    # 设置表头样式
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-        cell.alignment = Alignment(horizontal='center', vertical='center')
     start_id = 0
-    if keyword == '26567723394':
-        start_id = 41
+    if '123464203' in str(keyword):
+        start_id = 48
     for idx_, title_url in enumerate(urls[start_id:], start=start_id+1):
-        title, url = title_url
         logger.info('\n')
         logger.info('='*80)
+        title, url = title_url
+        logger.info(f'关键词：{keyword}，当前博主：{userName}，当前标题：{title}')
         logger.info(f'共{len(urls)}条链接，第{idx_}条作品链接：{url}')
-        product_info = get_product_info(url, title, imageDir)
+        product_info = dict()
+        for roll in range(5):
+            product_info = get_product_info(url, title, imageDir)
+            if product_info:
+                break
+
+        if not product_info:
+            logger.error(title)
+            logger.error('获取作品详情失败')
+            continue
+
         logger.info(f'作品详情：{product_info}')
         coments = get_page_comment()
 
@@ -328,38 +247,14 @@ def run(keyword='909030373'):
         ws.append(row_data)
         wb.save(filename)
         logger.info(f'保存数据成功：{row_data}')
-        logger.info('等待20秒')
-        time.sleep(20)
+        # sleep_sec = 5
+        # logger.info(f'等待{sleep_sec}秒')
+        # time.sleep(sleep_sec)
 
 if __name__ == '__main__':
-
-    string = """
-26567723394
-261899829
-95189528582
-KIRAjia1125
-9746420503
-95063864829
-5609867723
-664058835
-6739556701
-11520351332
-27470970266
-1804669058
-388233831
-630301923
-8012070792
-9567548993
-1119387905
-95690338543
-2831365419
-6808323931
-267810408
-631136658
-9502256244
-"""
-    userids = string.strip().split('\n')
-
-    for user_id_id in userids:
-        login()
-        run(user_id_id)
+    import pandas
+    data_file = './第一批200用户2026.6.3.xlsx'
+    data_ids = pandas.read_excel(data_file, sheet_name=0)['user_id']
+    data_ids = data_ids[-12:]
+    for keyword in data_ids:
+        run(keyword)
