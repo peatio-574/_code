@@ -247,6 +247,7 @@ def run(keyword='909030373'):
         ws.append(row_data)
         wb.save(filename)
         logger.info(f'保存数据成功：{row_data}')
+    os.remove(os.path.join(dirName, file[0]))
         # sleep_sec = 5
         # logger.info(f'等待{sleep_sec}秒')
         # time.sleep(sleep_sec)
