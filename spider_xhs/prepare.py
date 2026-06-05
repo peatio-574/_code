@@ -95,7 +95,10 @@ def get_author_title_urls():
         for product_ in range(1, product_count + 1):
             if len(urls) == 80:
                 break
-            title = Playwright_.get_text(f'({product_ele})[{product_}]/div/div/a[1]/span')
+            title = ''
+            title_ele = f'({product_ele})[{product_}]/div/div/a[1]/span'
+            if Playwright_.get_count(title_ele):
+                title = Playwright_.get_text(title_ele)
             product_url = Playwright_.get_attribute(f'({product_ele})[{product_}]/div/a[2]', 'href')
             # product_url = host + product_url
             if [title, product_url] not in urls:
@@ -149,7 +152,7 @@ def prepare(keywords):
         else:
             headers = ['用户ID', '用户名称', 'IP属地', '用户简介', '用户标签',
                        '笔记标题', '编辑时间', '正文文本', '标签', '点赞数',
-                       '评论数', '评论列表', '笔记图片']
+                       '评论数', '评论列表', '笔记图片', '作品链接']
             wb = Workbook()
             ws = wb.active
             ws.title = '小红书笔记数据'
