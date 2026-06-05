@@ -34,8 +34,6 @@ def login():
         return False
 
 
-
-
 def get_product_info(title, imageDir):
     """获取作品的详情"""
     try:
