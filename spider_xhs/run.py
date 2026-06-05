@@ -123,7 +123,7 @@ def run(keyword):
 
 
     if not os.path.exists(json_file):
-        logger.info(f'✗ 博主 {keyword}：作者不存在')
+        logger.info(f'✗ 博主 {keyword}：博主不存在')
         return None
 
     with open(json_file, 'r', encoding='utf-8') as f:
@@ -155,12 +155,20 @@ def run(keyword):
     wb = load_workbook(filename)
     ws = wb.active
 
+
+    exists_urls = []
+    for row in range(2, ws.max_row + 1):
+        value = ws.cell(row=row, column=14).value
+        exists_urls.append(value)
+
     close_ele = '//div[@class="close close-mask-dark"]'
 
-    success = 0
     for product_id, product_ in enumerate(products, start=1):
         logger.info(f'\n--- 当前关键词：{keyword}，博主：{userName}，处理第 {product_id}/{total} 个作品 ---')
         title, productUrl = product_
+        if productUrl in exists_urls:
+            logger.info(f'作品已存在，跳过')
+            continue
         logger.info(f'作品标题：{title}')
         try:
 
@@ -199,12 +207,13 @@ def run(keyword):
                 product_info['like_count'],
                 product_info['comment_count'],
                 '\n'.join(coments),
-                product_info['pictures']
+                product_info['pictures'],
+                productUrl
             ]
             ws.append(row_data)
             wb.save(filename)
-            success += 1
-            logger.info(f'✓ 数据已保存，当前共 {success} 个作品')
+            exists_urls.append(title)
+            logger.info(f'✓ 数据已保存，当前共 {len(exists_urls)} 个作品')
 
 
         except Exception as e:
@@ -220,16 +229,17 @@ def run(keyword):
         # Playwright_.page.keyboard.press('PageDown')
         # Playwright_.page.keyboard.press('PageDown')
 
-    logger.info(f'\n✓ 博主 {userName} 数据采集完成，共 {success} 个作品')
-    os.remove(json_file)
+    logger.info(f'\n✓ 博主 {userName} 数据采集完成，共 {len(exists_urls)} 个作品')
+    if len(exists_urls) == len(products):
+        os.remove(json_file)
     return True
 
 
 if __name__ == '__main__':
     import pandas
-    from prepare import prepare
+    # from prepare import prepare
 
-    data_file = './第一批200博主2026.6.3.xlsx'
+    data_file = os.path.join(os.path.dirname(__file__), '第一批200用户2026.6.3.xlsx')
     data_ids = pandas.read_excel(data_file, sheet_name=0)['user_id']
     # prepare(data_ids)
 
