@@ -1,13 +1,10 @@
 // ==UserScript==
-// @name         Cookie自动循环刷新 - 全自动版
+// @name         页面自动定时刷新 - 精简版
 // @namespace    http://tampermonkey.net/
-// @version      2.0
-// @description  全自动Cookie循环：获取→保存→刷新→保存→循环，刷新后自动继续
+// @version      1.0
+// @description  简单的页面定时自动刷新，无Cookie操作
 // @author       You
 // @match        *://*/*
-// @grant        GM_setValue
-// @grant        GM_getValue
-// @grant        GM_deleteValue
 // @grant        GM_addStyle
 // @grant        GM_notification
 // @run-at       document-end
@@ -18,11 +15,9 @@
 
     // ==================== 配置 ====================
     const CONFIG = {
-        REFRESH_INTERVAL: 300,        // 刷新间隔（秒），默认5分钟
-        AUTO_RESUME: true,             // 刷新后自动恢复
-        SAVE_ON_LOAD: true,            // 页面加载时自动保存Cookie
-        SHOW_NOTIFICATION: true,       // 显示通知
-        LOG_MAX_LINES: 50             // 日志最大行数
+        REFRESH_INTERVAL: 300,        // 默认刷新间隔（秒），5分钟
+        SHOW_NOTIFICATION: true,      // 显示通知
+        LOG_MAX_LINES: 30             // 日志最大行数
     };
 
     // ==================== 全局变量 ====================
@@ -30,18 +25,18 @@
     let refreshTimer = null;
     let countdownTimer = null;
     let remainingSeconds = 0;
-    let cycleCount = 0;
+    let refreshCount = 0;
     let currentInterval = CONFIG.REFRESH_INTERVAL;
 
     // ==================== 样式 ====================
     GM_addStyle(`
-        #cookie-loop-panel {
+        #refresh-panel {
             position: fixed;
             top: 10px;
             right: 10px;
-            width: 320px;
+            width: 300px;
             background: white;
-            border: 3px solid #4CAF50;
+            border: 3px solid #2196F3;
             border-radius: 15px;
             z-index: 99999;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
@@ -54,7 +49,7 @@
             to { transform: translateX(0); opacity: 1; }
         }
         #panel-header {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
             color: white;
             padding: 15px;
             display: flex;
@@ -95,14 +90,6 @@
             border-radius: 10px;
             margin-bottom: 12px;
             border-left: 4px solid #2196F3;
-        }
-        .info-box.warning {
-            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
-            border-left-color: #FF9800;
-        }
-        .info-box.success {
-            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
-            border-left-color: #4CAF50;
         }
         .info-label {
             font-size: 11px;
@@ -267,7 +254,7 @@
             right: 20px;
             width: 60px;
             height: 60px;
-            background: linear-gradient(135deg, #4CAF50, #45a049);
+            background: linear-gradient(135deg, #2196F3, #1976D2);
             color: white;
             border-radius: 50%;
             display: none;
@@ -276,7 +263,7 @@
             font-size: 28px;
             cursor: pointer;
             z-index: 99998;
-            box-shadow: 0 6px 16px rgba(76,175,80,0.4);
+            box-shadow: 0 6px 16px rgba(33,150,243,0.4);
             transition: all 0.3s;
             animation: bounce 2s infinite;
         }
@@ -293,14 +280,6 @@
     `);
 
     // ==================== 工具函数 ====================
-    function getCurrentDomain() {
-        return window.location.hostname;
-    }
-
-    function getAllCookies() {
-        return document.cookie;
-    }
-
     function notify(title, message, type = 'info') {
         if (!CONFIG.SHOW_NOTIFICATION) return;
 
@@ -310,14 +289,10 @@
                 title: title,
                 timeout: 3000,
                 onclick: () => {
-                    const panel = document.getElementById('cookie-loop-panel');
-                    if (panel) {
-                        panel.style.display = 'block';
-                    }
+                    const panel = document.getElementById('refresh-panel');
+                    if (panel) panel.style.display = 'block';
                     const minBtn = document.getElementById('minimize-btn');
-                    if (minBtn) {
-                        minBtn.classList.remove('show');
-                    }
+                    if (minBtn) minBtn.classList.remove('show');
                 }
             });
         } catch (e) {
@@ -327,26 +302,26 @@
 
     // ==================== UI 元素 ====================
     const panel = document.createElement('div');
-    panel.id = 'cookie-loop-panel';
+    panel.id = 'refresh-panel';
     panel.innerHTML = `
         <div id="panel-header">
-            <h3>🔄 Cookie自动循环</h3>
+            <h3>🔄 页面定时刷新</h3>
             <button class="panel-btn" id="minimize-panel" title="最小化">−</button>
         </div>
         <div id="panel-body">
-            <div class="info-box success">
+            <div class="info-box">
                 <div class="info-label">运行状态</div>
-                <div class="info-value" id="status-text"> 未启动</div>
+                <div class="info-value" id="status-text">未启动</div>
             </div>
             
             <div class="stats-grid">
                 <div class="stat-item">
-                    <div class="info-label">循环次数</div>
-                    <div class="info-value" id="cycle-count" style="color:#4CAF50;">0</div>
+                    <div class="info-label">刷新次数</div>
+                    <div class="info-value" id="refresh-count" style="color:#4CAF50;">0</div>
                 </div>
                 <div class="stat-item">
-                    <div class="info-label">Cookie数量</div>
-                    <div class="info-value" id="cookie-count" style="color:#2196F3;">0</div>
+                    <div class="info-label">当前页面</div>
+                    <div class="info-value" style="font-size:12px; color:#666;">${window.location.hostname}</div>
                 </div>
             </div>
             
@@ -373,11 +348,11 @@
             
             <div class="settings-box" id="settings-box">
                 <div class="setting-item">
-                    <label> 刷新间隔（秒）</label>
+                    <label>刷新间隔（秒）</label>
                     <input type="number" id="interval-input" value="${CONFIG.REFRESH_INTERVAL}" min="30" max="3600" placeholder="30-3600秒">
                 </div>
                 <div class="setting-item">
-                    <label> 显示通知</label>
+                    <label>显示通知</label>
                     <input type="checkbox" id="notification-toggle" ${CONFIG.SHOW_NOTIFICATION ? 'checked' : ''}>
                 </div>
                 <button class="ctrl-btn btn-start" id="saveSettingsBtn" style="width:100%; margin-top:8px;">💾 保存设置</button>
@@ -397,9 +372,8 @@
     // ==================== 日志功能 ====================
     const logEl = document.getElementById('log-area');
     const statusText = document.getElementById('status-text');
-    const cycleCountEl = document.getElementById('cycle-count');
+    const refreshCountEl = document.getElementById('refresh-count');
     const countdownEl = document.getElementById('countdown');
-    const cookieCountEl = document.getElementById('cookie-count');
     const progressFill = document.getElementById('progress-fill');
     const progressText = document.getElementById('progress-text');
 
@@ -411,101 +385,60 @@
         logEl.appendChild(div);
         logEl.scrollTop = logEl.scrollHeight;
 
+        // 限制日志行数
         while (logEl.children.length > CONFIG.LOG_MAX_LINES) {
             logEl.removeChild(logEl.firstChild);
         }
     }
 
     // ==================== 核心逻辑 ====================
-    function saveCookie() {
-        const domain = getCurrentDomain();
-        const cookies = getAllCookies();
-        const cookieKey = `cookie_${domain}`;
-        const stateKey = `state_${domain}`;
-
-        if (!cookies) {
-            log('️ 当前页面没有Cookie', 'warning');
-            return 0;
-        }
-
-        // 保存Cookie
-        GM_setValue(cookieKey, {
-            cookies: cookies,
-            timestamp: new Date().toISOString(),
-            url: window.location.href,
-            cycleCount: cycleCount
-        });
-
-        // 保存运行状态（用于刷新后恢复）
+    function startRefreshCycle() {
         if (isRunning) {
-            GM_setValue(stateKey, {
-                isRunning: true,
-                cycleCount: cycleCount,
-                interval: currentInterval,
-                startTime: Date.now()
-            });
-        }
-
-        const count = cookies.split(';').length;
-        cookieCountEl.textContent = count;
-
-        log(`✅ 已保存 ${count} 个Cookie`, 'success');
-        return count;
-    }
-
-    function startCycle() {
-        if (isRunning) {
-            log('⚠️ 已经在运行中', 'warning');
+            log('⚠️ 刷新任务已在运行中', 'warning');
             return;
         }
 
         isRunning = true;
-        cycleCount = 0;
 
+        // 更新UI状态
         document.getElementById('startBtn').style.display = 'none';
         document.getElementById('stopBtn').style.display = 'block';
         statusText.textContent = '🟢 运行中';
         statusText.className = 'info-value running';
 
-        log('🚀 自动循环已启动', 'success');
-        log(' 工作流程：获取Cookie → 保存 → 等待 → 刷新 → 循环', 'info');
-        notify('Cookie循环', '✅ 自动循环已启动', 'success');
-
-        // 先保存一次Cookie
-        saveCookie();
+        log('🚀 定时刷新已启动', 'success');
+        notify('页面刷新', '✅ 定时刷新已启动', 'success');
 
         // 开始倒计时循环
-        executeCycle();
+        executeRefreshCycle();
     }
 
-    function executeCycle() {
+    function executeRefreshCycle() {
         if (!isRunning) return;
 
-        cycleCount++;
-        cycleCountEl.textContent = cycleCount;
+        refreshCount++;
+        refreshCountEl.textContent = refreshCount;
 
+        // 获取当前设置的间隔时间
         currentInterval = parseInt(document.getElementById('interval-input').value) || CONFIG.REFRESH_INTERVAL;
         remainingSeconds = currentInterval;
 
         log(`━━━━━━━━━━━━━━━━━━━━`, 'info');
-        log(`🔄 第 ${cycleCount} 次循环开始`, 'warning');
+        log(`🔄 第 ${refreshCount} 次刷新倒计时开始`, 'info');
         log(`⏱️ 刷新间隔：${currentInterval} 秒`, 'info');
 
-        // 倒计时显示
+        // 开始倒计时显示
         updateCountdown();
         countdownTimer = setInterval(updateCountdown, 1000);
 
-        // 定时刷新
+        // 设置定时刷新
         refreshTimer = setTimeout(() => {
             if (!isRunning) return;
 
-            log('⏰ 时间到！开始刷新页面...', 'warning');
-
-            // 保存当前Cookie
-            saveCookie();
-
+            log('⏰ 时间到！准备刷新页面...', 'warning');
             log('🔄 3秒后刷新页面...', 'info');
 
+            // 3秒后执行刷新
             setTimeout(() => {
                 if (isRunning) {
                     window.location.reload();
@@ -514,6 +447,7 @@
         }, currentInterval * 1000);
     }
 
+    // 更新倒计时显示
     function updateCountdown() {
         remainingSeconds--;
 
@@ -522,27 +456,26 @@
             clearInterval(countdownTimer);
         }
 
+        // 格式化倒计时（分:秒）
         const minutes = Math.floor(remainingSeconds / 60);
         const seconds = remainingSeconds % 60;
         countdownEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
+        // 更新进度条
         const progress = ((currentInterval - remainingSeconds) / currentInterval) * 100;
         progressFill.style.width = `${progress}%`;
         progressText.textContent = `${Math.round(progress)}%`;
     }
 
-    function stopCycle() {
+    // 停止刷新
+    function stopRefreshCycle() {
         isRunning = false;
 
-        if (refreshTimer) {
-            clearTimeout(refreshTimer);
-            refreshTimer = null;
-        }
-        if (countdownTimer) {
-            clearInterval(countdownTimer);
-            countdownTimer = null;
-        }
+        // 清除定时器
+        if (refreshTimer) clearTimeout(refreshTimer);
+        if (countdownTimer) clearInterval(countdownTimer);
 
+        // 重置UI状态
         document.getElementById('startBtn').style.display = 'block';
         document.getElementById('stopBtn').style.display = 'none';
         statusText.textContent = '⏸ 已停止';
@@ -551,120 +484,29 @@
         progressFill.style.width = '0%';
         progressText.textContent = '0%';
 
-        // 清除运行状态
-        const domain = getCurrentDomain();
-        const stateKey = `state_${domain}`;
-        GM_deleteValue(stateKey);
-
-        log('⏹ 自动循环已停止', 'warning');
-        notify('Cookie循环', ' 自动循环已停止', 'warning');
-    }
-
-    // ==================== 自动恢复 ====================
-    function autoResume() {
-        if (!CONFIG.AUTO_RESUME) return;
-
-        const domain = getCurrentDomain();
-        const stateKey = `state_${domain}`;
-        const cookieKey = `cookie_${domain}`;
-
-        const savedState = GM_getValue(stateKey);
-        const savedCookie = GM_getValue(cookieKey);
-
-        if (savedState && savedState.isRunning) {
-            const elapsed = Math.floor((Date.now() - savedState.startTime) / 1000);
-            const remaining = savedState.interval - (elapsed % savedState.interval);
-
-            log('🔍 检测到之前的运行状态', 'info');
-            log(` 已运行 ${savedState.cycleCount} 次循环`, 'info');
-
-            if (savedCookie) {
-                const saveTime = new Date(savedCookie.timestamp);
-                const hoursAgo = ((Date.now() - saveTime) / (1000 * 60 * 60)).toFixed(1);
-                log(`💾 发现保存的Cookie（${hoursAgo}小时前）`, 'success');
-            }
-
-            // 自动恢复运行
-            setTimeout(() => {
-                isRunning = true;
-                cycleCount = savedState.cycleCount;
-                currentInterval = savedState.interval;
-                remainingSeconds = remaining > 0 ? remaining : savedState.interval;
-
-                document.getElementById('startBtn').style.display = 'none';
-                document.getElementById('stopBtn').style.display = 'block';
-                statusText.textContent = '🟢 运行中（自动恢复）';
-                statusText.className = 'info-value running';
-                cycleCountEl.textContent = cycleCount;
-
-                log('🚀 自动恢复运行，继续循环', 'success');
-                notify('Cookie循环', '🔄 已自动恢复运行', 'success');
-
-                // 先保存当前Cookie
-                saveCookie();
-
-                // 继续倒计时
-                updateCountdown();
-                countdownTimer = setInterval(updateCountdown, 1000);
-
-                refreshTimer = setTimeout(() => {
-                    if (isRunning) {
-                        log('⏰ 时间到！刷新页面...', 'warning');
-                        saveCookie();
-                        setTimeout(() => {
-                            if (isRunning) window.location.reload();
-                        }, 3000);
-                    }
-                }, remainingSeconds * 1000);
-            }, 2000);
-        } else if (savedCookie) {
-            const saveTime = new Date(savedCookie.timestamp);
-            const hoursAgo = ((Date.now() - saveTime) / (1000 * 60 * 60)).toFixed(1);
-            log(`📋 发现保存的Cookie（${hoursAgo}小时前）`, 'info');
-            log(`💡 点击"▶ 启动"开始自动循环`, 'info');
-        }
-    }
-
-    // ==================== 页面加载时保存Cookie ====================
-    function autoSaveOnLoad() {
-        if (!CONFIG.SAVE_ON_LOAD) return;
-
-        setTimeout(() => {
-            const domain = getCurrentDomain();
-            const cookies = getAllCookies();
-            if (cookies) {
-                const count = cookies.split(';').length;
-                const cookieKey = `cookie_${domain}`;
-
-                GM_setValue(cookieKey, {
-                    cookies: cookies,
-                    timestamp: new Date().toISOString(),
-                    url: window.location.href,
-                    cycleCount: cycleCount
-                });
-
-                cookieCountEl.textContent = count;
-                log(` 页面加载完成，自动保存 ${count} 个Cookie`, 'success');
-            }
-        }, 3000);
+        log('⏹ 定时刷新已停止', 'warning');
+        notify('页面刷新', '⏹ 定时刷新已停止', 'warning');
     }
 
     // ==================== 事件绑定 ====================
+    // 启动按钮
     document.getElementById('startBtn').addEventListener('click', () => {
         log('👆 用户点击启动按钮', 'info');
-        startCycle();
+        startRefreshCycle();
     });
 
+    // 停止按钮
     document.getElementById('stopBtn').addEventListener('click', () => {
-        log(' 用户点击停止按钮', 'info');
-        stopCycle();
+        log('👆 用户点击停止按钮', 'info');
+        stopRefreshCycle();
     });
 
+    // 设置按钮
     document.getElementById('settingsBtn').addEventListener('click', () => {
-        const box = document.getElementById('settings-box');
-        box.classList.toggle('show');
+        document.getElementById('settings-box').classList.toggle('show');
     });
 
+    // 保存设置
     document.getElementById('saveSettingsBtn').addEventListener('click', () => {
         const interval = parseInt(document.getElementById('interval-input').value);
         const notification = document.getElementById('notification-toggle').checked;
@@ -673,31 +515,29 @@
             CONFIG.REFRESH_INTERVAL = interval;
             CONFIG.SHOW_NOTIFICATION = notification;
             currentInterval = interval;
-            log(` 设置已保存：刷新间隔 ${interval} 秒`, 'success');
+            log(`✅ 设置已保存：刷新间隔 ${interval} 秒`, 'success');
             document.getElementById('settings-box').classList.remove('show');
         } else {
             log('❌ 间隔必须在30-3600秒之间', 'error');
         }
     });
 
+    // 最小化面板
     document.getElementById('minimize-panel').addEventListener('click', () => {
         panel.style.display = 'none';
         minimizeBtn.classList.add('show');
         log('📌 面板已最小化', 'info');
     });
 
+    // 恢复面板
     minimizeBtn.addEventListener('click', () => {
         panel.style.display = 'block';
         minimizeBtn.classList.remove('show');
         log('📌 面板已打开', 'info');
     });
 
-    // ==================== 初始化 ====================
-    window.addEventListener('load', () => {
-        setTimeout(() => {
-            autoResume();
-            autoSaveOnLoad();
-        }, 2000);
-    });
+    // 初始化日志
+    log('✅ 页面定时刷新脚本已加载完成', 'success');
+    log('💡 点击"▶ 启动"开始定时刷新', 'info');
 
 })();
