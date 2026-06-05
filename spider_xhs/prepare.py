@@ -93,11 +93,11 @@ def get_author_title_urls():
 
 
         for product_ in range(1, product_count + 1):
-            if len(urls) == 100:
+            if len(urls) == 80:
                 break
             title = Playwright_.get_text(f'({product_ele})[{product_}]/div/div/a[1]/span')
             product_url = Playwright_.get_attribute(f'({product_ele})[{product_}]/div/a[2]', 'href')
-            product_url = host + product_url
+            # product_url = host + product_url
             if [title, product_url] not in urls:
                 urls.append([title, product_url])
         if record_count == len(urls):

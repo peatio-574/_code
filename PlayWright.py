@@ -218,7 +218,7 @@ class Playwright(object):
             self.context.add_cookies(cookie)
 
     def wait_for_timeout(self, timeout=3000):
-       self.page.wait_for_timeout(timeout)
+        self.page.wait_for_timeout(timeout)
 
     def get_count(self, location):
         try:
@@ -229,8 +229,8 @@ class Playwright(object):
 
     def get_text(self, location, timeout=5*1000):
         element = self.page.locator(location)
-        element.wait_for(state='visible', timeout=timeout)
-        return element.text_content()
+        # element.wait_for(state='visible', timeout=timeout)
+        return element.inner_text()
 
     def get_attribute(self, location, key):
         return self.page.locator(location).get_attribute(key)
