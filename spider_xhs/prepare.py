@@ -184,4 +184,5 @@ if __name__ == '__main__':
     import pandas
     data_file = './第一批200用户2026.6.3.xlsx'
     data_ids = pandas.read_excel(data_file, sheet_name=0)['user_id']
+    logger.info(f'共{len(data_ids)}个博主，开始准备json数据')
     prepare(data_ids)

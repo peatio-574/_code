@@ -110,9 +110,9 @@ def get_product_info(title, imageDir):
 
 
 def run(keyword):
-    """运行单个用户的数据采集"""
+    """运行单个博主的数据采集"""
     logger.info('\n' + '=' * 80)
-    logger.info(f'开始处理用户：{keyword}')
+    logger.info(f'开始处理博主：{keyword}')
     logger.info('=' * 80)
 
     if not login():
@@ -123,7 +123,7 @@ def run(keyword):
 
 
     if not os.path.exists(json_file):
-        logger.info(f'✗ 用户 {keyword}：作者不存在')
+        logger.info(f'✗ 博主 {keyword}：作者不存在')
         return None
 
     with open(json_file, 'r', encoding='utf-8') as f:
@@ -159,7 +159,7 @@ def run(keyword):
 
     success = 0
     for product_id, product_ in enumerate(products, start=1):
-        logger.info(f'\n--- 处理第 {product_id}/{total} 个作品 ---')
+        logger.info(f'\n--- 当前关键词：{keyword}，博主：{userName}，处理第 {product_id}/{total} 个作品 ---')
         title, productUrl = product_
         logger.info(f'作品标题：{title}')
         try:
@@ -220,7 +220,7 @@ def run(keyword):
         # Playwright_.page.keyboard.press('PageDown')
         # Playwright_.page.keyboard.press('PageDown')
 
-    logger.info(f'\n✓ 用户 {userName} 数据采集完成，共 {success} 个作品')
+    logger.info(f'\n✓ 博主 {userName} 数据采集完成，共 {success} 个作品')
     os.remove(json_file)
     return True
 
@@ -229,12 +229,12 @@ if __name__ == '__main__':
     import pandas
     from prepare import prepare
 
-    data_file = './第一批200用户2026.6.3.xlsx'
+    data_file = './第一批200博主2026.6.3.xlsx'
     data_ids = pandas.read_excel(data_file, sheet_name=0)['user_id']
-    prepare(data_ids)
+    # prepare(data_ids)
 
     logger.info('=' * 80)
-    logger.info(f'开始批量处理 {len(data_ids)} 个用户')
+    logger.info(f'开始批量处理 {len(data_ids)} 个博主')
     logger.info('=' * 80)
 
     success_count = 0
@@ -252,11 +252,11 @@ if __name__ == '__main__':
             else:
                 fail_count += 1
         except Exception as e:
-            logger.error(f'✗ 用户 {user_id} 处理异常：{e}')
+            logger.error(f'✗ 博主 {user_id} 处理异常：{e}')
             fail_count += 1
 
     logger.info('\n' + '=' * 80)
     logger.info(f'全部处理完成！')
-    logger.info(f'成功：{success_count} 个用户')
-    logger.info(f'失败：{fail_count} 个用户')
+    logger.info(f'成功：{success_count} 个博主')
+    logger.info(f'失败：{fail_count} 个博主')
     logger.info('=' * 80)
