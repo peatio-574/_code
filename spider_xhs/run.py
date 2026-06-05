@@ -115,15 +115,14 @@ def run(keyword):
     logger.info(f'开始处理博主：{keyword}')
     logger.info('=' * 80)
 
-    if not login():
-        logger.error('登录失败，终止执行')
-        return None
-
     json_file = os.path.join(dirName, f'{keyword}.json')
-
 
     if not os.path.exists(json_file):
         logger.info(f'✗ 博主 {keyword}：博主不存在')
+        return None
+
+    if not login():
+        logger.error('登录失败，终止执行')
         return None
 
     with open(json_file, 'r', encoding='utf-8') as f:
