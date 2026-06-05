@@ -24,7 +24,7 @@ def login():
     logger.info('=' * 80)
     logger.info('开始登录小红书....')
     ele = '//li/div/a//span[text()="我"]'
-    key = 'login.xiaohongshu1'
+    key = 'login.xiaohongshu'
     try:
         Playwright_.login(host, ele, key, file=config_file)
         logger.info('✓ 小红书登录成功')
