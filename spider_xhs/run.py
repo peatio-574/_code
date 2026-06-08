@@ -107,7 +107,7 @@ def get_product_info(title, imageDir):
         return dict()
 
 
-def run(keyword):
+def run(idx, keyword):
     """运行单个博主的数据采集"""
     logger.info('\n' + '=' * 80)
     logger.info(f'开始处理博主：{keyword}')
@@ -161,7 +161,7 @@ def run(keyword):
     close_ele = '//div[@class="close close-mask-dark"]'
 
     for product_id, product_ in enumerate(products, start=1):
-        logger.info(f'\n--- 当前关键词：{keyword}，博主：{userName}，处理第 {product_id}/{total} 个作品 ---')
+        logger.info(f'\n--- 当前第{idx}个关键词：{keyword}，博主：{userName}，处理第 {product_id}/{total} 个作品 ---')
         title, productUrl = product_
         if productUrl in exists_urls:
             logger.info(f'作品已存在，跳过')
@@ -238,7 +238,7 @@ if __name__ == '__main__':
 
     data_file = os.path.join(os.path.dirname(__file__), '第一批200用户2026.6.3.xlsx')
     data_ids = pandas.read_excel(data_file, sheet_name=0)['user_id']
-    prepare(data_ids)
+    # prepare(data_ids)
 
     logger.info('=' * 80)
     logger.info(f'开始批量处理 {len(data_ids)} 个博主')
@@ -253,7 +253,7 @@ if __name__ == '__main__':
         logger.info('=' * 80)
 
         try:
-            result = run(user_id)
+            result = run(idx, user_id)
             if result:
                 success_count += 1
             else:
