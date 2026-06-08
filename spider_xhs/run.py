@@ -171,7 +171,7 @@ def run(keyword):
 
             product_info = dict()
             for roll in range(5):
-                Playwright_.click(f'//div/a[2][@href="{productUrl}"]')
+                Playwright_.click(f'//div/a[2][contains(@href,"{productUrl}")]')
                 time.sleep(3)
                 product_info = get_product_info(title, imageDir)
                 if product_info:
@@ -234,11 +234,11 @@ def run(keyword):
 
 if __name__ == '__main__':
     import pandas
-    # from prepare import prepare
+    from prepare import prepare
 
     data_file = os.path.join(os.path.dirname(__file__), '第一批200用户2026.6.3.xlsx')
     data_ids = pandas.read_excel(data_file, sheet_name=0)['user_id']
-    # prepare(data_ids)
+    prepare(data_ids)
 
     logger.info('=' * 80)
     logger.info(f'开始批量处理 {len(data_ids)} 个博主')

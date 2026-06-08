@@ -100,6 +100,7 @@ def get_author_title_urls():
             if Playwright_.get_count(title_ele):
                 title = Playwright_.get_text(title_ele)
             product_url = Playwright_.get_attribute(f'({product_ele})[{product_}]/div/a[2]', 'href')
+            product_url = product_url.split('?')[0]
             # product_url = host + product_url
             if [title, product_url] not in urls:
                 urls.append([title, product_url])
