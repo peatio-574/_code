@@ -178,18 +178,25 @@ def execute_tt_task(order, title):
     if Playwright_.get_count('//i[@class="comment-icon"]'):
         Playwright_.click('//i[@class="comment-icon"]')
         Playwright_.input('//div[@class="comment-textarea"]', text)
+
         Playwright_.click('//div[@class="submit-emoji-icon"]')
         Playwright_.click('//div[@class="main-input"]//div[@class="submit-emoji-list"]/li[2]/div')
+        Playwright_.click('//div[@class="comment-textarea"]')
+        Playwright_.page.keyboard.press('Backspace')
         Playwright_.click('//button[text()="评论"]')
 
     else:
         Playwright_.click('//div[@class="detail-interaction-comment"]')
         Playwright_.input('(//div[@class="ttp-comment-input"])[2]/div[1]', text)
+
         Playwright_.click('(//div[@class="submit-emoji-icon"])[2]')
         Playwright_.click('(//div[@class="submit-emoji-list"])[last()]/li[1]/div')
-        Playwright_.click('(//div[@class="submit-emoji-list"])[2]/li[2]/div')
+        # Playwright_.click('(//div[@class="submit-emoji-list"])[2]/li[2]/div')
+        Playwright_.click('(//div[@class="ttp-comment-input"])[2]/div[1]')
+        Playwright_.page.keyboard.press('Backspace')
+
         Playwright_.click('//button[@class="submit-btn"]')
-    time.sleep(3)
+
     text_count = Playwright_.get_count(f'//p[contains(text(),"{text}")]')
     assert text_count != 0
     result = True
@@ -206,16 +213,17 @@ def execute_wb_task(order, title):
     logger.info(f'开始执行任务：{title}')
 
     Playwright_.goto(order)
-    time.sleep(2)
+    time.sleep(8)
     if Playwright_.get_count('//p[text()="抱歉，你访问的内容不存在"]'):
         logger.error('微博内容不存在')
         return result
     comement_ele = '//textarea[@placeholder]'
     Playwright_.click(comement_ele)
     Playwright_.input(comement_ele, text)
-    Playwright_.click('//span[text()="评论"]')
-    time.sleep(3)
-    text_count = Playwright_.get_count(f'//span[text()="{text}"]')
+    Playwright_.click('//span[contains(text(),"评论")]')
+    Playwright_.reload()
+    time.sleep(5)
+    text_count = Playwright_.get_count(f'//span[contains(text(), "{text}")]')
     assert text_count != 0
     result = True
     logger.info(f'任务：{order}，提交评论成功：{text}')
@@ -223,13 +231,15 @@ def execute_wb_task(order, title):
 
 def deal_result(detail, result):
     Playwright_.goto(detail)
-    time.sleep(3)
+    time.sleep(5)
     if not result:
         Playwright_.click('//div[@class="bottomBox"]/a[1]')
         Playwright_.click('//div[@class="weui-dialog__ft"]/a[2]')
         logger.info('作品内容不存在，放弃任务')
     else:
-        Playwright_.click('//div[@class="bottomBox"]/a[2]')
+        finish_ele = '//div[@class="bottomBox"]/a[2]'
+        Playwright_.wait_for_selector(finish_ele, timeout=30000)
+        Playwright_.click(finish_ele)
         logger.info('评论完成，可领取下一个任务')
 
 

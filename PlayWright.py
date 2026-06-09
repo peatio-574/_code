@@ -75,8 +75,8 @@ class Playwright(object):
 
         # 2. 启动浏览器（隐藏自动化标识）
         self.browser = self.playwright.chromium.launch(
-            executable_path=EDGE_PATH,
-            # channel=self.browser_type,
+            # executable_path=EDGE_PATH,
+            channel=self.browser_type,
             headless=False,
             args=browser_args,
             # 移除Playwright默认的自动化参数
@@ -272,8 +272,8 @@ class Playwright(object):
 
         self.goto(url)
         if storage:
-            storage = get_config_value(section, 'storage', file)
-            if storage:
+            storage_ = get_config_value(section, 'storage', file)
+            if storage_:
                 self.add_storage(key=f'{section}.storage')
         time.sleep(5)
         count = self.get_count(location)
@@ -294,10 +294,8 @@ class Playwright(object):
         # api_cookie
         api_cookie = "; ".join([f"{cookie['name']}={cookie['value']}" for cookie in cookie_list])
         write_config_value(section, {option: str(cookie_list), f'{option}_api': api_cookie}, file)
-
         if storage:
-            self.save_sessionstorage(key=f'{section}.storage')
-
+            self.save_sessionstorage(key=f'{section}.storage', file=file)
         return True
 
     def save_sessionstorage(self, key='login.storage', file=None):

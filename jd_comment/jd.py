@@ -11,7 +11,6 @@ from Logger import logger
 from PlayWright import Playwright_, get_config_value
 import time
 import random
-import shutil
 import os
 
 config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
@@ -32,6 +31,7 @@ def login():
     key = 'login.jd_cookie'
     Playwright_.login(url, ele, key, file=config_file)
     logger.info('京东登录成功')
+    return True
 
 
 def get_title(url):
@@ -48,6 +48,7 @@ def get_title(url):
 
 def get_page_comments(product_id, title):
     """获取商品单页评论"""
+    global exist_data
     page_comments = []
     try:
         # 获取评论数量
@@ -90,16 +91,20 @@ def get_page_comments(product_id, title):
 
             comment = [product_id, unique_id, title, comment_time, comment_name, product_type, comment_text, like_count]
             page_comments.append(comment)
+            exist_data.append(unique_id)
+            logger.info(f'第{len(exist_data)}条评论：{comment[:-2]}')
     except Exception as e:
         logger.error(f'获取商品{product_id}的评论异常：{e}')
     return page_comments
 
 
 def spider_product(product_id, title):
-    global ws, wb, file
+    global ws, wb, file, exist_data
 
     try:
         # 滚动页面，查看评价
+        current_count = len([i for i in exist_data if i.startswith(product_id)])
+
         Playwright_.page.keyboard.press('PageDown')
         time.sleep(2)
         logger.info('点击查看更多')
@@ -111,32 +116,39 @@ def spider_product(product_id, title):
 
         invalid_roll_time = 0  # 无效滚动次数
         while True:
-            # # 爬取数据足够就退出，获取连续6次未获取到新数据就退出
-            # if exist_count == 1000:
-            #     logger.info('已爬取所有评论')
-            #     return True
-
             # 获取评论
             page_comments = get_page_comments(product_id, title)
+
+            current_count += len(page_comments)
+            logger.info(f'{product_id}商品，已爬取{current_count}条数据')
             for row in page_comments:
                 ws.append(row)
                 wb.save(file)
 
+            # 爬取数据足够就退出
+            if current_count == 300:
+                logger.info('已爬取300条评论，退出当前商品评论爬取')
+                return True
 
-            # 滚动页面
-            down_size = random.randint(900, 1500)
-            Playwright_.page.mouse.wheel(0, down_size)  # 向下滚动
-            roll_time += 1
-
-            invalid_roll_time = 0 if page_comments else invalid_roll_time + 1
-
+            # 连续6次未获取到新数据就退出
             if invalid_roll_time == limit_roll_time:  # 滚动次数达到6次，判断是否有新数据
                 logger.info(f'已连续滚动{limit_roll_time}次未获取到新数据，退出当前商品评论爬取')
                 return True
 
+
+            # 滚动页面
+            Playwright_.page.mouse.move(500, 500)
+            down_size = random.randint(300, 500)
+            Playwright_.page.mouse.wheel(0, down_size)  # 向下滚动
+
+            # Playwright_.page.keyboard.press('PageDown')
+            roll_time += 1
+
+            invalid_roll_time = 0 if page_comments else invalid_roll_time + 1
+
             # 睡眠：有新数据睡眠20-30s，无新数据睡眠5-20s
             sleep_sec = random.randint(5, 20) if not page_comments else random.randint(20, 30)
-            logger.info(f'已滚动{roll_time}次，睡眠{sleep_sec}秒，当前无效滚动次数：{invalid_roll_time}')
+            logger.info(f'滚动第{roll_time}次，睡眠{sleep_sec}秒，当前无效滚动次数：{invalid_roll_time}')
             time.sleep(sleep_sec)
     except Exception as e:
         logger.error(f'爬取商品{product_id}的评论异常：{e}')
@@ -149,7 +161,6 @@ def main():
         time.sleep(3)
         product_id = url.split('.html')[0].split('/')[-1]
         logger.info(f'开始爬取商品：{product_id}数据')
-        login()
         if not login():
             logger.error('京东登录失败')
             continue
@@ -157,71 +168,7 @@ def main():
         if not title:
             logger.error(f'获取商品{product_id}的标题失败')
             continue
-        status = spider_product(product_id, title)
-        if status:
-            copy(product_id)
-
-
-def copy(product_id):
-    """将第一个xlsx文件的数据追加写入到第二个xlsx文件中"""
-    global wb, ws, file
-    try:
-
-        # 目标文件（可以修改为其他路径）
-        target_file = 'd:/_code/spider_jd/京东评论最终数据.xlsx'
-
-        logger.info(f'商品编号：{product_id}，开始复制【{file}】数据到【{target_file}】中......')
-
-        # 获取源文件的所有数据行（从第2行开始，假设第1行是表头）
-        source_rows = []
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if any(cell is not None for cell in row):  # 跳过空行
-                source_rows.append(row)
-
-        if not source_rows:
-            logger.warning('源文件没有数据可复制')
-            return False
-
-        # 加载或创建目标文件
-        try:
-            target_wb = openpyxl.load_workbook(target_file)
-            target_ws = target_wb.active
-        except FileNotFoundError:
-            # 如果目标文件不存在，创建新文件并复制表头
-            target_wb = openpyxl.Workbook()
-            target_ws = target_wb.active
-
-            # 复制表头
-            header_row = []
-            for cell in ws[1]:
-                header_row.append(cell.value)
-            target_ws.append(header_row)
-
-        # 获取目标文件当前的行数
-        target_last_row = target_ws.max_row
-
-        # 追加数据
-        appended_count = 0
-        for row_data in source_rows:
-            target_ws.append(row_data)
-            appended_count += 1
-
-        # 保存目标文件
-        target_wb.save(target_file)
-        logger.info(
-            f'数据复制完成！共追加 {appended_count} 行数据，初始行数：{target_last_row}，当前总行数：{target_ws.max_row}')
-
-        temlate = 'd:/_code/spider_jd/京东评论模板.xlsx'
-        shutil.copy2(temlate, file)
-        logger.info(f'【{file}】已初始化数据')
-
-        return True
-
-    except Exception as e:
-        logger.error(f'数据复制失败：{e}')
-        import traceback
-        traceback.print_exc()
-        return False
+        spider_product(product_id, title)
 
 
 if __name__ == '__main__':
