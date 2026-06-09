@@ -197,6 +197,7 @@ def execute_tt_task(order, title):
 
         Playwright_.click('//button[@class="submit-btn"]')
 
+    time.sleep(5)
     text_count = Playwright_.get_count(f'//p[contains(text(),"{text}")]')
     assert text_count != 0
     result = True
