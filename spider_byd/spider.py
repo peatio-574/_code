@@ -139,7 +139,7 @@ def get_url():
     logger.info('开始领取任务')
     url = 'http://bydsong.soulmoto.com.cn/ZbComTask/get_task?istype=25&usergroupid=43f3dc13dd6a8fff895f48c897b5a90b&openid=oYwld544l8JqilE_r9wVvUeAEfAQ'
     Playwright_.goto(url)
-    time.sleep(5)
+    time.sleep(10)
     order_ele = '//div[text()="领取互动任务"]'
     not_finish_ele = '//div[@class="tasks_box"]/a'
     order_count = Playwright_.get_count(order_ele)
@@ -153,6 +153,8 @@ def get_url():
         detail = Playwright_.get_attribute(not_finish_ele, 'href')
         detail = 'http://bydsong.soulmoto.com.cn' + detail
         Playwright_.click(not_finish_ele)
+    if not detail:
+        return False, False, False
     time.sleep(5)
     order = Playwright_.get_attribute('//h4/a', 'href')
     title = Playwright_.get_text('//h4/a')
@@ -197,7 +199,7 @@ def execute_tt_task(order, title):
 
         Playwright_.click('//button[@class="submit-btn"]')
 
-    time.sleep(5)
+    time.sleep(10)
     text_count = Playwright_.get_count(f'//p[contains(text(),"{text}")]')
     assert text_count != 0
     result = True
@@ -223,7 +225,9 @@ def execute_wb_task(order, title):
     Playwright_.input(comement_ele, text)
 
     Playwright_.click('(//span[contains(normalize-space(), "评论")])[1]')
-    time.sleep(8)
+    time.sleep(3)
+    Playwright_.reload()
+    time.sleep(10)
     text_count = Playwright_.get_count(f'//span[contains(text(), "{text}")]')
     assert text_count != 0
     result = True
@@ -267,6 +271,7 @@ def main():
                 continue
             result = execute_wb_task(order, title)
         deal_result(detail, result)
+        time.sleep(5)
 
 
 if __name__ == '__main__':
