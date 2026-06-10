@@ -109,13 +109,18 @@ def spider_product(product_id, title):
         time.sleep(2)
         logger.info('点击查看更多')
         Playwright_.click('//div[@class="applause-rate golden"]')
-        time.sleep(5)
+        time.sleep(10)
 
         roll_time = 0  # 滚动次数
         limit_roll_time = 6
 
         invalid_roll_time = 0  # 无效滚动次数
         while True:
+            # 爬取数据足够就退出
+            if current_count >= 300:
+                logger.info('已爬取300条评论，退出当前商品评论爬取')
+                return True
+
             # 获取评论
             page_comments = get_page_comments(product_id, title)
 
@@ -125,11 +130,6 @@ def spider_product(product_id, title):
                 ws.append(row)
                 wb.save(file)
 
-            # 爬取数据足够就退出
-            if current_count == 300:
-                logger.info('已爬取300条评论，退出当前商品评论爬取')
-                return True
-
             # 连续6次未获取到新数据就退出
             if invalid_roll_time == limit_roll_time:  # 滚动次数达到6次，判断是否有新数据
                 logger.info(f'已连续滚动{limit_roll_time}次未获取到新数据，退出当前商品评论爬取')
@@ -138,7 +138,7 @@ def spider_product(product_id, title):
 
             # 滚动页面
             Playwright_.page.mouse.move(500, 500)
-            down_size = random.randint(300, 500)
+            down_size = random.randint(500, 900)
             Playwright_.page.mouse.wheel(0, down_size)  # 向下滚动
 
             # Playwright_.page.keyboard.press('PageDown')
@@ -147,7 +147,7 @@ def spider_product(product_id, title):
             invalid_roll_time = 0 if page_comments else invalid_roll_time + 1
 
             # 睡眠：有新数据睡眠20-30s，无新数据睡眠5-20s
-            sleep_sec = random.randint(5, 20) if not page_comments else random.randint(20, 30)
+            sleep_sec = random.randint(5, 20)  # if not page_comments else random.randint(20, 30)
             logger.info(f'滚动第{roll_time}次，睡眠{sleep_sec}秒，当前无效滚动次数：{invalid_roll_time}')
             time.sleep(sleep_sec)
     except Exception as e:
