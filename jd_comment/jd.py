@@ -46,7 +46,7 @@ def get_title(url):
         return False
 
 
-def get_page_comments(product_id, title):
+def get_page_comments(product_id, title, bad=False):
     """获取商品单页评论"""
     global exist_data
     page_comments = []
@@ -67,6 +67,7 @@ def get_page_comments(product_id, title):
 
             # 唯一编号：：product_id + comment_name + data_known_size
             unique_id = product_id + '-' + comment_name + '-' + known_size
+            unique_id = 'bad_' + unique_id if bad else unique_id
             if unique_id in exist_data:
                 logger.info(f'已爬取过该条数据，唯一编号：{unique_id}')
                 continue
@@ -98,41 +99,70 @@ def get_page_comments(product_id, title):
     return page_comments
 
 
-def spider_product(product_id, title):
+def get_tab_info(rowid, file):
+    """获取tab信息"""
+    ws_ = wb['商品链接']
+    tab_info = ''
+    tabs_ele = '//div[contains(@class, "jdcc-custom")]/div/div'
+    tabs_count = Playwright_.get_count(tabs_ele)  # tab数量
+    for tab_ in range(1, tabs_count + 1):
+        tab_ele = f'({tabs_ele})[{tab_}]/span'
+        tab_count = Playwright_.get_count(tab_ele)
+        tab_text = ''
+        for _tab_ in range(1, tab_count + 1):
+            _tab_ele = f'({tab_ele})[{_tab_}]'
+            tab_text += Playwright_.get_text(_tab_ele)  # tab文案
+        tab_info += tab_text + ','
+    tab_info = tab_info[:-1]
+    ws_.cell(row=rowid, column=2, value=tab_info)
+    wb.save(file)
+
+
+def spider_product(product_id, title, rowid, bad=False):
     global ws, wb, file, exist_data
 
-    try:
-        # 滚动页面，查看评价
-        current_count = len([i for i in exist_data if i.startswith(product_id)])
+    row_flag = product_id if not bad else 'bad_' + product_id
+    current_count = len([i for i in exist_data if i.startswith(row_flag)])
+    text = '' if not bad else '差评'
 
-        Playwright_.page.keyboard.press('PageDown')
-        time.sleep(2)
-        logger.info('点击查看更多')
-        Playwright_.click('//div[@class="applause-rate golden"]')
+    try:
+        if not bad:
+            # 滚动页面，查看评价
+            Playwright_.page.keyboard.press('PageDown')
+            time.sleep(2)
+            logger.info('点击查看更多')
+        else:
+            # 切换差评
+            Playwright_.click('//div[@class="applause-rate"]')
+
+        Playwright_.click('//div[@class="applause-rate golden"]')  # 聚焦评论区
         time.sleep(10)
+        if not bad:
+            get_tab_info(rowid, file)
 
         roll_time = 0  # 滚动次数
         limit_roll_time = 6
+        limit_count = 300 if not bad else 500
 
         invalid_roll_time = 0  # 无效滚动次数
         while True:
             # 爬取数据足够就退出
-            if current_count >= 300:
-                logger.info('已爬取300条评论，退出当前商品评论爬取')
+            if current_count >= limit_count:
+                logger.info(f'已爬取{current_count}条{text}评论，退出当前商品评论爬取')
                 return True
 
             # 获取评论
             page_comments = get_page_comments(product_id, title)
 
             current_count += len(page_comments)
-            logger.info(f'{product_id}商品，已爬取{current_count}条数据')
+            logger.info(f'{product_id}商品，已爬取{current_count}条{text}数据')
             for row in page_comments:
                 ws.append(row)
                 wb.save(file)
 
             # 连续6次未获取到新数据就退出
             if invalid_roll_time == limit_roll_time:  # 滚动次数达到6次，判断是否有新数据
-                logger.info(f'已连续滚动{limit_roll_time}次未获取到新数据，退出当前商品评论爬取')
+                logger.info(f'已连续滚动{limit_roll_time}次未获取到新数据，退出当前商品{text}评论爬取')
                 return True
 
 
@@ -151,13 +181,14 @@ def spider_product(product_id, title):
             logger.info(f'滚动第{roll_time}次，睡眠{sleep_sec}秒，当前无效滚动次数：{invalid_roll_time}')
             time.sleep(sleep_sec)
     except Exception as e:
-        logger.error(f'爬取商品{product_id}的评论异常：{e}')
+        logger.error(f'爬取商品{product_id}的{text}评论异常：{e}')
         return False
+
 
 
 def main():
     urls = ReadData.read_xlsx_col(file)['商品链接']
-    for url in urls:
+    for rowid, url in enumerate(urls, start=2):
         time.sleep(3)
         product_id = url.split('.html')[0].split('/')[-1]
         logger.info(f'开始爬取商品：{product_id}数据')
@@ -168,7 +199,8 @@ def main():
         if not title:
             logger.error(f'获取商品{product_id}的标题失败')
             continue
-        spider_product(product_id, title)
+        spider_product(product_id, title, rowid)
+        spider_product(product_id, title, rowid, bad=True)
 
 
 if __name__ == '__main__':
