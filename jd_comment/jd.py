@@ -133,7 +133,10 @@ def spider_product(product_id, title, rowid, bad=False):
             logger.info('点击查看更多')
         else:
             # 切换差评
-            Playwright_.click('//div[@class="applause-rate"]')
+            bad_ele = '//span[text()="差评"]'
+            if not Playwright_.get_count(bad_ele):
+                return False
+            Playwright_.click(bad_ele)
 
         Playwright_.click('//div[@class="applause-rate golden"]')  # 聚焦评论区
         time.sleep(10)

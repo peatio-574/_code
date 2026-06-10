@@ -222,15 +222,8 @@ def execute_wb_task(order, title):
     Playwright_.click(comement_ele)
     Playwright_.input(comement_ele, text)
 
-    Playwright_.click('//i[@title="表情"]')
-    Playwright_.click('//div[@title="不愧是你"]/img')
-    Playwright_.click(comement_ele)
-    Playwright_.page.keyboard.press('Backspace')
-
-    Playwright_.click('//span[contains(text(),"评论")]')
-    time.sleep(2)
-    Playwright_.reload()
-    time.sleep(5)
+    Playwright_.click('(//span[contains(normalize-space(), "评论")])[1]')
+    time.sleep(8)
     text_count = Playwright_.get_count(f'//span[contains(text(), "{text}")]')
     assert text_count != 0
     result = True
