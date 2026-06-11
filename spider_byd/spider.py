@@ -223,9 +223,7 @@ def execute_wb_task(order, title):
     Playwright_.input(comement_ele, text)
 
     Playwright_.click('(//span[contains(normalize-space(), "评论")])[1]')
-    time.sleep(3)
-    Playwright_.reload()
-    time.sleep(5)
+    time.sleep(8)
     text_count = Playwright_.get_count(f'//span[contains(text(), "{text}")]')
     assert text_count != 0
     result = True
