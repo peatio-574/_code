@@ -75,8 +75,8 @@ class Playwright(object):
 
         # 2. 启动浏览器（隐藏自动化标识）
         self.browser = self.playwright.chromium.launch(
-            # executable_path=EDGE_PATH,
-            channel=self.browser_type,
+            executable_path=EDGE_PATH,
+            # channel=self.browser_type,
             headless=False,
             args=browser_args,
             # 移除Playwright默认的自动化参数
