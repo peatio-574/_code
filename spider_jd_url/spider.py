@@ -43,7 +43,7 @@ def extract_jd_data(input_file, output_file):
                 target_columns = []
                 for col in df.columns:
                     col_str = str(col).strip()
-                    if '商品标准名称' in col_str or '商品名称' in col_str:
+                    if '商品标准名称' in col_str or '商品' in col_str:
                         target_columns.append(('商品标准名称', col))
                     elif '京东零售价金额' in col_str:
                         target_columns.append(('京东零售价金额', col))
@@ -115,7 +115,7 @@ def login():
     Playwright_.login(url, ele, key, file=config_file)
     logger.info('京东登录成功')
 
-def read_data(file = 'd:/_code/spider_jd_url/标题.xlsx'):
+def read_data(file = 'd:/_code/spider_jd_url/标题1.xlsx'):
 
     file = os.path.abspath(file)
     try:
