@@ -172,10 +172,15 @@ def execute_tt_task(order, title):
         logger.info(f'开始执行任务：{title}')
 
         Playwright_.goto(order)
-        time.sleep(2)
+        time.sleep(10)
         if Playwright_.get_count('//p[text()="抱歉，你访问的内容不存在"]'):
             logger.error('头条内容不存在')
             return result
+
+        if Playwright_.get_count('//div[@class="user-name"]/span[text()="小羊1122不会飞"]'):
+            return True
+
+
         if Playwright_.get_count('//i[@class="comment-icon"]'):
             Playwright_.click('//i[@class="comment-icon"]')
             Playwright_.input('//div[@class="comment-textarea"]', text)
@@ -219,10 +224,14 @@ def execute_wb_task(order, title):
         logger.info(f'开始执行任务：{title}')
 
         Playwright_.goto(order)
-        time.sleep(8)
+        time.sleep(10)
         if Playwright_.get_count('//p[text()="抱歉，你访问的内容不存在"]'):
             logger.error('微博内容不存在')
             return result
+
+        if Playwright_.get_count('//div[@class="text"]/a[text()="小样不会飞123"]'):
+            return True
+
         comement_ele = '//textarea[@placeholder]'
         Playwright_.click(comement_ele)
         Playwright_.input(comement_ele, text)
@@ -240,7 +249,7 @@ def execute_wb_task(order, title):
 
 def deal_result(detail, result):
     Playwright_.goto(detail)
-    time.sleep(5)
+    time.sleep(10)
     if not result:
         Playwright_.click('//div[@class="bottomBox"]/a[1]')
         Playwright_.click('//div[@class="weui-dialog__ft"]/a[2]')

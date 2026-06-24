@@ -15,7 +15,7 @@ import json
 from xhs import deal_str
 
 dirName = os.path.join(os.path.dirname(__file__), '数据')
-os. makedirs(dirName, exist_ok=True)
+os.makedirs(dirName, exist_ok=True)
 config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
 
 
@@ -120,8 +120,9 @@ def get_author_title_urls():
 
 
 def prepare(keywords):
-    login()
+
     for keyword in keywords:
+        login()
         logger.info(f'开始处理：{keyword}')
         search(keyword)
         author_url = get_author_url()
@@ -182,7 +183,8 @@ def prepare(keywords):
 
         with open(infoText, 'w', encoding='utf-8') as f:
             json.dump(info_dict, f, ensure_ascii=False, indent=4)
-        time.sleep(20)
+        logger.info(f'{keyword}博主共{len(product_info)}条作品')
+        # time.sleep(20)
 
 
 
