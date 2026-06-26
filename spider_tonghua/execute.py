@@ -95,33 +95,33 @@ def get_page_detail(orgcode, page=1):
     logger.info(f'当前营业部共{total_pages}页，当前第{page}页，含有{len(rows)}行数据')
     return total_pages, rows
 
-def save_page(company_name, company_url, page_info, page_no):
+def save_page(idx, company_name, company_url, page_info, page_no):
     """保存单页数据"""
     try:
         for page_ in page_info:
             row = [company_name, company_url, *page_]
             ws.append(row)
         wb.save(filename)
-        logger.info(f'【{company_name}】第{page_no}页保存数据成功')
+        logger.info(f'第{idx}家：【{company_name}】第{page_no}页保存数据成功')
     except Exception as e:
-        logger.error(f'【{company_name}】第{page_no}页保存数据失败：{e}')
+        logger.error(f'第{idx}家：【{company_name}】第{page_no}页保存数据失败：{e}')
     time.sleep(2)
 
 def run():
     with open(company_file, 'r', encoding='utf-8') as f:
         companys = f.readlines()
         logger.info(f'共{len(companys)}家公司')
-    for company in companys:
+    for idx, company in enumerate(companys, start=1):
         company = eval(company)
         company_url, company_name = company
-        logger.info(f'开始获取【{company_name}】数据')
+        logger.info(f'开始获取第{idx}家：【{company_name}】数据')
         orgcode = company_url.split('/')[-2]
         total_pages, page_info = get_page_detail(orgcode, page=1)
-        save_page(company_name, company_url, page_info, page_no=1)
+        save_page(idx, company_name, company_url, page_info, page_no=1)
 
         for page_no in range(2, total_pages+1):
             page_total, page_info = get_page_detail(orgcode, page=page_no)
-            save_page(company_name, company_url, page_info, page_no=page_no)
+            save_page(idx, company_name, company_url, page_info, page_no=page_no)
 
         logger.info(f'【{company_name}】爬取完成，休息10秒')
         time.sleep(10)
