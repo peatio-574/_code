@@ -20,7 +20,7 @@ if os.path.exists(filename):
     ws = wb.active
 else:
     xlsx_headers = ['营业部名称', '详情链接', '上榜日期', '股票简称', '上榜原因',
-               '涨跌幅(%)', '买入额（万）', '卖出额（万）', '买卖净额（万）', '所属板块']
+                    '涨跌幅(%)', '买入额（万）', '卖出额（万）', '买卖净额（万）', '所属板块']
     wb = Workbook()
     ws = wb.active
     ws.title = '数据'
@@ -60,6 +60,7 @@ def get_first(page=1, page_count=False):
         return int(companys[0]) if companys else 0
     return companys
 
+
 def get_second(page=1, page_count=False):
     """实力最强营业部名称，链接"""
     url = f'https://data.10jqka.com.cn/ifmarket/lhbyyb/type/1/tab/zjsl/field/zgczje/sort/desc/page/{page}/'
@@ -76,6 +77,7 @@ def get_second(page=1, page_count=False):
     if page_count:
         return int(companys[0]) if companys else 0
     return companys
+
 
 def get_companys():
     result = []
@@ -148,6 +150,7 @@ def save_page(idx, company_name, company_url, page_info, page_no):
     except Exception as e:
         logger.error(f'第{idx}家：【{company_name}】第{page_no}页保存数据失败：{e}')
     time.sleep(1)
+
 
 def run():
     with open(company_file, 'r', encoding='utf-8') as f:

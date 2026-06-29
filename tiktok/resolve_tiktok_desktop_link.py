@@ -209,16 +209,21 @@ def resolve_tiktok_link(short_url: str, *, timeout: int = 20, max_redirects: int
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="解析 TikTok 短链，并生成 PC/PDP 商品链接候选")
-    parser.add_argument("url")
-    parser.add_argument("--timeout", type=int, default=20)
-    parser.add_argument("--max-redirects", type=int, default=10)
-    parser.add_argument("--proxy", default=None, help="例如 http://127.0.0.1:7890")
-    args = parser.parse_args()
-
-    proxies = {"http": args.proxy, "https": args.proxy} if args.proxy else None
+    # parser = argparse.ArgumentParser(description="解析 TikTok 短链，并生成 PC/PDP 商品链接候选")
+    # parser.add_argument("url")
+    # parser.add_argument("--timeout", type=int, default=20)
+    # parser.add_argument("--max-redirects", type=int, default=10)
+    # parser.add_argument("--proxy", default=None, help="例如 http://127.0.0.1:7890")
+    # args = parser.parse_args()
+    #
+    # proxies = {"http": args.proxy, "https": args.proxy} if args.proxy else None
+    proxies = {
+        "http": "http://127.0.0.1:7892",
+        "https": "http://127.0.0.1:7892",
+    }
     try:
-        result = resolve_tiktok_link(args.url, timeout=args.timeout, max_redirects=args.max_redirects, proxies=proxies)
+        result = resolve_tiktok_link("https://vt.tiktok.com/ZS968TeqFXnxm-3oBwh", proxies=proxies)
+        # result = resolve_tiktok_link(args.url, timeout=args.timeout, max_redirects=args.max_redirects, proxies=proxies)
     except Exception as e:
         print(f"解析失败：{e}", file=sys.stderr)
         sys.exit(1)
