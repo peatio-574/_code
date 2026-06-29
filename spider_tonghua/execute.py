@@ -19,13 +19,17 @@ if os.path.exists(filename):
     wb = load_workbook(filename)
     ws = wb.active
 else:
-    headers = ['营业部名称', '详情链接', '上榜日期', '股票简称', '上榜原因',
+    xlsx_headers = ['营业部名称', '详情链接', '上榜日期', '股票简称', '上榜原因',
                '涨跌幅(%)', '买入额（万）', '卖出额（万）', '买卖净额（万）', '所属板块']
     wb = Workbook()
     ws = wb.active
     ws.title = '数据'
-    ws.append(headers)
+    ws.append(xlsx_headers)
     wb.save(filename)
+
+existing_data = set()
+for existing_row in ws.iter_rows(min_row=2, values_only=True):
+    existing_data.add(existing_row)
 
 
 headers = {
@@ -39,38 +43,59 @@ headers = {
 }
 
 
-def get_first(page=1):
+def get_first(page=1, page_count=False):
     """上榜次数最多营业部名称，链接"""
-
     url = f'https://data.10jqka.com.cn/ifmarket/lhbyyb/type/1/tab/sbcs/field/sbcs/sort/desc/page/{page}/'
-
-    info = requests.get(url, headers=headers).content.decode('gbk')
-    companys = re.findall(r'<a href="(.*?)" target="_blank" title="(.*?)">.*?</a>', info)
+    try:
+        resp = requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        info = resp.content.decode('gbk')
+    except Exception as e:
+        logger.error(f'获取营业部列表失败: {url} — {e}')
+        return [] if not page_count else 0
+    pattern = r'<a href="(.*?)" target="_blank" title="(.*?)">.*?</a>' if not page_count else '<span class="page_info">1/(.*?)</span>'
+    companys = re.findall(pattern, info)
+    time.sleep(2)
+    if page_count:
+        return int(companys[0]) if companys else 0
     return companys
 
-def get_second(page=1):
+def get_second(page=1, page_count=False):
     """实力最强营业部名称，链接"""
-
     url = f'https://data.10jqka.com.cn/ifmarket/lhbyyb/type/1/tab/zjsl/field/zgczje/sort/desc/page/{page}/'
-
-    info = requests.get(url, headers=headers).content.decode('gbk')
-    companys = re.findall(r'<a href="(.*?)" target="_blank" title="(.*?)">.*?</a>', info)
+    try:
+        resp = requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        info = resp.content.decode('gbk')
+    except Exception as e:
+        logger.error(f'获取营业部列表失败: {url} — {e}')
+        return [] if not page_count else 0
+    pattern = r'<a href="(.*?)" target="_blank" title="(.*?)">.*?</a>' if not page_count else '<span class="page_info">1/(.*?)</span>'
+    companys = re.findall(pattern, info)
+    time.sleep(2)
+    if page_count:
+        return int(companys[0]) if companys else 0
     return companys
 
-def get_companys(pages=10):
+def get_companys():
     result = []
-    for page in range(1, pages + 1):
-        first = get_first(page)
-        for company in first:
+    first_page_count = get_first(page_count=True)
+    logger.info(f'上榜次数最多营业部共{first_page_count}页公司名称')
+    for page in range(1, first_page_count + 1):
+        companys = get_first(page)
+        for company in companys:
+            result.append(company)
+        logger.info(f'上榜次数最多营业部，已获取第{page}页数据，当前共{len(result)}家公司')
+
+    second_page_count = get_second(page_count=True)
+    logger.info(f'实力最强营业部共{second_page_count}页公司名称')
+    for page in range(1, second_page_count + 1):
+        companys = get_second(page)
+        for company in companys:
             if company not in result:
                 result.append(company)
-        second = get_second(page)
-        for company in second:
-            if company not in result:
-                result.append(company)
-        logger.info(f'已获取第{page}页数据，当前共{len(result)}家公司')
-        time.sleep(3)
-    logger.info(f'共获取{len(result)}家公司')
+        logger.info(f'实力最强营业部，已获取第{page}页数据，当前共{len(result)}家公司')
+
     result = [str(company) for company in result]
     with open(company_file, 'w', encoding='utf-8') as f:
         string = '\n'.join(result)
@@ -78,34 +103,51 @@ def get_companys(pages=10):
         logger.info('公司信息保存成功')
 
 
-def get_page_detail(orgcode, page=1):
+def get_page_detail(orgcode, page=1, total_pages=False):
     """获取营业部指定页码数据"""
     url = f'http://data.10jqka.com.cn/ifmarket/lhbhistory/orgcode/{orgcode}/field/ENDDATE/order/desc/page/{page}/'
     logger.info(f'链接:{url}')
-    info = requests.get(url, headers=headers).content.decode('gbk')
-    rows = re.findall(
-        r'<tr>\s*<td>(\d{4}-\d{2}-\d{2})</td>\s*<td>\s*<a[^>]*>([^<]+)</a>\s*</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>\s*</tr>',
-        info,
-        re.DOTALL
-    )
+    try:
+        resp = requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        info = resp.content.decode('gbk')
+    except Exception as e:
+        logger.error(f'请求失败: {url} — {e}')
+        return 0 if total_pages else []
 
-    # 提取总页数
-    page_info = re.search(r'(\d+)/(\d+)', info)
-    total_pages = int(page_info.group(2)) if page_info else 0
-    logger.info(f'当前营业部共{total_pages}页，当前第{page}页，含有{len(rows)}行数据')
-    return total_pages, rows
+    if not total_pages:
+        result = re.findall(
+            r'<tr>\s*<td>(\d{4}-\d{2}-\d{2})</td>\s*<td>\s*<a[^>]*>([^<]+)</a>\s*</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>\s*</tr>',
+            info,
+            re.DOTALL
+        )
+
+    else:
+        page_info = re.search(r'(\d+)/(\d+)', info)
+        result = int(page_info.group(2)) if page_info else 0
+    time.sleep(2)
+    return result
+
 
 def save_page(idx, company_name, company_url, page_info, page_no):
     """保存单页数据"""
     try:
-        for page_ in page_info:
+        flag = False
+        for row_id, page_ in enumerate(page_info, start=1):
             row = [company_name, company_url, *page_]
+            if tuple(row) in existing_data:
+                # logger.info(str(row))
+                logger.info(f'第{idx}家：【{company_name}】第{page_no}页第{row_id}条数据已存在')
+                continue
+            existing_data.add(tuple(row))
             ws.append(row)
-        wb.save(filename)
+            flag = True
+        if flag:
+            wb.save(filename)
         logger.info(f'第{idx}家：【{company_name}】第{page_no}页保存数据成功')
     except Exception as e:
         logger.error(f'第{idx}家：【{company_name}】第{page_no}页保存数据失败：{e}')
-    time.sleep(2)
+    time.sleep(1)
 
 def run():
     with open(company_file, 'r', encoding='utf-8') as f:
@@ -116,15 +158,13 @@ def run():
         company_url, company_name = company
         logger.info(f'开始获取第{idx}家：【{company_name}】数据')
         orgcode = company_url.split('/')[-2]
-        total_pages, page_info = get_page_detail(orgcode, page=1)
-        save_page(idx, company_name, company_url, page_info, page_no=1)
+        total_pages = get_page_detail(orgcode, page=1, total_pages=True)
+        logger.info(f'【{company_name}】共{total_pages}页数据')
 
-        for page_no in range(2, total_pages+1):
-            page_total, page_info = get_page_detail(orgcode, page=page_no)
+        for page_no in range(total_pages, 0, -1):
+            page_info = get_page_detail(orgcode, page=page_no)
+            logger.info(f'当前营业部共{total_pages}页，当前第{page_no}页，含有{len(page_info)}行数据')
             save_page(idx, company_name, company_url, page_info, page_no=page_no)
-
-        logger.info(f'【{company_name}】爬取完成，休息10秒')
-        time.sleep(10)
 
 
 if __name__ == '__main__':
