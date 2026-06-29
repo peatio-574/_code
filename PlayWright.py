@@ -35,7 +35,7 @@ class Playwright(object):
         self.height = get_monitors()[0].height  # 当前屏幕分辨率height
         self.timeout = 10 * 1000  # 超时时间
 
-    def start_borwser(self):
+    def start_borwser(self, proxy=None):
         """打开浏览器"""
         self.playwright = sync_playwright().start()
         browser_args = [
@@ -90,7 +90,10 @@ class Playwright(object):
         self.context = self.browser.new_context(
             viewport=None,
             user_agent=self.user_agent,
-            accept_downloads=True)
+            accept_downloads=True,
+            proxy=proxy
+        )
+
         # 创建页面
         self.page = self.context.new_page()
         # self.page.set_viewport_size({"width": self.width, "height": self.height})
@@ -119,9 +122,9 @@ class Playwright(object):
         if self.playwright:
             self.playwright.stop()
 
-    def goto(self, url, timeout=None):
+    def goto(self, url, timeout=None, proxy=None):
         if not self.playwright:
-            self.start_borwser()
+            self.start_borwser(proxy)
         for i in range(3):
             try:
                 self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='domcontentloaded')
@@ -227,9 +230,8 @@ class Playwright(object):
             logger.error(f'获取元素数量失败：{e}')
             return 0
 
-    def get_text(self, location, timeout=5*1000):
+    def get_text(self, location):
         element = self.page.locator(location)
-        # element.wait_for(state='visible', timeout=timeout)
         return element.inner_text()
 
     def get_attribute(self, location, key):
