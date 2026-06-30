@@ -14,6 +14,12 @@ from openpyxl import load_workbook, Workbook
 filename = os.path.join(os.path.dirname(__file__), '数据.xlsx')
 company_file = os.path.join(os.path.dirname(__file__), 'company.txt')
 
+copy_data = input('请输入是否备份数据（1是，0否）：')
+if copy_data == '1':
+    import shutil
+    bak_file = os.path.join(os.path.dirname(__file__), f'{time.strftime("%Y%m%d_%H%M%S")}数据.xlsx')
+    shutil.copyfile(filename, filename + '.bak')
+
 if os.path.exists(filename):
     # 如果文件存在，加载现有工作簿
     wb = load_workbook(filename)
@@ -55,7 +61,7 @@ def get_first(page=1, page_count=False):
         return [] if not page_count else 0
     pattern = r'<a href="(.*?)" target="_blank" title="(.*?)">.*?</a>' if not page_count else '<span class="page_info">1/(.*?)</span>'
     companys = re.findall(pattern, info)
-    time.sleep(2)
+    # time.sleep(2)
     if page_count:
         return int(companys[0]) if companys else 0
     return companys
@@ -73,7 +79,7 @@ def get_second(page=1, page_count=False):
         return [] if not page_count else 0
     pattern = r'<a href="(.*?)" target="_blank" title="(.*?)">.*?</a>' if not page_count else '<span class="page_info">1/(.*?)</span>'
     companys = re.findall(pattern, info)
-    time.sleep(2)
+    # time.sleep(2)
     if page_count:
         return int(companys[0]) if companys else 0
     return companys
@@ -127,7 +133,7 @@ def get_page_detail(orgcode, page=1, total_pages=False):
     else:
         page_info = re.search(r'(\d+)/(\d+)', info)
         result = int(page_info.group(2)) if page_info else 0
-    time.sleep(2)
+    # time.sleep(2)
     return result
 
 
