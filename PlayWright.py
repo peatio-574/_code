@@ -188,7 +188,7 @@ class Playwright(object):
             os.makedirs('d:/_code/photo', exist_ok=True)
             os.makedirs('d:/_code/photo/error', exist_ok=True)
             file = f'd:/_code/photo/error/{time.strftime("%Y%m%d%H%M%S")}_error.png'
-            logger.error( f'点击失败，截图：{file}\n{e}')
+            logger.error(f'点击失败，截图：{file}\n{e}')
             self.page.screenshot(path=file)
             self.exit = True
 
