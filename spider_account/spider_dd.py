@@ -27,7 +27,8 @@ shop_names = [
     '甜心花栗',
     'meow meow',
     'Meow市集',
-    '海苔不睡'
+    '海苔不睡',
+    'wawa小厨'
 ]
 
 
