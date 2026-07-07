@@ -147,6 +147,7 @@ def run(idx, keyword):
     total = len(products)
 
     imageDir = text_json['图片保存目录']
+    os.makedirs(imageDir, exist_ok=True)  # 确保图片保存目录存在
     filename = text_json['信息保存目录']
 
     wb = load_workbook(filename)
