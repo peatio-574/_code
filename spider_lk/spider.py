@@ -43,9 +43,27 @@ def get_lk_data():
         phone = Playwright_.get_text(f'{row_ele}[{i}]/td[3]/div/div[1]/span')
         city = Playwright_.get_text(f'{row_ele}[{i}]/td[3]/div/div[2]//div')
         city = city.split('：')[1]
-        rows.append({'username': username, 'phone': phone, 'city': city})
-        print({'username': username, 'phone': phone, 'city': city})
-    pass
+        date = Playwright_.get_text(f'{row_ele}[{i}]/td[6]')
+        rows.append({'username': username, 'phone': phone, 'city': city, 'date': date})
+    return rows
+
+def mk_login():
+    """麦客登录"""
+    logger.info('=' * 80)
+    logger.info('开始登录麦客....')
+    url = 'https://mikeauth.com/login.php?prd=1&rg=1&d=form.php#/submit?id=200175265'
+    ele = '//div[contains(@class,"Profile-index-module__title--")]'
+    key = 'login.mk_cookie'
+    try:
+        Playwright_.login(url, ele, key, file=config_file)
+        logger.info('✓ 麦客登录成功')
+        return True
+    except Exception as e:
+        logger.error(f'✗ 麦客登录失败：{e}')
+        return False
+
+
+
 if __name__ == '__main__':
     lk_login()
     get_lk_data()
