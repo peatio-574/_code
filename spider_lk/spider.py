@@ -32,9 +32,9 @@ def get_lk_data():
     if '**' in Playwright_.get_text(ele):
         logger.info('抖音快客号码处于隐藏状态，进行点击')
         Playwright_.click('(//tbody/tr[1]/td[3]/div/div[1]/*)[2]')
-        time.sleep(3)
+        time.sleep(2)
         Playwright_.click('//div[@class="cursor-pointer mr-1 flex items-center"]')
-
+        time.sleep(3)
     row_ele = '//tbody/tr'
     row_count = Playwright_.get_count(row_ele)
     rows = []
