@@ -21,7 +21,7 @@ def emsLogin():
     """EMS"""
     logger.info('=' * 80)
     logger.info('开始登录EMS....')
-    url = 'https://www.ems.com.cn/query_express_delivery'
+    url = 'https://www.ems.com.cn/personal_center'
     ele = '//span[text()="我的快递"]'
     key = 'login.ems_cookie'
     try:
@@ -34,6 +34,7 @@ def emsLogin():
 
 def getPageInfo():
     """获取订单信息"""
+    Playwright_.goto('https://www.ems.com.cn/query_express_delivery')
     Playwright_.click('//span[text()=" 筛选"]')
     Playwright_.click('//span[text()=" 已签收 "]')
     Playwright_.click('//span[text()=" 退件 "]')
