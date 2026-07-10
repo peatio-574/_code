@@ -10,7 +10,6 @@ import time
 from PlayWright import Playwright_, logger
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, Alignment
-import re
 info = {
     'Alabama': 'https://golfcartresource.com/dealer-locator?keywords=&address=Alabama&directory_radius=50&center=&address_type=state&category=0',
     'Alaska': 'https://golfcartresource.com/dealer-locator?address_type=state&zoom=15&is_mile=1&directory_radius=50&keywords=&address=Alaska&directory_radius=50&center=&address_type=state&category=0',
@@ -105,8 +104,8 @@ def getPageinfo(city, url):
             exists_data.append(rowData)
             logger.info(str(rowData))
         wb.save(dataFile)
-        next = Playwright_.get_count(nextPageEle)
-        if not next:
+        nextCount = Playwright_.get_count(nextPageEle)
+        if not nextCount:
             logger.info(f'{city}爬取完毕')
             break
         Playwright_.click(nextPageEle)
