@@ -66,6 +66,8 @@ def getPageInfo():
     currentData = ReadData.read_xlsx_col(dataFile, header=1)['物流单号']
     wb = load_workbook(dataFile)
     ws = wb.active
+    ws.cell(row=2, column=4, value='订单号')
+    wb.save(dataFile)
     for rowIdx, mailNo in enumerate(currentData, start=3):
         code = info.get(mailNo)
         if code:
