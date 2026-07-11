@@ -185,11 +185,13 @@ class Playwright(object):
                 self.page.click(location, timeout=self.timeout)
             time.sleep(random.randint(0, 1))
         except Exception as e:
-            os.makedirs('d:/_code/photo', exist_ok=True)
-            os.makedirs('d:/_code/photo/error', exist_ok=True)
-            file = f'd:/_code/photo/error/{time.strftime("%Y%m%d%H%M%S")}_error.png'
-            logger.error(f'点击失败，截图：{file}\n{e}')
-            self.page.screenshot(path=file)
+            pictureDir = os.path.join(os.path.dirname(__file__), 'photo')
+            os.makedirs(pictureDir, exist_ok=True)
+            errorDir = os.path.join(pictureDir, 'error')
+            os.makedirs(errorDir, exist_ok=True)
+            errorFile = os.path.join(errorDir, f'{time.strftime("%Y%m%d%H%M%S")}_error.png')
+            logger.error(f'点击失败，截图：{errorFile}\n{e}')
+            self.page.screenshot(path=errorFile)
             self.exit = True
 
     def input(self, location, text, enter=False):
