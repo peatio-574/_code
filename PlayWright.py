@@ -123,6 +123,7 @@ class Playwright(object):
             self.playwright.stop()
 
     def goto(self, url, timeout=None, proxy=None):
+        """proxy格式：{'server': 'http://127.0.0.1:7892'}"""
         if not self.playwright:
             self.start_borwser(proxy)
         for i in range(3):

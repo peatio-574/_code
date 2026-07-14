@@ -2,6 +2,7 @@
 import sys
 
 from pathlib import Path
+from requests import request
 
 # 把项目根目录 加入Python路径
 sys.path.append(str(Path(__file__).parent.parent))
@@ -10,6 +11,7 @@ from PlayWright import Playwright_, logger
 import time
 import csv
 import os
+import requests
 
 
 t = time.localtime(time.time() - 86400)
@@ -127,7 +129,33 @@ def getRowsDetail():
                 f.flush()
 
 
+def getOpecReport():
+    vpn = 'http://127.0.0.1:7892'
+
+
+    apiProxies = {
+        'http': vpn,
+        'https': vpn
+    }
+
+    uiProxy = {'server': vpn}
+
+    Playwright_.goto('https://www.opec.org/', proxy=uiProxy)
+
+
+    url = 'https://www.opec.org/assets/assetdb/momr-june-2026.pdf'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+
+    with open('opec.pdf', 'wb') as f:
+        f.write(requests.get(url, headers=headers, proxies=apiProxies).content)
+        logger.info('opec月度报告保存成功')
+
+
+
 if __name__ == '__main__':
-    getRowsDetail()
+    # getRowsDetail()
+    getOpecReport()
     # row = {'date': '15 小时以前', 'title': '乌克兰在亚速海袭击多艘俄罗斯油轮和货船', 'href': '/news/economy-news/article-93CH-3458011'}
     # getRowDetail(row)
