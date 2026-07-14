@@ -36,7 +36,6 @@ def getInvestingInfo():
     Playwright_.click('(//span[@class="datePickerIcon"])[1]')
     Playwright_.input('//input[@id="startDate"]', '')
     Playwright_.page.locator('//input[@id="startDate"]').press_sequentially(f'{str(year)[-2:]}/{month:02d}/{day:02d}')
-    # Playwright_.input('//input[@id="endDate"]', time.strftime("%y/%m/%d", time.localtime()))
     Playwright_.click('//a[@id="applyBtn"]')
     time.sleep(3)
     rowEle = '//div[@class="js-section-content largeTitle"]/div'
@@ -89,6 +88,7 @@ def getRowDetail(rowInfo):
     rowInfo['author'] = author
     return rowInfo
 
+
 def getRowsDetail():
     csvFile = os.path.join(os.path.dirname(__file__), 'Investing.csv')
     fileHeader = ['发布时间', '标题', '作者', '正文']
@@ -125,7 +125,6 @@ def getRowsDetail():
 
                 # 可选：立即刷新到磁盘，防止数据丢失
                 f.flush()
-
 
 
 if __name__ == '__main__':
