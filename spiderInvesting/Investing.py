@@ -129,33 +129,28 @@ def getRowsDetail():
                 f.flush()
 
 
-def getOpecReport():
-    vpn = 'http://127.0.0.1:7892'
+def getOpecReport(vpn):
+    t = time.localtime(time.time() - 86400*30)
+    lastMonth = t.tm_mon
+    lastYear = t.tm_year
 
+    lastMonthEn = time.strftime("%B", time.localtime(time.mktime((lastYear, lastMonth, 1, 0, 0, 0, 0, 0, 0)))).lower()
 
-    apiProxies = {
-        'http': vpn,
-        'https': vpn
-    }
-
-    uiProxy = {'server': vpn}
-
-    Playwright_.goto('https://www.opec.org/', proxy=uiProxy)
-
-
-    url = 'https://www.opec.org/assets/assetdb/momr-june-2026.pdf'
+    url = f'https://www.opec.org/assets/assetdb/momr-{lastMonthEn}-{lastYear}.pdf'
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
-
-    with open('opec.pdf', 'wb') as f:
-        f.write(requests.get(url, headers=headers, proxies=apiProxies).content)
-        logger.info('opec月度报告保存成功')
+    fileName = os.path.join(os.path.dirname(__file__), f'opec_{lastYear}_{lastMonth}.pdf')
+    with open(fileName, 'wb') as f:
+        f.write(requests.get(url, headers=headers, proxies={'http': f'http://{vpn}',  'https': f'http://{vpn}'}).content)
+        logger.info(f'opec-{lastYear}-{lastMonth}月度报告保存成功')
 
 
 
 if __name__ == '__main__':
-    # getRowsDetail()
-    getOpecReport()
-    # row = {'date': '15 小时以前', 'title': '乌克兰在亚速海袭击多艘俄罗斯油轮和货船', 'href': '/news/economy-news/article-93CH-3458011'}
-    # getRowDetail(row)
+    step = input('请输入操作步骤(1获取投资信息，2获取OPEC月度报告)：')
+    if step == '1':
+        getInvestingInfo()
+    elif step == '2':
+        vpn = input('请输入VPN代理(例如：127.0.0.1:7892)：')
+        getOpecReport(vpn)
