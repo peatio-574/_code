@@ -199,6 +199,12 @@ class Playwright(object):
         if enter:
             self.page.press(location, 'Enter')
 
+    def slowInput(self, location, text, enter=False):
+        self.input(location, '')
+        self.page.locator(location).press_sequentially(text)
+        if enter:
+            self.page.press(location, 'Enter')
+
     def wait_for_selector(self, location, state='visible', timeout=5*1000, way='xpath'):
         try:
             location = location if way == 'xpath' else f'{way}={location}'

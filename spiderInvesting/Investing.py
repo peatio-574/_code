@@ -31,36 +31,37 @@ def getInvestingInfo():
     url = 'https://cn.investing.com/search/?q=%E7%87%83%E6%96%99%E6%B2%B9&tab=news'
 
     Playwright_.goto(url)
+    time.sleep(5)
+    Playwright_.mouse_wheel(200)
+    Playwright_.click('(//span[@class="datePickerIcon"])[1]')
+    Playwright_.input('//input[@id="startDate"]', '')
+    Playwright_.page.locator('//input[@id="startDate"]').press_sequentially(f'{str(year)[-2:]}/{month:02d}/{day:02d}')
+    # Playwright_.input('//input[@id="endDate"]', time.strftime("%y/%m/%d", time.localtime()))
+    Playwright_.click('//a[@id="applyBtn"]')
+    time.sleep(3)
+    rowEle = '//div[@class="js-section-content largeTitle"]/div'
+    rowCount = Playwright_.get_count(rowEle)
 
-
-    rollTime = 0
     rowsInfo = []
-    while rollTime < 3:
-        time.sleep(5)
-        rowEle = '//div[@class="js-section-content largeTitle"]/div'
-        rowCount = Playwright_.get_count(rowEle)
 
+    for rowId in range(1, rowCount + 1):
+        date = Playwright_.get_text(f'{rowEle}[{rowId}]//time')
+        if not matchDate(date):
+            continue
 
-        for rowId in range(1, rowCount + 1):
-            date = Playwright_.get_text(f'{rowEle}[{rowId}]//time')
-            if not matchDate(date):
-                continue
-
-            titleEle = f'{rowEle}[{rowId}]//a[@class="title"]'
-            title = Playwright_.get_text(titleEle)
-            href = Playwright_.get_attribute(titleEle, 'href')
-            # content = Playwright_.get_text(f'{rowEle}[{rowId}]//p[@class="js-news-item-content"]')
-            rowInfo = {
-                'date': date,
-                'title': title,
-                'href': href,
-                # 'content': content
-            }
-            if rowInfo not in rowsInfo:
-                # logger.info(rowInfo)
-                rowsInfo.append(rowInfo)
-        Playwright_.page.keyboard.press("End")  # 滚动
-        rollTime += 1
+        titleEle = f'{rowEle}[{rowId}]//a[@class="title"]'
+        title = Playwright_.get_text(titleEle)
+        href = Playwright_.get_attribute(titleEle, 'href')
+        # content = Playwright_.get_text(f'{rowEle}[{rowId}]//p[@class="js-news-item-content"]')
+        rowInfo = {
+            'date': date,
+            'title': title,
+            'href': href,
+            # 'content': content
+        }
+        if rowInfo not in rowsInfo:
+            # logger.info(rowInfo)
+            rowsInfo.append(rowInfo)
     return rowsInfo
 
 
