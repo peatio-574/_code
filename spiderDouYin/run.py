@@ -1,17 +1,28 @@
 # -*- coding: utf-8 -*-
 import sys
-
 from pathlib import Path
+import os
 
-sys.path.append(str(Path(__file__).parent.parent))
+# 获取当前可执行文件或脚本所在的目录（兼容开发环境与打包后的 exe）
+def getBaseDir():
+    if getattr(sys, 'frozen', False):
+        # 打包后，sys.executable 指向 exe 的路径
+        return os.path.dirname(sys.executable)
+    else:
+        # 开发环境，直接使用脚本所在目录
+        return os.path.dirname(os.path.abspath(__file__))
+baseDir = getBaseDir()
+sys.path.append(str(Path(baseDir).parent))
 
 
 import time
 from PlayWright import logger, Playwright_
-import os
 from ReadFile import ReadData
 
-configFile = os.path.join(os.path.dirname(__file__), 'config.ini')
+
+configFile = os.path.join(baseDir, 'config.ini')
+fileName = os.path.join(baseDir, '博主链接.xlsx')
+
 
 def douYinLogin(account):
     url = 'https://www.douyin.com/user/self'
@@ -28,6 +39,7 @@ def douYinLogin(account):
         logger.error(f'❌ 第{account}个抖音账号登录失败：{e}')
         return False
     return loginStatus
+
 
 def control(url):
     try:
@@ -52,11 +64,11 @@ def control(url):
     except Exception as e:
         logger.error(f'❌ 抖音博主举报失败：{e}\n{url}\n')
 
+
 def execute():
     accounts = input('请输入登录账号个数：')
     if not accounts.isdigit():
         exit('请输入正确的数字!!!')
-    fileName = os.path.join(os.path.dirname(__file__), '博主链接.xlsx')
     urls = ReadData.read_xlsx_col(file=fileName)['博主链接']
     logger.info(f'共需要执行{len(urls)}个任务')
 
@@ -66,7 +78,6 @@ def execute():
             status = douYinLogin(account=account)
             if status:
                 control(url)
-
 
 
 if __name__ == '__main__':
