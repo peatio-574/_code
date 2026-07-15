@@ -13,6 +13,7 @@ __pycache__/
 
 # 日志文件
 logs/
+aa.txt
 
 # 临时文件和截图
 photo/
@@ -39,3 +40,8 @@ desktop.ini
 # 其他临时文件
 *.tmp
 *.temp
+/images/image_1784083326709.png
+/spiderDouYin/dist/config.ini
+/spiderDouYin/dist/DouYinReporter.exe
+/spiderDouYin/dist/博主链接.xlsx
+/spiderDouYin/dist.zip
