@@ -13,13 +13,12 @@ import os
 import requests
 
 
-t = time.localtime(time.time() - 86400)
-year = t.tm_year
-month = t.tm_mon
-day = t.tm_mday
 
-def matchDate(date):
+def matchDate(date, startDate):
     """匹配前一天以及..小时以前的时间，返回bool"""
+    year, month, day = startDate.split('-')
+    month = month if not month.startswith('0') else month[1]
+    day = day if not day.startswith('0') else day[1]
     templateDate = ['以前', f'{year}年{month}月{day}日']
     for template in templateDate:
         if template in date:
@@ -27,7 +26,7 @@ def matchDate(date):
     return False
 
 
-def getInvestingInfo():
+def getPageInfo(startDate):
     """循环滚动，获取符合条件的标题、链接"""
     url = 'https://cn.investing.com/search/?q=%E7%87%83%E6%96%99%E6%B2%B9&tab=news'
 
@@ -35,10 +34,15 @@ def getInvestingInfo():
     time.sleep(5)
     Playwright_.mouse_wheel(200)
     Playwright_.click('(//span[@class="datePickerIcon"])[1]')
-    Playwright_.input('//input[@id="startDate"]', '')
-    Playwright_.page.locator('//input[@id="startDate"]').press_sequentially(f'{str(year)[-2:]}/{month:02d}/{day:02d}')
-    Playwright_.click('//a[@id="applyBtn"]')
-    time.sleep(3)
+
+    endDate = time.strftime('%Y-%m-%d', time.localtime(time.mktime(time.strptime(startDate, "%Y-%m-%d")) + 86400))
+    startStr = startDate.replace('-', '/')
+    endStr = endDate.replace('-', '/')
+    Playwright_.slowInput('//input[@id="startDate"]', startStr)
+    time.sleep(1)
+    Playwright_.slowInput('//input[@id="endDate"]', endStr, enter=True)
+    time.sleep(5)
+
     rowEle = '//div[@class="js-section-content largeTitle"]/div'
     rowCount = Playwright_.get_count(rowEle)
 
@@ -46,7 +50,7 @@ def getInvestingInfo():
 
     for rowId in range(1, rowCount + 1):
         date = Playwright_.get_text(f'{rowEle}[{rowId}]//time')
-        if not matchDate(date):
+        if not matchDate(date, startDate):
             continue
 
         titleEle = f'{rowEle}[{rowId}]//a[@class="title"]'
@@ -65,12 +69,17 @@ def getInvestingInfo():
     return rowsInfo
 
 
-def getRowDetail(rowInfo):
+def getRowDetail(rowInfo, startDate):
     base = 'https://cn.investing.com'
     link = base + rowInfo['href']
     Playwright_.goto(link)
     time.sleep(5)
+
     publishTime = Playwright_.get_text('(//div[@class="flex flex-row items-center"])[2]/span')
+    year, month, day = startDate.split('-')
+    month = month if not month.startswith('0') else month[1]
+    day = day if not day.startswith('0') else day[1]
+
     if f'{year}-{month}-{day}' not in publishTime:
         return rowInfo
 
@@ -90,11 +99,11 @@ def getRowDetail(rowInfo):
     return rowInfo
 
 
-def getRowsDetail():
+def getRowsDetail(startDate):
     csvFile = os.path.join(os.path.dirname(__file__), 'Investing.csv')
     fileHeader = ['发布时间', '标题', '作者', '正文']
     fileExists = os.path.exists(csvFile)
-    rowsInfo = getInvestingInfo()
+    rowsInfo = getPageInfo(startDate)
     logger.info(f'共{len(rowsInfo)}条数据')
     with open(csvFile, 'a', newline='', encoding='utf-8-sig') as f:
         writer = csv.DictWriter(f, fieldnames=fileHeader, extrasaction='ignore')
@@ -106,7 +115,7 @@ def getRowsDetail():
         # 遍历处理每一行数据
         for rowInfo in rowsInfo:
             logger.info(f'爬取详情：{rowInfo}')
-            rowInfo = getRowDetail(rowInfo)
+            rowInfo = getRowDetail(rowInfo, startDate)
 
             # 只处理有发布时间的数据
             if rowInfo.get('publishTime'):
@@ -149,7 +158,8 @@ def getOpecReport(vpn):
 if __name__ == '__main__':
     step = input('请输入操作步骤(1获取投资信息，2获取OPEC月度报告)：')
     if step == '1':
-        getInvestingInfo()
+        startDate = input('请输入指定日期(例如：2026-07-17)：')
+        getRowsDetail(startDate)
     elif step == '2':
         vpn = input('请输入VPN代理(例如：127.0.0.1:7892)：')
         getOpecReport(vpn)
