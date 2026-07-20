@@ -2,7 +2,6 @@
 import sys
 
 from pathlib import Path
-from requests import request
 
 # 把项目根目录 加入Python路径
 sys.path.append(str(Path(__file__).parent.parent))
