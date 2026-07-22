@@ -72,7 +72,10 @@ def getPageInfo(startDate):
 def getRowDetail(rowInfo, startDate):
     base = 'https://cn.investing.com'
     link = base + rowInfo['href']
-    Playwright_.goto(link)
+    for roll in range(1, 4):
+        status = Playwright_.goto(link)
+        if status:
+            break
     time.sleep(5)
 
     publishTime = Playwright_.get_text('(//div[@class="flex flex-row items-center"])[2]/span')
@@ -135,31 +138,91 @@ def getRowsDetail(startDate):
 
                 # 可选：立即刷新到磁盘，防止数据丢失
                 f.flush()
+def download(url, file, vpn=None):
+    file = file.replace('/', '-').replace(' ', '-')
+    for roll in range(1, 4):
+        try:
+            logger.info(f'开始第{roll}次尝试下载{file}....')
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            fileName = os.path.join(os.path.dirname(__file__), file)
+            with open(fileName, 'wb') as f:
+                if vpn:
+                    f.write(requests.get(url, headers=headers, proxies={'http': f'http://{vpn}',  'https': f'http://{vpn}'}).content)
+                else:
+                    f.write(requests.get(url, headers=headers).content)
+                logger.info(f'{file}保存成功\n')
+                break
+        except Exception as e:
+            logger.error(f'{file}下载失败：{e}\n')
+        finally:
+            time.sleep(2)
 
 
 def getOpecReport(vpn):
     t = time.localtime(time.time() - 86400*30)
     lastMonth = t.tm_mon
     lastYear = t.tm_year
-
     lastMonthEn = time.strftime("%B", time.localtime(time.mktime((lastYear, lastMonth, 1, 0, 0, 0, 0, 0, 0)))).lower()
 
     url = f'https://www.opec.org/assets/assetdb/momr-{lastMonthEn}-{lastYear}.pdf'
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-    fileName = os.path.join(os.path.dirname(__file__), f'opec_{lastYear}_{lastMonth}.pdf')
-    with open(fileName, 'wb') as f:
-        f.write(requests.get(url, headers=headers, proxies={'http': f'http://{vpn}',  'https': f'http://{vpn}'}).content)
-        logger.info(f'opec-{lastYear}-{lastMonth}月度报告保存成功')
+    file = f'opec_{lastYear}_{lastMonth}.pdf'
+    download(url, file, vpn)
+
+
+def getEivlist(vpn):
+    Playwright_.goto('https://www.eia.gov/reports/#/T198,T1255', proxy={'server': f'http://{vpn}'})
+    time.sleep(10)
+    t = time.localtime(time.time() - 86400*30)
+    lastMonth = t.tm_mon
+    lastYear = t.tm_year
+
+    lastMonthEn = time.strftime("%B", time.localtime(time.mktime((lastYear, lastMonth, 1, 0, 0, 0, 0, 0, 0)))).lower()
+
+    rowEle = '//div[@class="b_content"]'
+    rowsCount = Playwright_.get_count(rowEle)
+    data = []
+    for rowIdx in range(1, rowsCount + 1):
+        publishTime = Playwright_.get_text(f'({rowEle})[{rowIdx}]/h4[@class="dat bookshelf"]')
+        if lastMonthEn in publishTime.lower() and str(lastYear) in publishTime:
+            pdfEle = f'({rowEle})[{rowIdx}]//a[@class="ico pdf"]'
+            htmlEle = f'({rowEle})[{rowIdx}]//a[@class="ico html"]'
+
+            title = publishTime + Playwright_.get_text(f'({rowEle})[{rowIdx}]/h3/a')
+            extraEle = f'({rowEle})[{rowIdx}]/h3/em'
+            if Playwright_.get_count(extraEle):
+                title += Playwright_.get_text(extraEle)
+
+            if Playwright_.get_count(pdfEle):
+                file = title + '.pdf'
+                url = 'https://www.eia.gov' + Playwright_.get_attribute(pdfEle, 'href')
+                logger.info(f'{title}存在pdf数据')
+                download(url, file, vpn)
+                data.append(url)
+            elif Playwright_.get_count(htmlEle):
+                # file = title + '.html'
+                url = 'https://www.eia.gov' + Playwright_.get_attribute(htmlEle, 'href')
+                logger.info(f'{title}存在html数据，请手动复制链接\n{url}\n')
+                # download(url, file, vpn)
+                data.append(url)
+    if not data:
+        logger.info(f'{lastYear} {lastMonth}暂无匹配数据')
+
 
 
 
 if __name__ == '__main__':
-    step = input('请输入操作步骤(1获取投资信息，2获取OPEC月度报告)：')
-    if step == '1':
-        startDate = input('请输入指定日期(例如：2026-07-17)：')
-        getRowsDetail(startDate)
-    elif step == '2':
-        vpn = input('请输入VPN代理(例如：127.0.0.1:7892)：')
-        getOpecReport(vpn)
+    while True:
+        step = input('请输入操作步骤(1获取投资信息，2获取OPEC月度报告，3获取eiv月度报告)：')
+        if step == '1':
+            startDate = input('请输入指定日期(例如：2026-07-17)：')
+            getRowsDetail(startDate)
+        elif step == '2':
+            vpn = input('请输入VPN代理(例如：127.0.0.1:7892)：')
+            getOpecReport(vpn)
+        elif step == '3':
+            vpn = input('请输入VPN代理(例如：127.0.0.1:7892)：')
+            getEivlist(vpn)
+
+
