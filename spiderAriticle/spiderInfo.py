@@ -15,20 +15,6 @@ from PlayWright import Playwright_, logger
 from openpyxl import Workbook, load_workbook
 import time
 
-filename = os.path.join(os.path.dirname(__file__), '雪球网数据.xlsx')
-
-if os.path.exists(filename):
-    # 如果文件存在，加载现有工作簿
-    wb = load_workbook(filename)
-    ws = wb.active
-else:
-    headers = ['发布时间', '正文内容', '转发数', '评论数', '点赞数', '收藏数']
-    wb = Workbook()
-    ws = wb.active
-    ws.title = '小红书笔记数据'
-    ws.append(headers)
-wb.save(filename)
-
 def xueQiuLogin():
     logger.info('开始登录雪球网....')
     url = 'https://xueqiu.com/S/SH688515'
@@ -38,21 +24,21 @@ def xueQiuLogin():
     logger.info('✅️ 雪球登录成功')
 
 
-def getPageInfo():
+def getXueQiuPageInfo(ws, wb, fileName):
     rowEle = '//article[@class="timeline__item"]'
     rowCount = Playwright_.get_count(rowEle)
     for rowIdx in range(1, rowCount + 1):
         transferCount = Playwright_.get_text(f'(({rowEle})[{rowIdx}]//a[contains(@class, "timeline__item__control")])[1]')
-        transferCount = re.findall('\d+', transferCount)[0] if re.findall('\d+', transferCount) else '0'
+        transferCount = re.findall(r'\d+', transferCount)[0] if re.findall(r'\d+', transferCount) else '0'
 
         commitCount = Playwright_.get_text(f'(({rowEle})[{rowIdx}]//a[contains(@class, "timeline__item__control")])[2]')
-        commitCount = re.findall('\d+', commitCount)[0] if re.findall('\d+', commitCount) else '0'
+        commitCount = re.findall(r'\d+', commitCount)[0] if re.findall(r'\d+', commitCount) else '0'
 
         likeCount = Playwright_.get_text(f'(({rowEle})[{rowIdx}]//a[contains(@class, "timeline__item__control")])[3]')
-        likeCount = re.findall('\d+', likeCount)[0] if re.findall('\d+', likeCount) else '0'
+        likeCount = re.findall(r'\d+', likeCount)[0] if re.findall(r'\d+', likeCount) else '0'
 
         saveCount = Playwright_.get_text(f'(({rowEle})[{rowIdx}]//a[contains(@class, "timeline__item__control")])[4]')
-        saveCount = re.findall('\d+', saveCount)[0] if re.findall('\d+', saveCount) else '0'
+        saveCount = re.findall(r'\d+', saveCount)[0] if re.findall(r'\d+', saveCount) else '0'
 
         publishTime = Playwright_.get_text(f'({rowEle})[{rowIdx}]//a[@class="date-and-source"]')
 
@@ -87,16 +73,32 @@ def getPageInfo():
             content += Playwright_.get_text(f'(({rowEle})[{rowIdx}]//div[@class="content content--description"])[1]')
         logger.info(f'{rowIdx}, content: {content}\n')
         ws.append([publishTime, content, transferCount, commitCount, likeCount, saveCount])
-    wb.save(filename)
+    wb.save(fileName)
 
-def getPagesInfo():
+def getXueQiuInfo():
+    fileName = os.path.join(os.path.dirname(__file__), '雪球网数据.xlsx')
+
+    if os.path.exists(fileName):
+        # 如果文件存在，加载现有工作簿
+        wb = load_workbook(fileName)
+        ws = wb.active
+    else:
+        headers = ['发布时间', '正文内容', '转发数', '评论数', '点赞数', '收藏数']
+        wb = Workbook()
+        ws = wb.active
+        ws.title = '数据'
+        ws.append(headers)
+    wb.save(fileName)
+
     xueQiuLogin()
     time.sleep(10)
     for page in range(1, 11):
         logger.info(f'\n开始处理第{page}页数据')
-        getPageInfo()
+        getXueQiuPageInfo(ws, wb, fileName)
         Playwright_.click('//a[text()="下一页"]')
         time.sleep(10)
 
 if __name__ == '__main__':
-    getPagesInfo()
+    step = input('请输入操作步骤（1.爬取雪球网数据，2.爬取股吧数据）：')
+    if step == '1':
+        getXueQiuInfo()

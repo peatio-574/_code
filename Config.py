@@ -2,8 +2,8 @@
 import sys
 from pathlib import Path
 
-# 把项目根目录 D:\robot 加入Python路径
-sys.path.append(str(Path(__file__).parent.parent))
+# 把项目根目录  加入Python路径
+sys.path.append(str(Path(__file__).parent))
 
 
 import configparser
@@ -11,10 +11,15 @@ import os
 
 config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
 
+class CaseSensitiveConfig(configparser.ConfigParser):
+    def optionxform(self, optionstr):
+        # 覆盖默认转小写逻辑，原样返回key，保留大小写
+        return optionstr
+
 def get_config_value(section='login', option='order_cookie', file=None):
     """获取配置项"""
     file = config_file if not file else file
-    Config = configparser.ConfigParser(interpolation=None)
+    Config = CaseSensitiveConfig(interpolation=None)
     Config.read(file, encoding='utf-8')
     return Config.get(section, option, fallback="")
 
@@ -23,7 +28,7 @@ def write_config_value(section='login', option: dict = None, file=None):
     file = config_file if not file else file
     if option is None:
         option = {'cookie': get_config_value('login', 'order_cookie')}
-    Config = configparser.ConfigParser(interpolation=None)
+    Config = CaseSensitiveConfig(interpolation=None)
     Config.read(file, encoding='utf-8')
     if section not in Config.sections():
         Config.add_section(section)
