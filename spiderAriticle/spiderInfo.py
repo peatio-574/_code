@@ -8,7 +8,8 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 import os
-
+from ReadFile import ReadData
+from snownlp import SnowNLP
 configFile = os.path.join(os.path.dirname(__file__), 'config.ini')
 
 from PlayWright import Playwright_, logger
@@ -75,6 +76,7 @@ def getXueQiuPageInfo(ws, wb, fileName):
         ws.append([publishTime, content, transferCount, commitCount, likeCount, saveCount])
     wb.save(fileName)
 
+
 def getXueQiuInfo():
     fileName = os.path.join(os.path.dirname(__file__), '雪球网数据.xlsx')
 
@@ -98,7 +100,70 @@ def getXueQiuInfo():
         Playwright_.click('//a[text()="下一页"]')
         time.sleep(10)
 
+
+def getGuBaInfo():
+    fileName = os.path.join(os.path.dirname(__file__), '股吧数据.xlsx')
+    if os.path.exists(fileName):
+        # 如果文件存在，加载现有工作簿
+        wb = load_workbook(fileName)
+        ws = wb.active
+    else:
+        headers = ['发布时间', '标题', '作者', '阅读量', '评论数']
+        wb = Workbook()
+        ws = wb.active
+        ws.title = '数据'
+        ws.append(headers)
+    wb.save(fileName)
+
+    for page in range(1, 5):
+        extra = f'_{page}' if page != 1 else ''
+        url = f'https://guba.eastmoney.com/list,688515,f{extra}.html'
+        Playwright_.goto(url)
+        time.sleep(10)
+        rowEle = '//tr[@class="listitem "]'
+        rowCount = Playwright_.get_count(rowEle)
+        for rowIdx in range(1, rowCount + 1):
+            readCount = Playwright_.get_text(f'({rowEle})[{rowIdx}]/td[1]/div')
+            commitCount = Playwright_.get_text(f'({rowEle})[{rowIdx}]/td[2]/div')
+            title = Playwright_.get_text(f'({rowEle})[{rowIdx}]/td[3]/div/a')
+            author = Playwright_.get_text(f'({rowEle})[{rowIdx}]/td[4]/div/a')
+            publishTime = Playwright_.get_text(f'({rowEle})[{rowIdx}]/td[5]/div')
+            ws.append([publishTime, title, author, readCount, commitCount])
+            logger.info(f'第{page}页第{rowIdx}条数据, {[publishTime, title, author, readCount, commitCount]}')
+    wb.save(fileName)
+
+
+def analyze():
+    xueQiuFile = os.path.join(os.path.dirname(__file__), '雪球网数据.xlsx')
+    xueQiuData  = ReadData.read_xlsx_col(xueQiuFile)['正文内容']
+    xueQiuWb = load_workbook(xueQiuFile)
+    xueQiuWs = xueQiuWb.active
+    xueQiuWs.cell(row=1, column=7, value='内容分类')
+    xueQiuWb.save(xueQiuFile)
+
+    for rowIdx, text in enumerate(xueQiuData, start=2):
+        value = "正面" if SnowNLP(text).sentiments >=0.45 else "负面"
+        xueQiuWs.cell(row=rowIdx, column=7, value=value)
+    xueQiuWb.save(xueQiuFile)
+
+    guBaFile = os.path.join(os.path.dirname(__file__), '股吧数据.xlsx')
+    guBaData = ReadData.read_xlsx_col(guBaFile)['标题']
+    guBaWb = load_workbook(guBaFile)
+    guBaWs = guBaWb.active
+    guBaWs.cell(row=1, column=6, value='内容分类')
+    guBaWb.save(guBaFile)
+
+    for rowIdx, text in enumerate(guBaData, start=2):
+        value = "正面" if SnowNLP(text).sentiments >=0.45 else "负面"
+        guBaWs.cell(row=rowIdx, column=6, value=value)
+    guBaWb.save(guBaFile)
+
+
 if __name__ == '__main__':
-    step = input('请输入操作步骤（1.爬取雪球网数据，2.爬取股吧数据）：')
+    step = input('请输入操作步骤（1.爬取雪球网数据，2.爬取股吧数据，3.内容情感分类）：')
     if step == '1':
         getXueQiuInfo()
+    elif step == '2':
+        getGuBaInfo()
+    elif step == '3':
+        analyze()

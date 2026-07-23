@@ -1,0 +1,5 @@
+playwright
+screeninfo
+openpyxl
+pandas
+snownlp
