@@ -1,15 +1,17 @@
 # coding='utf-8'
 import sys
+import os
 
-from pathlib import Path
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 把项目根目录 加入Python路径
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.insert(0, os.path.join(BASE_DIR, '..', ))
 
 from PlayWright import Playwright_, logger
 import time
 import csv
-import os
 import requests
 
 
@@ -103,7 +105,7 @@ def getRowDetail(rowInfo, startDate):
 
 
 def getRowsDetail(startDate):
-    csvFile = os.path.join(os.path.dirname(__file__), 'Investing.csv')
+    csvFile = os.path.join(BASE_DIR, 'Investing.csv')
     fileHeader = ['发布时间', '标题', '作者', '正文']
     fileExists = os.path.exists(csvFile)
     rowsInfo = getPageInfo(startDate)
@@ -146,7 +148,7 @@ def download(url, file, vpn=None):
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
-            fileName = os.path.join(os.path.dirname(__file__), file)
+            fileName = os.path.join(BASE_DIR, file)
             with open(fileName, 'wb') as f:
                 if vpn:
                     f.write(requests.get(url, headers=headers, proxies={'http': f'http://{vpn}',  'https': f'http://{vpn}'}).content)
