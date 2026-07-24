@@ -1,0 +1,23 @@
+【打包说明】
+
+1. 双击运行 build.bat 自动打包
+
+2. 打包后目录结构:
+   dist\欧易爬虫\
+   ├── 欧易爬虫.exe      (主程序)
+   ├── config.ini        (配置文件，可编辑)
+   ├── 欧易数据.xlsx     (数据文件，可编辑)
+   └── _internal\        (依赖库)
+
+3. 运行环境要求:
+   - 系统需安装 Microsoft Edge 浏览器
+   - Edge 默认路径: C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
+
+4. 运行:
+   双击 欧易爬虫.exe
+
+5. 注意事项:
+   - config.ini 可以用记事本直接编辑
+   - 欧易数据.xlsx 可以用 Excel 直接编辑
+   - 每次修改配置后需重启程序生效
+   - 无需安装Playwright浏览器，直接使用系统Edge

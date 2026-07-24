@@ -1,0 +1,10 @@
+{
+  "provider": "deepseek",
+  "apiKey": "sk-xxxxxxxxxxxxxxxx",
+  "model": "deepseek-chat",
+  "baseUrl": "https://api.deepseek.com",
+  "server": {
+    "port": 4096,
+    "host": "127.0.0.1"
+  }
+}

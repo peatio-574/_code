@@ -1,15 +1,18 @@
 # -*- coding: utf-8 -*-
 import sys
-from pathlib import Path
+import os
 
-# 把项目根目录  加入Python路径
-sys.path.append(str(Path(__file__).parent))
+if getattr(sys, 'frozen', False):
+    _base = os.path.dirname(sys.executable)
+else:
+    _base = os.path.dirname(os.path.abspath(__file__))
+
+sys.path.insert(0, _base)
 
 
 import configparser
-import os
 
-config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
+config_file = os.path.join(_base, 'config.ini')
 
 class CaseSensitiveConfig(configparser.ConfigParser):
     def optionxform(self, optionstr):

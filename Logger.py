@@ -1,15 +1,18 @@
 import sys
-from pathlib import Path
+import os
 
-# 把项目根目录 D:\robot 加入Python路径
-sys.path.append(str(Path(__file__).parent.parent))
+if getattr(sys, 'frozen', False):
+    _base = os.path.dirname(sys.executable)
+else:
+    _base = os.path.dirname(os.path.abspath(__file__))
+
+sys.path.insert(0, os.path.join(_base, '..'))
 
 import logging
-import os
 import time
 from logging.handlers import RotatingFileHandler
 
-dirname = os.path.join(os.path.dirname(__file__), 'logs')
+dirname = os.path.join(_base, 'logs')
 os.makedirs(dirname, exist_ok=True)
 
 class Logger(object):
