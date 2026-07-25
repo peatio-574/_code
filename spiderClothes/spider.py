@@ -140,6 +140,7 @@ def getData():
 
 def getPhoto(title, url):
     Playwright_.goto(url)
+    time.sleep(2)
     imgEle = '//div[@class="pic-slider-items J-picSlider-items"]/img'
     imgCount = Playwright_.get_count(imgEle)
     imgCount = min(2, imgCount)
@@ -157,6 +158,7 @@ def getAllPhoto():
         logger.info(f'开始处理第{rowId + 1}条链接：{detailUrl}')
         title = titleData[rowId]
         getPhoto(title, detailUrl)
+
 
 fileName = os.path.join(baseDir, '基础数据.xlsx')
 if os.path.exists(fileName):
