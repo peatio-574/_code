@@ -142,7 +142,7 @@ def getPhoto(title, url):
     time.sleep(2)
     imgEle = '//div[@class="pic-slider-items J-picSlider-items"]/img'
     imgCount = Playwright_.get_count(imgEle)
-    imgCount = min(2, imgCount)
+    imgCount = max(2, imgCount)
     for imgId in range(1, imgCount + 1):
         img = Playwright_.get_attribute(f'({imgEle})[{imgId}]', 'src')
         fileName = os.path.join(pictureDir, f'{title}_{imgId}')
