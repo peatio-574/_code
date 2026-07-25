@@ -32,7 +32,7 @@ def vipLogin():
 
 
 def download(url, file):
-    file = file.replace('/', '-').replace(' ', '-').replace('.', '-').replace(r'\\', '-')
+    file = file.replace('/', '-').replace(' ', '-').replace('.', '-').replace(r'\\', '-') + '.jpg'
     url = 'https:' + url if 'https' not in url else url
     for roll in range(1, 4):
         try:
@@ -145,7 +145,7 @@ def getPhoto(title, url):
     imgCount = min(2, imgCount)
     for imgId in range(1, imgCount + 1):
         img = Playwright_.get_attribute(f'({imgEle})[{imgId}]', 'src')
-        fileName = os.path.join(pictureDir, f'{title}_{imgId}.jpg')
+        fileName = os.path.join(pictureDir, f'{title}_{imgId}')
         download(img, fileName)
 
 
