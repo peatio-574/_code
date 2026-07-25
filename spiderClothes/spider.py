@@ -47,8 +47,8 @@ def download(url, file):
                 break
         except Exception as e:
             logger.error(f'{file}下载失败：{e}\n')
-        finally:
-            time.sleep(2)
+        # finally:
+        #     time.sleep(2)
 
 
 def getPageInfo(styleName, styleCode, pageId):
@@ -142,10 +142,9 @@ def getPhoto(title, url):
     time.sleep(2)
     imgEle = '//div[@class="pic-slider-items J-picSlider-items"]/img'
     imgCount = Playwright_.get_count(imgEle)
-    imgCount = max(2, imgCount)
     for imgId in range(1, imgCount + 1):
         img = Playwright_.get_attribute(f'({imgEle})[{imgId}]', 'src')
-        fileName = os.path.join(pictureDir, f'{title}_{imgId}')
+        fileName = os.path.join(pictureDir, f'{title}_{url[30:-5]}_{imgId}')
         download(img, fileName)
 
 
