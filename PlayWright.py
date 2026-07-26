@@ -131,7 +131,8 @@ class Playwright(object):
             self.start_borwser(proxy)
         for i in range(3):
             try:
-                self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='domcontentloaded')
+                # self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='domcontentloaded')
+                self.page.goto(url, timeout=self.timeout if not timeout else timeout)
                 time.sleep(1)
                 return True
             except Exception as e:
@@ -139,13 +140,13 @@ class Playwright(object):
                 continue
         return False
 
-    def new_goto(self, url, timeout=None):
+    def new_goto(self, url, timeout=None, close=True):
         """新开一个页面访问，并关闭上一个页面（若有）"""
         if not self.playwright:
             self.start_borwser()
 
         # 关闭上一个页面（如果存在）
-        if self.page:
+        if self.page and close:
             try:
                 self.page.close()
             except Exception as e:
@@ -249,14 +250,25 @@ class Playwright(object):
     def get_attribute(self, location, key):
         return self.page.locator(location).get_attribute(key)
 
-    def switch_to_page(self):
+    def switch_page(self, target='new', close=True):
         time.sleep(2)
-        old_page = self.page
-        if len(self.context.pages) > 1:
-            self.page = self.context.pages[-1]
-            self.page.bring_to_front()
+        pages = self.context.pages
+
+        target_page = ''
+        old_page = ''
+        if target == 'new':
+            target_page = pages[-1]
+            old_page = pages[0]
+
+        elif target == 'old':
+            target_page = pages[0]
+            old_page = pages[-1]
+
+        self.page = target_page
+        self.page.bring_to_front()
+        if close:
             old_page.close()
-            time.sleep(5)
+        time.sleep(5)
 
     def element_screenshot(self, location, file, right=0):
         ele = self.page.locator(location)
