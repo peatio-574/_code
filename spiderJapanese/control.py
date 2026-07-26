@@ -104,9 +104,9 @@ def run():
         password = row['密码']
         status = login(accountCOde, email, password, emailUrl)
         Playwright_.clear_cookie()
-        ws.cell(row=rowId, column=5, value=status)
-        if rowId % 3 == 0:
-            wb.save(fileName)
+        ws.cell(row=rowId, column=5, value=1 if status else 0)
+
+        wb.save(fileName)
 
 if __name__ == '__main__':
     run()
