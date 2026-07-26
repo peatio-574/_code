@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 
-from PlayWright import Playwright_, logger
+from specialPlaywright import Playwright_, logger
 from ReadFile import ReadData
 import os, time
 from openpyxl import load_workbook
