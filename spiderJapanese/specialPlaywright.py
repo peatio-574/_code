@@ -42,14 +42,15 @@ class Playwright(object):
 
     def startApi(self):
         # AdsPower Local API 地址
-        api_url = "http://local.adspower.net:50325/api/v1/browser/start"
+        api_url = "http://127.0.0.1:50325/api/v1/browser/active"
 
         # 你的环境ID (Profile ID)
-        profile_id = "k1f27eb0"
+        profile_id = "1/k1f27eb0"
 
         # 请求启动浏览器环境
         response = requests.get(api_url, params={"user_id": profile_id})
         result = response.json()
+        print(result)
 
         if result["code"] == 0:
             # 从返回数据中提取 WebSocket 地址，用于 Playwright 连接
