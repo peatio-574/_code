@@ -1,17 +1,23 @@
 # coding='utf-8'
 import sys
-from pathlib import Path
+import os
 
-# 把项目根目录加入Python路径
-sys.path.append(str(Path(__file__).parent.parent))
+if getattr(sys, 'frozen', False):
+    BUNDLE_DIR = sys._MEIPASS
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
+    BASE_DIR = BUNDLE_DIR
+
+sys.path.insert(0, BUNDLE_DIR)
 
 import re
 from newPlayWright import SpecialPlayWright, logger
 from ReadFile import ReadData
-import os, time
+import time
 from openpyxl import load_workbook
 
-config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
+config_file = os.path.join(BASE_DIR, 'config.ini')
 
 SpecialPlayWright = SpecialPlayWright(config_file=config_file)
 
@@ -94,7 +100,7 @@ def login(accountCOde, email, password, emailUrl):
 
 
 def run():
-    fileName = os.path.join(os.path.dirname(__file__), '登录数据.xlsx')
+    fileName = os.path.join(BASE_DIR, '登录数据.xlsx')
     data = ReadData.read_xlsx_row(fileName)
     wb = load_workbook(fileName)
     ws = wb.active
