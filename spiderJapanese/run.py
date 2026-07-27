@@ -53,7 +53,7 @@ class App:
 
         self.start_time = time.time()
         self.end_time = None
-        self.token = None
+        self.token = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiIiLCJpYXQiOjE3ODUxNTgwOTMsIm5iZiI6MTc4NTE1ODA5MywiZXhwIjoxNzg1MTY1MjkzLCJzdWIiOjEsInJvbGUiOiJhZG1pbiJ9.A32idIb0NLyagBnQJTUaYMWbtzpgyfrDpJIaJeD3oKQ'
 
         self.create_widgets()
         self.poll_log_queue()
@@ -406,26 +406,32 @@ class App:
     def get_phone_code(self, phone):
         """获取电话验证码"""
         try:
+            headers = {
+                'Authorization': f'Bearer {self.get_token()}',
+            }
             url = f'https://test3.zmdybwl.top/ajax/getYzm?id={phone}'
-            response = requests.get(url=url, headers=self.headers)
+            response = requests.post(url=url, headers=headers)
+            print(response.content.decode())
+
             phone_code = response.json()['yzm']
+            print(phone_code)
             return phone_code
         except Exception as e:
             self.log(f'【{phone}】电话验证码获取失败：{e}')
+            print(f'【{phone}】电话验证码获取失败：{e}')
             return False
 
     def get_phone(self):
         """获取电话号码"""
         try:
-            url = f'https://test3.zmdybwl.top/simadmin/sqlb_data?id=&page=1&limit=50'
+            url = f'https://test3.zmdybwl.top/simadmin/sqlb_data?page=1&limit=50'
             headers = {
                 'Authorization': f'Bearer {self.get_token()}',
             }
-            response = requests.get(url=url, headers=headers).json()
-            print(response)
-
-            # phone_code = response.json()['username']
-            return response
+            response = requests.get(url=url, headers=headers).json()['data']
+            data = [{'time': i['time'], 'data': eval(i['data1'])['username']} for i in response]
+            print(data)
+            return data
         except Exception as e:
             self.log(f'【】电话获取失败：{e}')
             return False
@@ -457,6 +463,8 @@ class App:
 if __name__ == '__main__':
     root = tk.Tk()
     app = App(root)
-    app.get_phone()
+    phones = app.get_phone()
+    for phone in phones:
+        app.get_phone_code(phone['data'])
     # root.mainloop()
 
