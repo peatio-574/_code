@@ -360,10 +360,15 @@ class PlayWrightClass(object):
 
 
 class SpecialPlayWright(PlayWrightClass):
-    def __init__(self):
+    def __init__(self, config_file=None):
         super().__init__()
-        self.profile_id = 'k1f2nilr'
-        self.api_key = 'e0547f648c7c78cb46b2382ec267f4a10073e8a5bba7f1d9'
+
+        config_file = config_file if config_file else os.path.join(os.path.dirname(__file__), 'config.ini')
+
+        self.profile_id = get_config_value('login', 'user_id', file=config_file)
+
+        self.api_key = get_config_value('login', 'api_key', file=config_file)
+
         self.authorization = f'Bearer {self.api_key}'
 
     def start_api(self):

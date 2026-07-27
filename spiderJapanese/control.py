@@ -11,9 +11,11 @@ from ReadFile import ReadData
 import os, time
 from openpyxl import load_workbook
 
-SpecialPlayWright = SpecialPlayWright()
+config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
 
-def inputInfo(email,  password):
+SpecialPlayWright = SpecialPlayWright(config_file=config_file)
+
+def input_info(email,  password):
     """访问地址输入账号密码并提交"""
     try:
         url = 'https://www.pokemoncenter-online.com/login/'
@@ -29,7 +31,7 @@ def inputInfo(email,  password):
         return False
 
 
-def getVerifyCode(apiUrl):
+def get_verify_code(apiUrl):
     """获取邮箱验证码"""
     try:
         SpecialPlayWright.new_goto(apiUrl, close=False)
@@ -47,7 +49,6 @@ def getVerifyCode(apiUrl):
         return False
 
 
-
 def login(accountCOde, email, password, emailUrl):
     try:
         logger.info(f'开始登录账号：{accountCOde}')
@@ -56,7 +57,7 @@ def login(accountCOde, email, password, emailUrl):
         # 循环3次输入账号密码，进入验证码页面
         for roll in range(3):
             logger.info(f'{accountCOde}账号：开始尝试第{roll+1}次输入账号密码')
-            enterVerify = inputInfo(email, password)
+            enterVerify = input_info(email, password)
             if enterVerify:
                 break
         if not enterVerify:
@@ -68,7 +69,7 @@ def login(accountCOde, email, password, emailUrl):
         time.sleep(10)
         for roll in range(10):
             logger.info(f'{accountCOde}账号：开始尝试第{roll+1}次获取邮箱验证码')
-            verifyCode = getVerifyCode(emailUrl)
+            verifyCode = get_verify_code(emailUrl)
             if verifyCode:
                 break
         if not verifyCode:
@@ -91,6 +92,7 @@ def login(accountCOde, email, password, emailUrl):
         logger.error(f'{accountCOde}账号登录异常：{e}')
         return False
 
+
 def run():
     fileName = os.path.join(os.path.dirname(__file__), '登录数据.xlsx')
     data = ReadData.read_xlsx_row(fileName)
@@ -107,6 +109,7 @@ def run():
         ws.cell(row=rowId, column=5, value=1 if status else 0)
         wb.save(fileName)
         break
+
 
 if __name__ == '__main__':
     run()
