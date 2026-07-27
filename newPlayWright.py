@@ -16,14 +16,9 @@ import random
 from playwright.sync_api import sync_playwright
 from screeninfo import get_monitors
 from Logger import logger
-
-EDGE_PATH = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-
-
-
 import requests
 
-class Playwright(object):
+class PlayWrightClass(object):
     """playwright登录实例"""
     def __init__(self):
         # 初始化playwright相关对象
@@ -34,46 +29,72 @@ class Playwright(object):
         self.exit = False
 
         self.browser_type = 'chrome'  # 浏览器类型 msedge
+        self.edge_path = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 
         self.user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0'
         self.width = get_monitors()[0].width  # 当前屏幕分辨率width
         self.height = get_monitors()[0].height  # 当前屏幕分辨率height
         self.timeout = 10 * 1000  # 超时时间
 
-    def startApi(self):
-        # AdsPower Local API 地址
-        api_url = "http://127.0.0.1:50325/api/v1/browser/active"
-
-        # 你的环境ID (Profile ID)
-        profile_id = "1/k1f27eb0"
-
-        # 请求启动浏览器环境
-        response = requests.get(api_url, params={"user_id": profile_id})
-        result = response.json()
-        print(result)
-
-        if result["code"] == 0:
-            # 从返回数据中提取 WebSocket 地址，用于 Playwright 连接
-            # 注意：接口返回的可能有 'ws' 或 'webdriver' 等字段，'ws' 通常用于 Playwright/Puppeteer
-            ws_endpoint = result["data"]["ws"]["puppeteer"]
-            logger.info(f"成功启动环境，连接地址: {ws_endpoint}")
-            return ws_endpoint
-        else:
-            logger.error(f"启动失败: {result.get('msg')}")
-            return False
-
-
     def start_borwser(self, proxy=None):
         """打开浏览器"""
-        ws_endpoint = self.startApi()
-
         self.playwright = sync_playwright().start()
+        browser_args = [
+            # 禁用自动化检测（核心）
+            '--disable-blink-features=AutomationControlled',
+            # 禁用扩展/插件
+            '--disable-extensions',
+            '--disable-plugins',
+            # 禁用GPU/WebGL指纹
+            '--disable-gpu',
+            '--disable-webgl',
+            '--disable-webgl-image-chromium',
+            # 禁用隐私模式提示
+            '--no-pings',
+            # 禁用弹窗拦截（模拟真实用户）
+            '--disable-popup-blocking',
+            # 禁用默认浏览器检查
+            '--no-default-browser-check',
+            # 禁用首次运行提示
+            '--no-first-run',
+            # 随机窗口尺寸（避免固定值）
+            # '--start-maximized',
+            # '--window-size={},{}'.format(
+            #     self.width + random.randint(-20, 20),
+            #     self.height + random.randint(-20, 20)
+            # ),
+            # 模拟真实语言/地区
+            '--lang=zh-CN,zh',
+            # 禁用日志（减少特征）
+            '--log-level=3',
+            '--disable-logging',
+            # 禁用密码保存提示
+            '--disable-save-password-bubble',
+            # 禁用自动填充
+            '--disable-autofill',
+        ]
 
         # 2. 启动浏览器（隐藏自动化标识）
-        self.browser = self.playwright.chromium.connect_over_cdp(ws_endpoint)
-
+        self.browser = self.playwright.chromium.launch(
+            executable_path=self.edge_path,  # edge浏览器
+            # channel=self.browser_type,  # chrome浏览器
+            headless=False,
+            args=browser_args,
+            # 移除Playwright默认的自动化参数
+            ignore_default_args=["--enable-automation"],
+            # 随机放慢操作（模拟人类速度）
+            slow_mo=random.randint(100, 300),
+            # 禁用自动化相关日志
+            # env={"GOOGLE_CHROME_BIN": ""}
+        )
         # 创建上下文
-        self.context = self.browser.contexts[0]
+        self.context = self.browser.new_context(
+            viewport=None,
+            user_agent=self.user_agent,
+            accept_downloads=True,
+            proxy=proxy
+        )
+
         # 创建页面
         self.page = self.context.new_page()
         # self.page.set_viewport_size({"width": self.width, "height": self.height})
@@ -181,7 +202,8 @@ class Playwright(object):
         if enter:
             self.page.press(location, 'Enter')
 
-    def slowInput(self, location, text, enter=False):
+    def slow_input(self, location, text, enter=False):
+        """慢输入"""
         self.input(location, '')
         self.page.locator(location).press_sequentially(text)
         if enter:
@@ -228,6 +250,7 @@ class Playwright(object):
         return self.page.locator(location).get_attribute(key)
 
     def switch_page(self, target='new', close=True):
+        """页面切换，target:old new， close是否关闭当前页面"""
         time.sleep(2)
         pages = self.context.pages
 
@@ -258,7 +281,7 @@ class Playwright(object):
         }
         ele.screenshot(path=file, clip=clip)
 
-    def screenshot(self, file):
+    def screenshot(self,file):
         self.page.screenshot(path=file)
 
     def login(self, url, location, key='login.xiaohognshu', way='xpath', storage=False, extra=None, file=None):
@@ -336,4 +359,61 @@ class Playwright(object):
             return False
 
 
-Playwright_ = Playwright()
+class SpecialPlayWright(PlayWrightClass):
+    def __init__(self):
+        super().__init__()
+        self.profile_id = 'k1f2nilr'
+        self.api_key = 'e0547f648c7c78cb46b2382ec267f4a10073e8a5bba7f1d9'
+        self.authorization = f'Bearer {self.api_key}'
+
+    def start_api(self):
+        """启动指纹浏览器api"""
+        # AdsPower Local API 地址
+        api_url = "http://127.0.0.1:50325/api/v1/browser/start"
+
+        headers = {'authorization': self.authorization}
+
+        params = {'user_id': self.profile_id}
+
+        # 请求启动浏览器环境
+        response = requests.get(api_url, headers=headers, params=params)
+        result = response.json()
+
+        if result["code"] == 0:
+            # 从返回数据中提取 WebSocket 地址，用于 Playwright 连接
+            # 注意：接口返回的可能有 'ws' 或 'webdriver' 等字段，'ws' 通常用于 Playwright/Puppeteer
+            ws_endpoint = result["data"]["ws"]["puppeteer"]
+            logger.info(f"成功启动环境，连接地址: {ws_endpoint}")
+            return ws_endpoint
+        else:
+            logger.error(f"启动失败: {result.get('msg')}")
+            return False
+
+    def start_browser(self):
+        ws_endpoint = self.start_api()
+
+        self.playwright = sync_playwright().start()
+
+        # 2. 启动浏览器（隐藏自动化标识）
+        self.browser = self.playwright.chromium.connect_over_cdp(ws_endpoint)
+
+        # 创建上下文
+        self.context = self.browser.contexts[0]
+        # 创建页面
+        self.page = self.context.new_page()
+        self.page.set_viewport_size({"width": self.width, "height": self.height})
+        js_code = """
+                () => {
+                    // 唯一需要的核心操作：覆盖 getter
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined,
+                        configurable: true, // 确保可以被重新定义（虽然通常不需要再次定义）
+                        enumerable: false
+                    });
+
+                    // 其他伪装逻辑... (plugins, chrome object 等)
+                }
+                """
+        self.page.add_init_script(js_code)
+
+PlayWright = PlayWrightClass()

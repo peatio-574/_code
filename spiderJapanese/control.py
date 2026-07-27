@@ -1,28 +1,28 @@
 # coding='utf-8'
 import sys
-
-import re
 from pathlib import Path
 
 # 把项目根目录加入Python路径
 sys.path.append(str(Path(__file__).parent.parent))
 
-
-from specialPlaywright import Playwright_, logger
+import re
+from newPlayWright import SpecialPlayWright, logger
 from ReadFile import ReadData
 import os, time
 from openpyxl import load_workbook
+
+SpecialPlayWright = SpecialPlayWright()
 
 def inputInfo(email,  password):
     """访问地址输入账号密码并提交"""
     try:
         url = 'https://www.pokemoncenter-online.com/login/'
-        Playwright_.goto(url, proxy={'server': 'http://127.0.0.1:7892'})
+        SpecialPlayWright.goto(url)
         time.sleep(5)
-        Playwright_.input('//input[@type="email" and @id="login-form-email"]', email)
-        Playwright_.input('//input[@type="password" and @id="current-password"]', password)
-        Playwright_.click('//button[@type="submit" and @class="btn btn-block btn-primary"]')
-        enterVerify = Playwright_.wait_for_selector('//input[@id="authCode"]', timeout=20*1000)
+        SpecialPlayWright.input('//input[@type="email" and @id="login-form-email"]', email)
+        SpecialPlayWright.input('//input[@type="password" and @id="current-password"]', password)
+        SpecialPlayWright.click('//button[@type="submit" and @class="btn btn-block btn-primary"]')
+        enterVerify = SpecialPlayWright.wait_for_selector('//input[@id="authCode"]', timeout=10*1000)
         return enterVerify
     except Exception as e:
         logger.error(f'输入账号密码异常：{e}')
@@ -32,15 +32,15 @@ def inputInfo(email,  password):
 def getVerifyCode(apiUrl):
     """获取邮箱验证码"""
     try:
-        Playwright_.new_goto(apiUrl, close=False)
-        time.sleep(10)
+        SpecialPlayWright.new_goto(apiUrl, close=False)
+        time.sleep(5)
         verifyCodeEle = '//div[@class="email-content"]/div[1]/div/p[3]'
-        if Playwright_.get_count(verifyCodeEle):
-            text = Playwright_.get_text(verifyCodeEle)
+        if SpecialPlayWright.get_count(verifyCodeEle):
+            text = SpecialPlayWright.get_text(verifyCodeEle)
             verifyCode = re.findall(r'\d+', text)[0]
-            Playwright_.switch_page('old')
+            SpecialPlayWright.switch_page('old')
             return verifyCode
-        Playwright_.switch_page('old')
+        SpecialPlayWright.switch_page('old')
         return False
     except Exception as e:
         logger.error(f'获取邮箱验证码异常：{e}')
@@ -77,10 +77,10 @@ def login(accountCOde, email, password, emailUrl):
 
         # 输入验证码，勾选同意并提交
         logger.info(f'{accountCOde}账号：开始输入验证码【{verifyCode}】')
-        Playwright_.input('//input[@id="authCode"]', verifyCode)
-        Playwright_.click('//input[@id="rememberMe"]')
-        Playwright_.click('//a[@id="authBtn"]')
-        status = Playwright_.wait_for_selector('//ul[@class="tabUl flex"]', timeout=20*1000)
+        SpecialPlayWright.input('//input[@id="authCode"]', verifyCode)
+        SpecialPlayWright.click('//input[@id="rememberMe"]')
+        SpecialPlayWright.click('//a[@id="authBtn"]')
+        status = SpecialPlayWright.wait_for_selector('//ul[@class="tabUl flex"]', timeout=20*1000)
         if status:
             logger.info(f'{accountCOde}账号登录成功')
             return True
@@ -103,10 +103,10 @@ def run():
         emailUrl = row['邮箱验证地址']
         password = row['密码']
         status = login(accountCOde, email, password, emailUrl)
-        Playwright_.clear_cookie()
+        SpecialPlayWright.clear_cookie()
         ws.cell(row=rowId, column=5, value=1 if status else 0)
-
         wb.save(fileName)
+        break
 
 if __name__ == '__main__':
     run()
