@@ -421,8 +421,7 @@ class App:
             headers = {
                 'Authorization': f'Bearer {self.get_token()}',
             }
-            print(headers)
-            response = requests.post(url=url, headers=headers).json()
+            response = requests.get(url=url, headers=headers).json()
             print(response)
 
             # phone_code = response.json()['username']
@@ -447,7 +446,6 @@ class App:
             token = response.json()['token']
             self.token = token
             self.start_time = time.time()
-            print(self.token)
             return self.token
         except Exception as e:
             self.log(f'token获取异常：{e}')
