@@ -360,16 +360,64 @@ class PlayWrightClass(object):
 
 
 class SpecialPlayWright(PlayWrightClass):
-    def __init__(self, config_file=None):
+    def __init__(self, config_file=None, profile_id=None):
         super().__init__()
 
         config_file = config_file if config_file else os.path.join(os.path.dirname(__file__), 'config.ini')
 
-        self.profile_id = get_config_value('login', 'user_id', file=config_file)
+        self.profile_id = profile_id if profile_id else get_config_value('login', 'user_id', file=config_file)
 
         self.api_key = get_config_value('login', 'api_key', file=config_file)
 
         self.authorization = f'Bearer {self.api_key}'
+
+    def goto(self, url, timeout=None, proxy=None):
+        """重写goto，使用AdsPower指纹浏览器"""
+        if not self.playwright:
+            self.start_browser()
+        for i in range(3):
+            try:
+                self.page.goto(url, timeout=self.timeout if not timeout else timeout)
+                time.sleep(1)
+                return True
+            except Exception as e:
+                print('%s地址访问失败：%s' % (url, e))
+                continue
+        return False
+
+    def new_goto(self, url, timeout=None, close=True):
+        """重写new_goto，使用AdsPower指纹浏览器"""
+        if not self.playwright:
+            self.start_browser()
+
+        if self.page and close:
+            try:
+                self.page.close()
+            except Exception as e:
+                logger.error(f'关闭旧页面失败：{e}')
+
+        self.page = self.context.new_page()
+
+        self.page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en'],
+            });
+            document.documentElement.lang = 'en-US';
+            delete navigator.geolocation;
+        """)
+
+        for i in range(3):
+            try:
+                self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='domcontentloaded')
+                time.sleep(1)
+                return True
+            except Exception as e:
+                logger.error(f'{url}地址访问失败：{e}')
+                continue
+        return False
 
     def start_api(self):
         """启动指纹浏览器api"""
@@ -399,13 +447,19 @@ class SpecialPlayWright(PlayWrightClass):
 
         self.playwright = sync_playwright().start()
 
-        # 2. 启动浏览器（隐藏自动化标识）
         self.browser = self.playwright.chromium.connect_over_cdp(ws_endpoint)
 
-        # 创建上下文
         self.context = self.browser.contexts[0]
-        # 创建页面
-        self.page = self.context.new_page()
+
+        # 优先复用已有页面，没有则新建
+        if self.context.pages:
+            self.page = self.context.pages[0]
+            for page in self.context.pages:
+                if page != self.page:
+                    page.close()
+        else:
+            self.page = self.context.new_page()
+
         self.page.set_viewport_size({"width": self.width, "height": self.height})
         js_code = """
                 () => {
@@ -420,5 +474,6 @@ class SpecialPlayWright(PlayWrightClass):
                 }
                 """
         self.page.add_init_script(js_code)
+
 
 PlayWright = PlayWrightClass()
