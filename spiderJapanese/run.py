@@ -43,11 +43,14 @@ class App:
         self.is_paused = False
         self.stop_event = threading.Event()
         self.fetch_stop_event = threading.Event()
+        self.fetch_stop_event.set()
         self.pause_event = threading.Event()
         self.task_epoch = 0
+        self.phone_queue = queue.Queue()
         self.log_queue = queue.Queue()
         self.phone_queue_list = []
         self.phone_queue_lock = threading.Lock()
+        self.fetch_thread = None
 
         self.userid_file_label = None
         self.file_label = None
@@ -92,7 +95,7 @@ class App:
         self.thread_spinbox = tk.Spinbox(config_frame, from_=1, to=20, width=5, textvariable=self.thread_var)
         self.thread_spinbox.grid(row=2, column=1, padx=5, pady=3, sticky=tk.W)
 
-        self.fetch_btn = tk.Button(config_frame, text="获取号码", command=self.toggle_fetch, bg="#2196F3", fg="white", state=tk.DISABLED, width=10)
+        self.fetch_btn = tk.Button(config_frame, text="获取号码", command=self.toggle_fetch, bg="#2196F3", fg="white", width=10)
         self.fetch_btn.grid(row=2, column=2, padx=5, pady=3)
 
         config_frame.columnconfigure(1, weight=1)
@@ -118,6 +121,10 @@ class App:
         queue_frame = tk.LabelFrame(status_frame, text="电话号码队列", padx=5, pady=5)
         queue_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
 
+        queue_top = tk.Frame(queue_frame)
+        queue_top.pack(fill=tk.X)
+        tk.Button(queue_top, text="清空", command=self.clear_phone_queue, width=6).pack(side=tk.RIGHT)
+
         self.queue_listbox = tk.Listbox(queue_frame, height=8, font=("Consolas", 9))
         self.queue_listbox.pack(fill=tk.BOTH, expand=True)
         queue_scroll = tk.Scrollbar(self.queue_listbox)
@@ -135,7 +142,7 @@ class App:
         self.account_tree.heading('status', text='状态')
         self.account_tree.column('account', width=80)
         self.account_tree.column('email', width=160)
-        self.account_tree.column('status', width=70, anchor=tk.CENTER)
+        self.account_tree.column('status', width=120, anchor=tk.CENTER)
         self.account_tree.pack(fill=tk.BOTH, expand=True)
         tree_scroll = tk.Scrollbar(self.account_tree, orient=tk.VERTICAL, command=self.account_tree.yview)
         tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
@@ -183,13 +190,64 @@ class App:
         if self.fetch_stop_event.is_set():
             self.fetch_stop_event.clear()
             self.fetch_btn.config(text="停止获取", bg="#f44336")
-            self.log("继续获取电话号码")
+            self._start_fetch_thread()
+            self.log("开始获取电话号码")
         else:
             self.fetch_stop_event.set()
             self.fetch_btn.config(text="获取号码", bg="#2196F3")
             self.log("停止获取电话号码")
 
+    def _start_fetch_thread(self):
+        if self.fetch_thread and self.fetch_thread.is_alive():
+            return
+        def _fetch():
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            while not self.stop_event.is_set() and not self.fetch_stop_event.is_set():
+                try:
+                    phones = self.get_phone()
+                    if phones:
+                        with self.phone_queue_lock:
+                            existing = set(self.phone_queue_list)
+                        for phone in phones:
+                            if phone['data'] in existing:
+                                self.log(f"队列已存在该数据: {phone['data']}")
+                                continue
+                            existing.add(phone['data'])
+                            self.phone_queue.put(phone)
+                            with self.phone_queue_lock:
+                                self.phone_queue_list.append(phone['data'])
+                            self.log(f"加入队列: {phone['data']}")
+                except Exception as e:
+                    self.log(f"获取电话异常: {e}")
+                for _ in range(20):
+                    if self.stop_event.is_set() or self.fetch_stop_event.is_set():
+                        return
+                    time.sleep(0.5)
+            self.log("电话号码获取已停止")
+        self.fetch_thread = threading.Thread(target=_fetch, daemon=True)
+        self.fetch_thread.start()
+
+    def clear_phone_queue(self):
+        with self.phone_queue_lock:
+            self.phone_queue_list.clear()
+        while not self.phone_queue.empty():
+            try:
+                self.phone_queue.get_nowait()
+            except queue.Empty:
+                break
+        self.log("已清空电话号码队列")
+
     def toggle_pause(self):
+        if self.is_paused:
+            self.is_paused = False
+            self.pause_event.clear()
+            self.pause_btn.config(text="暂停")
+            self.log("任务继续")
+        else:
+            self.is_paused = True
+            self.pause_event.set()
+            self.pause_btn.config(text="继续")
+            self.log("任务暂停")
         if self.is_paused:
             self.is_paused = False
             self.pause_event.clear()
@@ -296,6 +354,7 @@ class App:
         self.fetch_stop_event.clear()
         self.pause_event.clear()
         self.task_epoch += 1
+        self._start_fetch_thread()
         self.start_btn.config(state=tk.DISABLED)
         self.fetch_btn.config(state=tk.NORMAL, text="停止获取", bg="#f44336")
         self.pause_btn.config(state=tk.NORMAL, text="暂停")
@@ -320,10 +379,9 @@ class App:
 
     def stop_task(self):
         self.stop_event.set()
-        self.fetch_stop_event.set()
         self.pause_event.clear()
         self.log("正在停止任务...")
-        self.fetch_btn.config(state=tk.DISABLED)
+        self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         self.pause_btn.config(state=tk.DISABLED)
 
@@ -355,14 +413,15 @@ class App:
                 account_code = f"{account_code}_{email}" if account_code else email
                 row_map[account_code] = idx
 
-            def write_account_status(account_code, status):
+            def write_account_status(account_code, status, phone=''):
                 row_id = row_map.get(account_code)
                 if row_id:
                     with xlsx_lock:
                         ws.cell(row=row_id, column=6, value=status)
+                        if phone:
+                            ws.cell(row=row_id, column=7, value=phone)
                         wb.save(self.file_path)
 
-            phone_queue = queue.Queue()
             lock = threading.Lock()
             xlsx_lock = threading.Lock()
             processed_count = [0]
@@ -370,34 +429,6 @@ class App:
             account_index = [0]
             max_workers = min(int(self.thread_var.get()), len(user_ids))
             self.log(f"启动{max_workers}个并发线程")
-
-            def fetch_phones_loop():
-                epoch = self.task_epoch
-                while not self.stop_event.is_set() and self.task_epoch == epoch:
-                    if self.fetch_stop_event.is_set():
-                        self.log("电话号码获取已停止")
-                        return
-                    try:
-                        phones = self.get_phone()
-                        if phones:
-                            for phone in phones:
-                                phone_queue.put(phone)
-                                with self.phone_queue_lock:
-                                    self.phone_queue_list.append(phone['data'])
-                                self.log(f"加入队列: {phone['data']}")
-                    except Exception as e:
-                        self.log(f"获取电话异常: {e}")
-                    for _ in range(20):
-                        if self.stop_event.is_set() or self.task_epoch != epoch:
-                            return
-                        while self.pause_event.is_set():
-                            if self.stop_event.is_set() or self.task_epoch != epoch:
-                                return
-                            time.sleep(0.5)
-                        time.sleep(0.5)
-
-            fetcher = threading.Thread(target=fetch_phones_loop, daemon=True)
-            fetcher.start()
 
             def worker_loop(user_id, epoch):
                 asyncio.set_event_loop(asyncio.new_event_loop())
@@ -454,11 +485,10 @@ class App:
                             continue
 
                         self.update_account_status(account_code, '登录成功')
-                        write_account_status(account_code, '登录成功')
 
                         phone_item = None
                         try:
-                            phone_item = phone_queue.get(timeout=1)
+                            phone_item = self.phone_queue.get(timeout=1)
                         except queue.Empty:
                             self.log(f"[{user_id}] 队列无可用电话号码，等待...")
                             try:
@@ -489,13 +519,15 @@ class App:
 
                         verify_ok = self.verify_phone(sp, phone_id)
                         phone_success = False
+                        success_phone = ''
                         if verify_ok:
                             phone_success = True
+                            success_phone = phone_code
                             self.log(f"[{user_id}] {phone_code} 验证成功")
                         else:
                             self.log(f"[{user_id}] {phone_code} 验证失败，替换号码")
                             try:
-                                retry_item = phone_queue.get(timeout=1)
+                                retry_item = self.phone_queue.get(timeout=1)
                                 retry_phone = retry_item['data']
                                 retry_id = retry_item['id']
                                 with self.phone_queue_lock:
@@ -507,6 +539,7 @@ class App:
                                     verify_ok = self.verify_phone(sp, retry_id)
                                     if verify_ok:
                                         phone_success = True
+                                        success_phone = retry_phone
                                         self.log(f"[{user_id}] {retry_phone} 验证成功")
                                     else:
                                         self.log(f"[{user_id}] {retry_phone} 验证失败")
@@ -520,11 +553,11 @@ class App:
                         except:
                             pass
                         if phone_success:
-                            self.update_account_status(account_code, '登录成功，电话成功')
-                            write_account_status(account_code, '登录成功，电话成功')
+                            self.update_account_status(account_code, '登录成功，验证成功')
+                            write_account_status(account_code, '登录成功，验证成功', success_phone)
                         else:
-                            self.update_account_status(account_code, '登录成功，电话失败')
-                            write_account_status(account_code, '登录成功，电话失败')
+                            self.update_account_status(account_code, '登录成功，验证失败')
+                            write_account_status(account_code, '登录成功，验证失败')
                     except Exception as e:
                         self.log(f"[{user_id}] 异常: {str(e)}")
 
@@ -539,7 +572,7 @@ class App:
                         self.status_label.config(text=f"电话成功: {p} | 电话失败: {f} | 总计: {p + f}")))
 
             self.log("等待电话号码就绪...")
-            while phone_queue.empty() and not self.stop_event.is_set():
+            while self.phone_queue.empty() and not self.stop_event.is_set():
                 self.stop_event.wait(1)
             if self.stop_event.is_set():
                 self.log("已停止，无需启动登录线程")
@@ -567,7 +600,6 @@ class App:
         self.is_paused = False
         self.pause_event.clear()
         self.start_btn.config(state=tk.NORMAL)
-        self.fetch_btn.config(state=tk.DISABLED, text="获取号码", bg="#2196F3")
         self.pause_btn.config(state=tk.DISABLED, text="暂停")
         self.stop_btn.config(state=tk.DISABLED)
 
@@ -660,7 +692,10 @@ class App:
     def modify_phone(self, sp, phone):
         """修改电话号码"""
         self.log('进行电话号码修改')
+
         try:
+            sp.click('//div[@class="topBox"]//a[contains(@href, "mypage")]')
+            time.sleep(3)
             sp.click('//a[@class="editProfile "]')  # 点击信息变更
 
             phone_ele = '//input[@class="js-validate telNumber form-control"]'
@@ -693,8 +728,8 @@ class App:
         self.log('进行电话号码验证')
         try:
             sp.click('//div[@class="topBox"]//a[contains(@href, "mypage")]')
-            time.sleep(3)
-            sp.click('//form[@class="sendCertification-form"]')
+            time.sleep(5)
+            sp.click('//form[@class="sendCertification-form"]/a')
 
             submit_ele = '//a[@name="smsSubmit"]'
             success = sp.wait_for_selector(submit_ele, timeout=15*1000)
