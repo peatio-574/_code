@@ -360,12 +360,12 @@ class PlayWrightClass(object):
 
 
 class SpecialPlayWright(PlayWrightClass):
-    def __init__(self, config_file=None, profile_id=None):
+    def __init__(self, config_file=None, user_id=None):
         super().__init__()
 
         config_file = config_file if config_file else os.path.join(os.path.dirname(__file__), 'config.ini')
 
-        self.profile_id = profile_id if profile_id else get_config_value('login', 'user_id', file=config_file)
+        self.user_id = user_id if user_id else get_config_value('login', 'user_id', file=config_file)
 
         self.api_key = get_config_value('login', 'api_key', file=config_file)
 
@@ -426,7 +426,7 @@ class SpecialPlayWright(PlayWrightClass):
 
         headers = {'authorization': self.authorization}
 
-        params = {'user_id': self.profile_id}
+        params = {'user_id': self.user_id}
 
         # 请求启动浏览器环境
         response = requests.get(api_url, headers=headers, params=params)
