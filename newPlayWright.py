@@ -368,6 +368,7 @@ class SpecialPlayWright(PlayWrightClass):
         self.user_id = user_id if user_id else get_config_value('login', 'user_id', file=config_file)
 
         self.api_key = get_config_value('login', 'api_key', file=config_file)
+        self.api_key = 'e0547f648c7c78cb46b2382ec267f4a10073e8a5bba7f1d9'
 
         self.authorization = f'Bearer {self.api_key}'
 

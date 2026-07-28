@@ -39,8 +39,9 @@ class App:
         self.userid_file_path = None
         self.is_running = False
         self.is_paused = False
-        self.stop_flag = False
+        self.stop_event = threading.Event()
         self.pause_event = threading.Event()
+        self.task_epoch = 0
         self.log_queue = queue.Queue()
         self.phone_queue_list = []
         self.phone_queue_lock = threading.Lock()
@@ -262,8 +263,9 @@ class App:
 
         self.is_running = True
         self.is_paused = False
-        self.stop_flag = False
+        self.stop_event.clear()
         self.pause_event.clear()
+        self.task_epoch += 1
         self.start_btn.config(state=tk.DISABLED)
         self.pause_btn.config(state=tk.NORMAL, text="暂停")
         self.stop_btn.config(state=tk.NORMAL)
@@ -283,7 +285,7 @@ class App:
         thread.start()
 
     def stop_task(self):
-        self.stop_flag = True
+        self.stop_event.set()
         self.pause_event.clear()
         self.log("正在停止任务...")
         self.stop_btn.config(state=tk.DISABLED)
@@ -317,17 +319,18 @@ class App:
             self.log(f"启动{max_workers}个并发线程")
 
             def fetch_phones_loop():
-                while not self.stop_flag:
-                    while self.pause_event.is_set() and not self.stop_flag:
-                        time.sleep(1)
+                epoch = self.task_epoch
+                while not self.stop_event.is_set() and self.task_epoch == epoch:
+                    while self.pause_event.is_set() and not self.stop_event.is_set():
+                        time.sleep(0.5)
                     try:
                         phones = self.get_phone()
                         if phones:
                             for phone in phones:
                                 phone_queue.put(phone)
                                 with self.phone_queue_lock:
-                                    self.phone_queue_list.append(phone)
-                                self.log(f"加入队列: {phone}")
+                                    self.phone_queue_list.append(phone['data'])
+                                self.log(f"加入队列: {phone['data']}")
                     except Exception as e:
                         self.log(f"获取电话异常: {e}")
                     time.sleep(10)
@@ -335,13 +338,15 @@ class App:
             fetcher = threading.Thread(target=fetch_phones_loop, daemon=True)
             fetcher.start()
 
-            def worker_loop(user_id):
-                while not self.stop_flag:
-                    while self.pause_event.is_set() and not self.stop_flag:
-                        time.sleep(1)
+            def worker_loop(user_id, epoch):
+                while not self.stop_event.is_set() and self.task_epoch == epoch:
+                    while self.pause_event.is_set() and not self.stop_event.is_set():
+                        time.sleep(0.5)
+                    if self.stop_event.is_set() or self.task_epoch != epoch:
+                        break
                     phone_item = None
                     try:
-                        phone_item = phone_queue.get(timeout=3)
+                        phone_item = phone_queue.get(timeout=1)
                     except queue.Empty:
                         continue
 
@@ -359,9 +364,11 @@ class App:
 
                         login_ok = False
                         login_attempts = 0
-                        while not login_ok and not self.stop_flag:
-                            while self.pause_event.is_set() and not self.stop_flag:
-                                time.sleep(1)
+                        while not login_ok and not self.stop_event.is_set():
+                            while self.pause_event.is_set() and not self.stop_event.is_set():
+                                time.sleep(0.5)
+                            if self.stop_event.is_set() or self.task_epoch != epoch:
+                                break
                             with lock:
                                 if account_index[0] >= len(data) * 3:
                                     break
@@ -412,7 +419,7 @@ class App:
                         else:
                             self.log(f"[{user_id}] {phone_code} 验证失败，替换号码")
                             try:
-                                retry_item = phone_queue.get(timeout=3)
+                                retry_item = phone_queue.get(timeout=1)
                                 retry_phone = retry_item['data']
                                 retry_id = retry_item['id']
                                 with self.phone_queue_lock:
@@ -446,14 +453,15 @@ class App:
                         self.progress.__setitem__('value', p % 100),
                         self.status_label.config(text=f"成功: {p} | 失败: {f} | 总计: {p + f}")))
 
+            epoch = self.task_epoch
             threads = []
             for user_id in user_ids[:max_workers]:
-                t = threading.Thread(target=worker_loop, args=(user_id,), daemon=True)
+                t = threading.Thread(target=worker_loop, args=(user_id, epoch), daemon=True)
                 t.start()
                 threads.append(t)
 
-            while not self.stop_flag:
-                time.sleep(1)
+            while not self.stop_event.is_set():
+                self.stop_event.wait(1)
 
             self.log(f"任务停止. 成功: {processed_count[0]}, 失败: {failed_count[0]}")
 
@@ -476,7 +484,7 @@ class App:
 
             enter_verify = False
             for roll in range(3):
-                if self.stop_flag:
+                if self.stop_event.is_set():
                     return False
                 self.log(f"{account_code}: 第{roll+1}次尝试输入账号密码")
                 enter_verify = self.input_info(sp, email, password)
@@ -488,9 +496,10 @@ class App:
                 return False
 
             verify_code = False
-            time.sleep(10)
+            if not self.stop_event.is_set():
+                self.stop_event.wait(10)
             for roll in range(10):
-                if self.stop_flag:
+                if self.stop_event.is_set():
                     return False
                 self.log(f"{account_code}: 第{roll+1}次尝试获取邮箱验证码")
                 verify_code = self.get_email_code(sp, email_url)
