@@ -444,13 +444,14 @@ class SpecialPlayWright(PlayWrightClass):
             return False
 
     def start_browser(self):
-        ws_endpoint = self.start_api()
+        if not self.playwright:
+            ws_endpoint = self.start_api()
 
-        self.playwright = sync_playwright().start()
+            self.playwright = sync_playwright().start()
 
-        self.browser = self.playwright.chromium.connect_over_cdp(ws_endpoint)
+            self.browser = self.playwright.chromium.connect_over_cdp(ws_endpoint)
 
-        self.context = self.browser.contexts[0]
+            self.context = self.browser.contexts[0]
 
         # 优先复用已有页面，没有则新建
         if self.context.pages:
