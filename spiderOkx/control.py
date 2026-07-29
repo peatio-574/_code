@@ -93,8 +93,10 @@ def getSinglePageInfo(ws, wb, fileName, existData, cursor=''):
         pubulishTime = row['contentData']['publishTime']
 
         if int(time.time() * 1000) - int(pubulishTime) > 3 * 24 * 60 * 60 * 1000:
-            logger.info(f'数据不在三天之内，退出程序')
-            exit()
+            isContinue = input('数据不在三天之内，请选择是否继续（1.继续，0.退出运行）：')
+            if isContinue == '0':
+                logger.info(f'数据不在三天之内，退出程序')
+                exit()
 
         pubulishTime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(pubulishTime)/1000))
 
