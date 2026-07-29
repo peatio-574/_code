@@ -144,6 +144,10 @@ class App:
         account_frame = tk.LabelFrame(status_frame, text="账号状态", padx=5, pady=5)
         account_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
 
+        account_top = tk.Frame(account_frame)
+        account_top.pack(fill=tk.X)
+        tk.Button(account_top, text="清空", command=self.clear_accounts, width=6).pack(side=tk.RIGHT)
+
         columns = ('account', 'email', 'status')
         self.account_tree = ttk.Treeview(account_frame, columns=columns, show='headings', height=8)
         self.account_tree.heading('account', text='编号')
@@ -242,6 +246,11 @@ class App:
             except queue.Empty:
                 break
         self.log("已清空电话号码队列")
+
+    def clear_accounts(self):
+        for item in self.account_tree.get_children():
+            self.account_tree.delete(item)
+        self.log("已清空账号列表")
 
     def toggle_pause(self):
         if self.is_paused:
