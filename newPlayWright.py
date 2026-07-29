@@ -360,17 +360,14 @@ class PlayWrightClass(object):
 
 
 class SpecialPlayWright(PlayWrightClass):
-    def __init__(self, config_file=None, user_id=None):
+    def __init__(self):
         super().__init__()
 
-        config_file = config_file if config_file else os.path.join(os.path.dirname(__file__), 'config.ini')
+        self.api_key = '4bdd79e53856dbe38d41313d0e7ac8020073e8a5bba7f1d9'
 
-        self.user_id = user_id if user_id else get_config_value('login', 'user_id', file=config_file)
+        self.headers = {'authorization': f'Bearer {self.api_key}'}
 
-        self.api_key = get_config_value('login', 'api_key', file=config_file)
-        self.api_key = 'e0547f648c7c78cb46b2382ec267f4a10073e8a5bba7f1d9'
-
-        self.authorization = f'Bearer {self.api_key}'
+        self.environment_id = None
 
     def goto(self, url, timeout=None, proxy=None):
         """重写goto，使用AdsPower指纹浏览器"""
@@ -420,32 +417,152 @@ class SpecialPlayWright(PlayWrightClass):
                 continue
         return False
 
+    def create_enviroment(self, group_id='10238760'):
+        random_id = random.randint(1,50000)
+        try:
+            url = 'http://127.0.0.1:50325/api/v1/user/create'
+
+            params = {
+                "name": f"新增环境{random_id}",
+                "domain_name": "https://www.pokemoncenter-online.com/login/",
+                "repeat_config": "",
+                "username": "",
+                "password": "",
+                "ipchecker": "ip2location",
+                "open_urls": [
+                    "https://www.pokemoncenter-online.com/login/"
+                ],
+                "cookie": "",
+                "group_id": group_id,
+                "ip": "",
+                "user_proxy_config": {
+                    "proxy_soft": "no_proxy"
+                },
+                "country": "",
+                "region": "",
+                "city": "",
+                "remark": "remark",
+                "fingerprint_config": {
+                    "client_hints": {
+                        "model": "",
+                        "wow64": "",
+                        "mobile": "",
+                        "bitness": "64",
+                        "platform": "macOS",
+                        "architecture": "arm",
+                        "ua_full_version": "150.0.7871.46",
+                        "platform_version": "13.6.0"
+                    },
+                    "tls": "",
+                    "automatic_timezone": "1",
+                    "allow_scan_ports": "",
+                    "dpr": 2,
+                    "webgl": "0",
+                    "audio": "0",
+                    "webrtc": "local",
+                    "flash": "block",
+                    "location": "ask",
+                    "accuracy": "1000",
+                    "gpu": "2",
+                    "gyroscope": "1",
+                    "page_language": "native",
+                    "client_rects": "1",
+                    "webgl_config": {
+                        "unmasked_vendor": "",
+                        "unmasked_renderer": "",
+                        "system": "",
+                        "webgpu": {
+                            "webgpu_switch": "1"
+                        }
+                    },
+                    "do_not_track": "true",
+                    "hardware_concurrency": "default",
+                    "device_memory": "default",
+                    "speech_switch": "1",
+                    "scan_port_type": "1",
+                    "device_name_switch": "2",
+                    "device_name": "22101320I-Shanel",
+                    "media_devices": "1",
+                    "tls_switch": "0",
+                    "canvas_id": "5055",
+                    "webgl_image_id": "6474",
+                    "audio_id": "706",
+                    "client_rects_id": "-4660",
+                    "language_switch": "1",
+                    "page_language_switch": "1",
+                    "location_switch": "1",
+                    "longitude": "180",
+                    "latitude": "90",
+                    "canvas": "0",
+                    "webgl_image": "0",
+                    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7871.46 Safari/537.36",
+                    "screen_resolution": "none",
+                    "sys_resolution": "",
+                    "sys_dpr": "",
+                    "mac_address_config": {
+                        "model": "2",
+                        "address": "ac:83:f3:a8:49:3a"
+                    },
+                    "browser_kernel_config": {
+                        "version": "150",
+                        "type": "chrome"
+                    },
+                    "network_information_type": "0"
+                }
+            }
+
+            environment_id = requests.post(url, headers=self.headers, json=params).json()['data']['id']
+            self.environment_id = environment_id
+            return True
+        except Exception as e:
+            logger.error(f'创建环境失败：{e}')
+            return None
+
+    def delete_enviroment(self):
+        try:
+            url = 'http://localhost:50325/api/v1/user/delete'
+
+            response = requests.post(url, headers=self.headers, json=[self.environment_id]).json()
+
+            if response["msg"] == "Success":
+                logger.info(f'环境删除成功：{self.environment_id}')
+                return True
+            logger.info(f'{self.environment_id}环境删除失败：{response}')
+            return False
+        except Exception as e:
+            logger.error(f'{self.environment_id}环境删除失败：{e}')
+
     def start_api(self):
         """启动指纹浏览器api"""
-        # AdsPower Local API 地址
-        api_url = "http://127.0.0.1:50325/api/v1/browser/start"
+        try:
+            # AdsPower Local API 地址
+            api_url = "http://127.0.0.1:50325/api/v1/browser/start"
 
-        headers = {'authorization': self.authorization}
+            # 请求启动浏览器环境
+            response = requests.get(api_url, headers=self.headers, params={'user_id': self.environment_id})
+            result = response.json()
 
-        params = {'user_id': self.user_id}
-
-        # 请求启动浏览器环境
-        response = requests.get(api_url, headers=headers, params=params)
-        result = response.json()
-
-        if result["code"] == 0:
-            # 从返回数据中提取 WebSocket 地址，用于 Playwright 连接
-            # 注意：接口返回的可能有 'ws' 或 'webdriver' 等字段，'ws' 通常用于 Playwright/Puppeteer
-            ws_endpoint = result["data"]["ws"]["puppeteer"]
-            logger.info(f"成功启动环境，连接地址: {ws_endpoint}")
-            return ws_endpoint
-        else:
-            logger.error(f"启动失败: {result.get('msg')}")
+            if result["code"] == 0:
+                # 从返回数据中提取 WebSocket 地址，用于 Playwright 连接
+                # 注意：接口返回的可能有 'ws' 或 'webdriver' 等字段，'ws' 通常用于 Playwright/Puppeteer
+                ws_endpoint = result["data"]["ws"]["puppeteer"]
+                logger.info(f"成功启动环境，连接地址: {ws_endpoint}")
+                return ws_endpoint
+            else:
+                logger.error(f"环境启动失败: {result}")
+                return False
+        except Exception as e:
+            logger.error(f'环境启动失败：{e}')
             return False
 
     def start_browser(self):
         if not self.playwright:
+            self.create_enviroment()
+            if not self.environment_id:
+                return False
             ws_endpoint = self.start_api()
+            if not ws_endpoint:
+                return False
 
             self.playwright = sync_playwright().start()
 
@@ -476,6 +593,7 @@ class SpecialPlayWright(PlayWrightClass):
                 }
                 """
         self.page.add_init_script(js_code)
+        return True
 
 
 PlayWright = PlayWrightClass()

@@ -14,11 +14,10 @@ sys.path.insert(0, BUNDLE_DIR)
 sys.path.insert(0, parent_dir)
 
 import tkinter as tk
-from tkinter import filedialog, ttk, scrolledtext
+from tkinter import filedialog, ttk, scrolledtext, messagebox
 import threading
 
 from newPlayWright import SpecialPlayWright, logger
-from Config import get_config_value
 from ReadFile import ReadData
 import re
 import time
@@ -27,35 +26,46 @@ import requests
 import queue
 from openpyxl import load_workbook
 
-config_file = os.path.join(BASE_DIR, 'config.ini')
-
 
 class App:
     def __init__(self, root):
+        # 内部状态
+        self._status_update_scheduled = False
+        self._pending_status = {}
+        self._last_queue = []
+
+        # 窗口
         self.root = root
         self.root.title("宝可梦 登录工具")
         self.root.geometry("900x700")
         self.root.resizable(True, True)
 
+        # 文件/数据路径
         self.file_path = None
-        self.userid_file_path = None
+
+        # 运行状态
         self.is_running = False
         self.is_paused = False
-        self.stop_event = threading.Event()
-        self.fetch_stop_event = threading.Event()
+        self.stop_event = threading.Event()         # 停止信号（整个任务）
+        self.fetch_stop_event = threading.Event()    # 停止获取号码信号
         self.fetch_stop_event.set()
-        self.pause_event = threading.Event()
-        self.task_epoch = 0
+        self.pause_event = threading.Event()         # 暂停信号
+        self.task_epoch = 0                          # 任务标识，递增使旧线程退出
+
+        # 电话号码队列
         self.phone_queue = queue.Queue()
-        self.log_queue = queue.Queue()
-        self.phone_queue_list = []
+        self.phone_queue_list = []                   # 队列显示列表
         self.phone_queue_lock = threading.Lock()
+
+        # 日志队列
+        self.log_queue = queue.Queue()
+
+        # 获取线程
         self.fetch_thread = None
 
-        self.userid_file_label = None
+        # UI 组件变量
         self.file_label = None
         self.thread_var = None
-        self.thread_spinbox = None
         self.start_btn = None
         self.fetch_btn = None
         self.pause_btn = None
@@ -67,9 +77,11 @@ class App:
         self.status_label = None
         self.log_text = None
 
+        # Token 缓存
         self.start_time = time.time()
         self.end_time = None
         self.token = None
+
         self.create_widgets()
         self.poll_log_queue()
         self.poll_queue_display()
@@ -78,25 +90,22 @@ class App:
         config_frame = tk.LabelFrame(self.root, text="配置信息", padx=10, pady=10)
         config_frame.pack(fill=tk.X, padx=10, pady=5)
 
-        tk.Label(config_frame, text="UserID 文件:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=3)
-        self.userid_file_label = tk.Label(config_frame, text="未选择文件", anchor=tk.W)
-        self.userid_file_label.grid(row=0, column=1, padx=5, pady=3, sticky=tk.W+tk.E)
-        select_userid_btn = tk.Button(config_frame, text="选择", command=self.select_userid_file, width=8)
-        select_userid_btn.grid(row=0, column=2, padx=5, pady=3)
-
-        tk.Label(config_frame, text="账号文件:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=3)
+        tk.Label(config_frame, text="账号文件:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=3)
         self.file_label = tk.Label(config_frame, text="未选择文件", anchor=tk.W)
-        self.file_label.grid(row=1, column=1, padx=5, pady=3, sticky=tk.W+tk.E)
+        self.file_label.grid(row=0, column=1, padx=5, pady=3, sticky=tk.W+tk.E)
         select_btn = tk.Button(config_frame, text="选择", command=self.select_file, width=8)
-        select_btn.grid(row=1, column=2, padx=5, pady=3)
+        select_btn.grid(row=0, column=2, padx=5, pady=3)
 
-        tk.Label(config_frame, text="并发数:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=3)
+        tk.Label(config_frame, text="并发数:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=3)
+        spin_frame = tk.Frame(config_frame, bd=1, relief=tk.SOLID)
+        spin_frame.grid(row=1, column=1, padx=5, pady=3, sticky=tk.W)
         self.thread_var = tk.StringVar(value="3")
-        self.thread_spinbox = tk.Spinbox(config_frame, from_=1, to=20, width=5, textvariable=self.thread_var)
-        self.thread_spinbox.grid(row=2, column=1, padx=5, pady=3, sticky=tk.W)
+        tk.Button(spin_frame, text="−", width=2, command=self._spin_down, relief=tk.FLAT, font=("", 10, "bold")).pack(side=tk.LEFT)
+        tk.Label(spin_frame, textvariable=self.thread_var, width=3, anchor=tk.CENTER, font=("", 10, "bold")).pack(side=tk.LEFT, padx=2)
+        tk.Button(spin_frame, text="+", width=2, command=self._spin_up, relief=tk.FLAT, font=("", 10, "bold")).pack(side=tk.LEFT)
 
         self.fetch_btn = tk.Button(config_frame, text="获取号码", command=self.toggle_fetch, bg="#2196F3", fg="white", width=10)
-        self.fetch_btn.grid(row=2, column=2, padx=5, pady=3)
+        self.fetch_btn.grid(row=1, column=2, padx=5, pady=3)
 
         config_frame.columnconfigure(1, weight=1)
 
@@ -106,10 +115,10 @@ class App:
         self.start_btn = tk.Button(btn_frame, text="开始", command=self.start_task, bg="#4CAF50", fg="white", width=10)
         self.start_btn.pack(side=tk.LEFT, padx=5)
 
-        self.pause_btn = tk.Button(btn_frame, text="暂停", command=self.toggle_pause, bg="#FF9800", fg="white", width=10, state=tk.DISABLED)
+        self.pause_btn = tk.Button(btn_frame, text="暂停(不可用)", command=self.toggle_pause, bg="#FF9800", fg="white", width=12, state=tk.DISABLED)
         self.pause_btn.pack(side=tk.LEFT, padx=5)
 
-        self.stop_btn = tk.Button(btn_frame, text="停止", command=self.stop_task, bg="#f44336", fg="white", width=10, state=tk.DISABLED)
+        self.stop_btn = tk.Button(btn_frame, text="停止(不可用)", command=self.stop_task, bg="#f44336", fg="white", width=12, state=tk.DISABLED)
         self.stop_btn.pack(side=tk.LEFT, padx=5)
 
         self.clear_btn = tk.Button(btn_frame, text="清空日志", command=self.clear_log, width=10)
@@ -175,16 +184,13 @@ class App:
             self.log(f"已选择文件: {file_path}")
             self.populate_accounts()
 
-    def select_userid_file(self):
-        file_path = filedialog.askopenfilename(
-            title="选择 UserID xlsx 文件",
-            filetypes=[("Excel 文件", "*.xlsx"), ("所有文件", "*.*")]
-        )
-        if file_path:
-            self.userid_file_path = file_path
-            self.userid_file_label.config(text=os.path.basename(file_path))
-            ids = self.get_user_ids()
-            self.log(f"已选择 UserID 文件: {file_path}, 共 {len(ids)} 个 ID")
+    def _spin_up(self):
+        v = min(int(self.thread_var.get()) + 1, 10)
+        self.thread_var.set(str(v))
+
+    def _spin_down(self):
+        v = max(int(self.thread_var.get()) - 1, 1)
+        self.thread_var.set(str(v))
 
     def toggle_fetch(self):
         if self.fetch_stop_event.is_set():
@@ -248,21 +254,11 @@ class App:
             self.pause_event.set()
             self.pause_btn.config(text="继续")
             self.log("任务暂停")
-        if self.is_paused:
-            self.is_paused = False
-            self.pause_event.clear()
-            self.pause_btn.config(text="暂停")
-            self.log("任务继续")
-        else:
-            self.is_paused = True
-            self.pause_event.set()
-            self.pause_btn.config(text="继续")
-            self.log("任务暂停")
 
     def poll_queue_display(self):
         with self.phone_queue_lock:
             current = list(self.phone_queue_list[-100:])
-        if not hasattr(self, '_last_queue') or self._last_queue != current:
+        if self._last_queue != current:
             self._last_queue = current
             self.queue_listbox.delete(0, tk.END)
             for phone in current:
@@ -270,10 +266,8 @@ class App:
         self.root.after(1000, self.poll_queue_display)
 
     def update_account_status(self, account_code, status):
-        if not hasattr(self, '_pending_status'):
-            self._pending_status = {}
         self._pending_status[account_code] = status
-        if not hasattr(self, '_status_update_scheduled') or not self._status_update_scheduled:
+        if not self._status_update_scheduled:
             self._status_update_scheduled = True
             def _flush():
                 self._status_update_scheduled = False
@@ -284,6 +278,9 @@ class App:
                     if values and values[0] in pending:
                         self.account_tree.item(item, values=(values[0], values[1], pending.pop(values[0])))
             self.root.after(200, _flush)
+
+    def _after(self, fn):
+        self.root.after(0, fn)
 
     def populate_accounts(self):
         if not self.file_path:
@@ -318,30 +315,9 @@ class App:
         self.log_text.delete(1.0, tk.END)
         self.log_text.config(state=tk.DISABLED)
 
-    def update_progress(self, current, total):
-        if total > 0:
-            progress_value = (current / total) * 100
-            self.progress['value'] = progress_value
-            self.status_label.config(text=f"进度: {current}/{total}")
-
-    def get_user_ids(self):
-        if self.userid_file_path:
-            try:
-                rows = ReadData.read_xlsx_row(self.userid_file_path)
-                if rows:
-                    return [list(row.values())[0] for row in rows if list(row.values())[0]]
-            except Exception as e:
-                self.log(f"读取 UserID 文件失败: {e}")
-        user_id_str = get_config_value('login', 'user_id', file=config_file)
-        if not user_id_str:
-            self.log("错误: 未配置 user_id，请选择 UserID 文件或在 config.ini 中配置")
-            return []
-        user_ids = [pid.strip() for pid in user_id_str.split(',') if pid.strip()]
-        return user_ids
-
     def start_task(self):
         if not self.file_path:
-            self.log("错误: 请先选择数据文件")
+            messagebox.showwarning("提示", "请先选择账号文件")
             return
 
         if self.is_running:
@@ -355,19 +331,22 @@ class App:
         self.pause_event.clear()
         self.task_epoch += 1
         self._start_fetch_thread()
-        self.start_btn.config(state=tk.DISABLED)
+        self.start_btn.config(state=tk.DISABLED, text="运行中...", bg="#9E9E9E")
         self.fetch_btn.config(state=tk.NORMAL, text="停止获取", bg="#f44336")
         self.pause_btn.config(state=tk.NORMAL, text="暂停")
-        self.stop_btn.config(state=tk.NORMAL)
+        self.stop_btn.config(state=tk.NORMAL, text="停止")
 
-        user_ids = self.get_user_ids()
-        id_source = os.path.basename(self.userid_file_path) if self.userid_file_path else "config.ini"
-        config_info = f"UserID 来源: {id_source} | 并发: {self.thread_var.get()} | 浏览器: {len(user_ids)}个"
-        self.log(f"配置信息: {config_info}")
+        max_workers = min(int(self.thread_var.get()), 10)
+        self.log(f"配置信息: 并发: {max_workers}个线程")
 
         self.populate_accounts()
         with self.phone_queue_lock:
             self.phone_queue_list.clear()
+        while not self.phone_queue.empty():
+            try:
+                self.phone_queue.get_nowait()
+            except queue.Empty:
+                break
         self.queue_listbox.delete(0, tk.END)
         self._last_queue = []
         self._pending_status = {}
@@ -381,20 +360,13 @@ class App:
         self.stop_event.set()
         self.pause_event.clear()
         self.log("正在停止任务...")
-        self.start_btn.config(state=tk.NORMAL)
-        self.stop_btn.config(state=tk.DISABLED)
-        self.pause_btn.config(state=tk.DISABLED)
+        self.start_btn.config(state=tk.NORMAL, text="开始", bg="#4CAF50")
+        self.stop_btn.config(state=tk.DISABLED, text="停止(不可用)")
+        self.pause_btn.config(state=tk.DISABLED, text="暂停(不可用)")
 
     def run_task(self):
         try:
             self.log("开始执行任务...")
-
-            user_ids = self.get_user_ids()
-            if not user_ids:
-                self.reset_ui()
-                return
-
-            self.log(f"可用指纹浏览器: {len(user_ids)}个")
 
             data = ReadData.read_xlsx_row(self.file_path)
             if not data:
@@ -427,7 +399,7 @@ class App:
             processed_count = [0]
             failed_count = [0]
             account_index = [0]
-            max_workers = min(int(self.thread_var.get()), len(user_ids))
+            max_workers = int(self.thread_var.get())
             self.log(f"启动{max_workers}个并发线程")
 
             def worker_loop(user_id, epoch):
@@ -439,8 +411,9 @@ class App:
                         break
 
                     phone_success = False
+                    sp = None
                     try:
-                        sp = SpecialPlayWright(config_file=config_file, user_id=user_id)
+                        sp = SpecialPlayWright()
 
                         login_ok = False
                         login_attempts = 0
@@ -462,12 +435,10 @@ class App:
 
                             if login_attempts > 0:
                                 try:
-                                    sp.close()
+                                    sp.clear_cookie()
                                 except:
                                     pass
-                                time.sleep(3)
-                                asyncio.set_event_loop(asyncio.new_event_loop())
-                                sp = SpecialPlayWright(config_file=config_file, user_id=user_id)
+                                time.sleep(2)
 
                             login_attempts += 1
                             self.update_account_status(account_code, '登录中')
@@ -486,7 +457,6 @@ class App:
 
                         self.update_account_status(account_code, '登录成功')
 
-                        phone_item = None
                         try:
                             phone_item = self.phone_queue.get(timeout=1)
                         except queue.Empty:
@@ -502,51 +472,38 @@ class App:
                         with self.phone_queue_lock:
                             if phone_code in self.phone_queue_list:
                                 self.phone_queue_list.remove(phone_code)
-                        self.log(f"[{user_id}] {account_code} 登录成功, 处理号码: {phone_code}")
 
-                        modify_ok = self.modify_phone(sp, phone_code)
-                        if not modify_ok:
-                            self.log(f"[{user_id}] {phone_code} 修改电话失败")
-                            try:
-                                sp.clear_cookie()
-                            except:
-                                pass
-                            with lock:
-                                failed_count[0] += 1
-                            self.root.after(0, lambda: self.status_label.config(
-                                text=f"电话成功: {processed_count[0]} | 电话失败: {failed_count[0]} | 总计: {processed_count[0] + failed_count[0]}"))
-                            continue
-
-                        verify_ok = self.verify_phone(sp, phone_id)
                         phone_success = False
                         success_phone = ''
-                        if verify_ok:
-                            phone_success = True
-                            success_phone = phone_code
-                            self.log(f"[{user_id}] {phone_code} 验证成功")
-                        else:
-                            self.log(f"[{user_id}] {phone_code} 验证失败，替换号码")
-                            try:
-                                retry_item = self.phone_queue.get(timeout=1)
-                                retry_phone = retry_item['data']
-                                retry_id = retry_item['id']
-                                with self.phone_queue_lock:
-                                    if retry_phone in self.phone_queue_list:
-                                        self.phone_queue_list.remove(retry_phone)
-                                self.log(f"[{user_id}] 替换为: {retry_phone}")
-                                modify_ok = self.modify_phone(sp, retry_phone)
-                                if modify_ok:
-                                    verify_ok = self.verify_phone(sp, retry_id)
-                                    if verify_ok:
-                                        phone_success = True
-                                        success_phone = retry_phone
-                                        self.log(f"[{user_id}] {retry_phone} 验证成功")
-                                    else:
-                                        self.log(f"[{user_id}] {retry_phone} 验证失败")
-                                else:
-                                    self.log(f"[{user_id}] {retry_phone} 修改失败")
-                            except queue.Empty:
-                                self.log(f"[{user_id}] 队列无可用替换号码")
+                        for try_round in range(2):
+                            if try_round == 0:
+                                cur_code, cur_id = phone_code, phone_id
+                            else:
+                                try:
+                                    next_item = self.phone_queue.get(timeout=1)
+                                    cur_code = next_item['data']
+                                    cur_id = next_item['id']
+                                    with self.phone_queue_lock:
+                                        if cur_code in self.phone_queue_list:
+                                            self.phone_queue_list.remove(cur_code)
+                                    self.log(f"[{user_id}] 替换号码: {cur_code}")
+                                except queue.Empty:
+                                    self.log(f"[{user_id}] 队列无可用替换号码")
+                                    break
+
+                            self.log(f"[{user_id}] {account_code} 登录成功, 处理号码: {cur_code}")
+                            modify_ok = self.modify_phone(sp, cur_code)
+                            if not modify_ok:
+                                self.log(f"[{user_id}] {cur_code} 修改电话失败")
+                                continue
+
+                            verify_ok = self.verify_phone(sp, cur_id)
+                            if verify_ok:
+                                phone_success = True
+                                success_phone = cur_code
+                                self.log(f"[{user_id}] {cur_code} 验证成功")
+                                break
+                            self.log(f"[{user_id}] {cur_code} 验证失败")
 
                         try:
                             sp.clear_cookie()
@@ -560,14 +517,19 @@ class App:
                             write_account_status(account_code, '登录成功，验证失败')
                     except Exception as e:
                         self.log(f"[{user_id}] 异常: {str(e)}")
+                    finally:
+                        if sp:
+                            try:
+                                sp.close()
+                            except:
+                                pass
 
                     with lock:
                         if phone_success:
                             processed_count[0] += 1
                         else:
                             failed_count[0] += 1
-                        total = processed_count[0] + failed_count[0]
-                    self.root.after(0, lambda p=processed_count[0], f=failed_count[0]: (
+                    self._after(lambda p=processed_count[0], f=failed_count[0]: (
                         self.progress.__setitem__('value', p % 100),
                         self.status_label.config(text=f"电话成功: {p} | 电话失败: {f} | 总计: {p + f}")))
 
@@ -580,15 +542,15 @@ class App:
 
             epoch = self.task_epoch
             threads = []
-            for user_id in user_ids[:max_workers]:
-                t = threading.Thread(target=worker_loop, args=(user_id, epoch), daemon=True)
+            for i in range(max_workers):
+                t = threading.Thread(target=worker_loop, args=(i + 1, epoch), daemon=True)
                 t.start()
                 threads.append(t)
 
             while not self.stop_event.is_set():
                 self.stop_event.wait(1)
 
-            self.log(f"任务停止. 成功: {processed_count[0]}, 失败: {failed_count[0]}")
+            self.log(f"任务停止成功: {processed_count[0]}, 失败: {failed_count[0]}")
 
         except Exception as e:
             self.log(f"错误: {str(e)}")
@@ -599,9 +561,9 @@ class App:
         self.is_running = False
         self.is_paused = False
         self.pause_event.clear()
-        self.start_btn.config(state=tk.NORMAL)
-        self.pause_btn.config(state=tk.DISABLED, text="暂停")
-        self.stop_btn.config(state=tk.DISABLED)
+        self.start_btn.config(state=tk.NORMAL, text="开始", bg="#4CAF50")
+        self.pause_btn.config(state=tk.DISABLED, text="暂停(不可用)")
+        self.stop_btn.config(state=tk.DISABLED, text="停止(不可用)")
 
     def login_account(self, sp, account_code, email, password, email_url):
         try:
@@ -726,38 +688,50 @@ class App:
 
     def verify_phone(self, sp, phone_id):
         self.log('进行电话号码验证')
-        try:
-            sp.click('//div[@class="topBox"]//a[contains(@href, "mypage")]')
-            time.sleep(5)
-            sp.click('//form[@class="sendCertification-form"]/a')
+        for attempt in range(2):
+            if attempt > 0:
+                self.log(f'验证码不匹配，重试验证({attempt + 1})')
+            try:
+                sp.click('//div[@class="topBox"]//a[contains(@href, "mypage")]')
+                time.sleep(5)
+                sp.click('//form[@class="sendCertification-form"]/a')
 
-            submit_ele = '//a[@name="smsSubmit"]'
-            success = sp.wait_for_selector(submit_ele, timeout=15*1000)
-            if not success:
-                self.log('电话号码验证页面跳转失败')
-                return False
+                submit_ele = '//a[@name="smsSubmit"]'
+                success = sp.wait_for_selector(submit_ele, timeout=15*1000)
+                if not success:
+                    self.log('电话号码验证页面跳转失败')
+                    continue
 
-            sp.click(submit_ele)
+                sp.click(submit_ele)
 
-            phone_ele = '//input[@name="auth_code"]'
-            success = sp.wait_for_selector(phone_ele, timeout=15*1000)
-            if not success:
-                self.log('发送获取电话号码验证失败')
-                return False
+                phone_ele = '//input[@name="auth_code"]'
+                success = sp.wait_for_selector(phone_ele, timeout=15*1000)
+                if not success:
+                    self.log('未出现验证码输入框')
+                    continue
 
-            code = self.get_phone_code(phone_id)
-            if not code:
-                self.log(f'获取手机验证码失败: {phone_id}')
-                return False
+                code = None
+                deadline = time.time() + 40
+                while not code and time.time() < deadline:
+                    code = self.get_phone_code(phone_id)
+                    if not code:
+                        time.sleep(3)
+                if not code:
+                    self.log(f'40秒内未获取到验证码，换下一个号码')
+                    return False
 
-            sp.input(phone_ele, code)
-            sp.click('//button[@class="CertificationCodesubmit"]')
+                sp.input(phone_ele, code)
+                sp.click('//button[@class="CertificationCodesubmit"]')
 
-            success = sp.wait_for_selector('//div[@class="comBtn"]', timeout=10*1000)
-            return success
-        except Exception as e:
-            self.log(f'验证电话号码流程异常：{e}')
-            return False
+                success = sp.wait_for_selector('//div[@class="comBtn"]', timeout=10*1000)
+                if success:
+                    return True
+                self.log(f'验证码{code}未通过')
+            except Exception as e:
+                self.log(f'验证电话号码流程异常：{e}')
+                if attempt == 0:
+                    continue
+        return False
 
     def get_phone_code(self, phone_id):
         """获取电话验证码"""
@@ -767,9 +741,12 @@ class App:
             }
             url = f'https://geyuehui.com/ajax/getYzm?id={phone_id}'
             response = requests.post(url=url, headers=headers, proxies={'http': '', 'https': ''})
-
-            phone_code = response.json()['yzm']
-            return phone_code
+            data = response.json()
+            phone_code = data.get('yzm') or data.get('code') or data.get('data')
+            if not phone_code:
+                self.log(f'【{phone_id}】验证码接口返回异常: {response.text[:200]}')
+                return False
+            return str(phone_code)
         except Exception as e:
             self.log(f'【{phone_id}】电话验证码获取失败：{e}')
             return False
@@ -781,7 +758,6 @@ class App:
             headers = {
                 'Authorization': f'Bearer {self.get_token()}',
             }
-            self.log(headers)
             response = requests.get(url=url, headers=headers, proxies={'http': '', 'https': ''}).json()['data']
             data = [{'time': i['time'], 'data': eval(i['data1'])['username'], 'id': i['id']} for i in response]
             return data
