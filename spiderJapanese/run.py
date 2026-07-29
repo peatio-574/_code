@@ -626,7 +626,9 @@ class App:
         """输入账号密码点击确认"""
         try:
             url = 'https://www.pokemoncenter-online.com/login/'
-            sp.goto(url)
+            if not sp.goto(url):
+                self.log('页面访问失败')
+                return False
 
             email_ele = '//input[@type="email" and @id="login-form-email"]'
             sp.wait_for_selector(email_ele, timeout=10*1000)
