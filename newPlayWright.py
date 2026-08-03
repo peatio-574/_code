@@ -34,7 +34,7 @@ class PlayWrightClass(object):
         self.user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0'
         self.width = get_monitors()[0].width  # 当前屏幕分辨率width
         self.height = get_monitors()[0].height  # 当前屏幕分辨率height
-        self.timeout = 10 * 1000  # 超时时间
+        self.timeout = 30 * 1000  # 超时时间
 
     def start_borwser(self, proxy=None):
         """打开浏览器"""
@@ -130,8 +130,8 @@ class PlayWrightClass(object):
         for i in range(3):
             try:
                 # self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='domcontentloaded')
-                self.page.goto(url, timeout=self.timeout if not timeout else timeout)
-                time.sleep(1)
+                self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='commit')
+                time.sleep(5)
                 return True
             except Exception as e:
                 print('%s地址访问失败：%s' % (url, e))
@@ -172,7 +172,7 @@ class PlayWrightClass(object):
         # 访问新URL
         for i in range(3):
             try:
-                self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='domcontentloaded')
+                self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='commit')
                 time.sleep(1)
                 return True
             except Exception as e:
@@ -180,12 +180,12 @@ class PlayWrightClass(object):
                 continue
         return False
 
-    def click(self, location, force=False):
+    def click(self, location, force=False, no_wait=False):
         try:
             if force:
                 self.page.locator(location).click(force=force)
             else:
-                self.page.click(location, timeout=self.timeout)
+                self.page.locator(location).click(no_wait_after=no_wait, timeout=self.timeout)
             time.sleep(random.randint(0, 1))
         except Exception as e:
             pictureDir = os.path.join(os.path.dirname(__file__), 'photo')
@@ -194,8 +194,10 @@ class PlayWrightClass(object):
             os.makedirs(errorDir, exist_ok=True)
             errorFile = os.path.join(errorDir, f'{time.strftime("%Y%m%d%H%M%S")}_error.png')
             logger.error(f'点击失败，截图：{errorFile}\n{e}')
-            self.page.screenshot(path=errorFile)
-            self.exit = True
+            try:
+                self.page.screenshot(path=errorFile, timeout=5000)
+            except:
+                pass
 
     def input(self, location, text, enter=False):
         self.page.fill(location, text)
@@ -375,8 +377,8 @@ class SpecialPlayWright(PlayWrightClass):
             self.start_browser()
         for i in range(3):
             try:
-                self.page.goto(url, timeout=self.timeout if not timeout else timeout)
-                time.sleep(1)
+                self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='commit')
+                time.sleep(5)
                 return True
             except Exception as e:
                 print('%s地址访问失败：%s' % (url, e))
@@ -409,7 +411,7 @@ class SpecialPlayWright(PlayWrightClass):
 
         for i in range(3):
             try:
-                self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='domcontentloaded')
+                self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='commit')
                 time.sleep(1)
                 return True
             except Exception as e:
@@ -424,20 +426,21 @@ class SpecialPlayWright(PlayWrightClass):
 
             params = {
                 "name": f"新增环境{random_id}",
-                "domain_name": "https://www.pokemoncenter-online.com/login/",
                 "repeat_config": "",
                 "username": "",
                 "password": "",
                 "ipchecker": "ip2location",
-                "open_urls": [
-                    "https://www.pokemoncenter-online.com/login/"
-                ],
                 "cookie": "",
                 "group_id": group_id,
                 "ip": "",
-                "user_proxy_config": {
-                    "proxy_soft": "no_proxy"
-                },
+                # "user_proxy_config": {
+                #     "proxy_soft": "other",
+                #     "proxy_type": "http",
+                #     "proxy_host": "127.0.0.1",
+                #     "proxy_port": "7892",
+                #     "proxy_user": "",
+                #     "proxy_password": ""
+                # },
                 "country": "",
                 "region": "",
                 "city": "",
@@ -518,13 +521,34 @@ class SpecialPlayWright(PlayWrightClass):
             logger.error(f'创建环境失败：{e}')
             return None
 
-    def delete_enviroment(self):
+    def stop_api(self):
         try:
-            url = 'http://localhost:50325/api/v1/user/delete'
+            url = 'http://localhost:50325/api/v2/browser-profile/stop'
 
-            response = requests.post(url, headers=self.headers, json=[self.environment_id]).json()
+            params = {'profile_id': [self.environment_id]}
 
-            if response["msg"] == "Success":
+            response = requests.post(url, headers=self.headers, json=params).json()
+
+            if response["msg"].lower() == "success":
+                logger.info(f'环境关闭成功：{self.environment_id}')
+                return True
+            logger.info(f'{self.environment_id}环境关闭失败：{response}')
+            return False
+        except Exception as e:
+            logger.error(f'{self.environment_id}环境关闭失败：{e}')
+
+
+    def delete_enviroment(self):
+        self.stop_api()
+        time.sleep(5)
+        try:
+            url = 'http://localhost:50325/api/v2/browser-profile/delete'
+
+            params = {'profile_id': [self.environment_id]}
+
+            response = requests.post(url, headers=self.headers, json=params).json()
+
+            if response["msg"].lower() == "success":
                 logger.info(f'环境删除成功：{self.environment_id}')
                 return True
             logger.info(f'{self.environment_id}环境删除失败：{response}')
@@ -568,11 +592,11 @@ class SpecialPlayWright(PlayWrightClass):
 
             self.browser = self.playwright.chromium.connect_over_cdp(ws_endpoint)
 
-            self.context = self.browser.contexts[0]
+            self.context = self.browser.contexts[-1]
 
         # 优先复用已有页面，没有则新建
         if self.context.pages:
-            self.page = self.context.pages[0]
+            self.page = self.context.pages[-1]
             for page in self.context.pages:
                 if page != self.page:
                     page.close()
@@ -580,19 +604,6 @@ class SpecialPlayWright(PlayWrightClass):
             self.page = self.context.new_page()
 
         self.page.set_viewport_size({"width": self.width, "height": self.height})
-        js_code = """
-                () => {
-                    // 唯一需要的核心操作：覆盖 getter
-                    Object.defineProperty(navigator, 'webdriver', {
-                        get: () => undefined,
-                        configurable: true, // 确保可以被重新定义（虽然通常不需要再次定义）
-                        enumerable: false
-                    });
-
-                    // 其他伪装逻辑... (plugins, chrome object 等)
-                }
-                """
-        self.page.add_init_script(js_code)
         return True
 
 
