@@ -93,9 +93,9 @@ class PlayWrightClass(object):
             user_agent=self.user_agent,
             accept_downloads=True,
             proxy=proxy,
-            extra_http_headers={
-                'Accept-Language': 'en-US,en;q=0.9',
-            }
+            # extra_http_headers={
+            #     'Accept-Language': 'en-US,en;q=0.9',
+            # }  # 英文浏览
         )
 
         # 创建页面
