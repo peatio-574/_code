@@ -28,51 +28,67 @@ def matchDate(date, startDate):
     return False
 
 
-def getPageInfo(startDate):
+def getPageInfo(startDate, vpn):
     """循环滚动，获取符合条件的标题、链接"""
-    url = 'https://cn.investing.com/search/?q=%E7%87%83%E6%96%99%E6%B2%B9&tab=news'
+    url = 'https://www.investing.com/search/?q=fuel oil&tab=news'
 
-    PlayWright.goto(url)
+    PlayWright.goto(url, proxy={'server': f'http://{vpn}'})
     time.sleep(5)
+    if PlayWright.get_count('//button[text()="I Accept"]'):
+        PlayWright.click('//button[text()="I Accept"]')
+        time.sleep(10)
+    if PlayWright.get_count('//i[@class="popupCloseIcon largeBannerCloser"]'):
+        PlayWright.click('//i[@class="popupCloseIcon largeBannerCloser"]')
+        time.sleep(10)
+    if PlayWright.get_count('//button[@aria-label="Close Modal"]'):
+        PlayWright.click('//button[@aria-label="Close Modal"]')
+        time.sleep(3)
     PlayWright.mouse_wheel(200)
     PlayWright.click('(//span[@class="datePickerIcon"])[1]')
 
-    endDate = time.strftime('%Y-%m-%d', time.localtime(time.mktime(time.strptime(startDate, "%Y-%m-%d")) + 86400))
-    startStr = startDate.replace('-', '/')
-    endStr = endDate.replace('-', '/')
+    # endDate = time.strftime('%Y-%m-%d', time.localtime(time.mktime(time.strptime(startDate, "%Y-%m-%d")) + 86400))
+    endDate = time.strftime('%Y-%m-%d', time.localtime(time.time()))
+    startStr = startDate.split('-')
+    startStr = rf'{startStr[1]}/{startStr[2]}/{startStr[0][2:]}'
+
+    endStr = endDate.split('-')
+    endStr = rf'{endStr[1]}/{endStr[2]}/{endStr[0][2:]}'
     PlayWright.slow_input('//input[@id="startDate"]', startStr)
     time.sleep(1)
     PlayWright.slow_input('//input[@id="endDate"]', endStr, enter=True)
     time.sleep(5)
 
     rowEle = '//div[@class="js-section-content largeTitle"]/div'
-    rowCount = PlayWright.get_count(rowEle)
 
     rowsInfo = []
+    for roll in range(40):
+        rowCount = PlayWright.get_count(rowEle)
 
-    for rowId in range(1, rowCount + 1):
-        date = PlayWright.get_text(f'{rowEle}[{rowId}]//time')
-        if not matchDate(date, startDate):
-            continue
+        for rowId in range(1, rowCount + 1):
+            date = PlayWright.get_text(f'{rowEle}[{rowId}]//time')
+            # if not matchDate(date, startDate):
+            #     continue
 
-        titleEle = f'{rowEle}[{rowId}]//a[@class="title"]'
-        title = PlayWright.get_text(titleEle)
-        href = PlayWright.get_attribute(titleEle, 'href')
-        # content = PlayWright.get_text(f'{rowEle}[{rowId}]//p[@class="js-news-item-content"]')
-        rowInfo = {
-            'date': date,
-            'title': title,
-            'href': href,
-            # 'content': content
-        }
-        if rowInfo not in rowsInfo:
-            # logger.info(rowInfo)
-            rowsInfo.append(rowInfo)
+            titleEle = f'{rowEle}[{rowId}]//a[@class="title"]'
+            title = PlayWright.get_text(titleEle)
+            href = PlayWright.get_attribute(titleEle, 'href')
+            # content = PlayWright.get_text(f'{rowEle}[{rowId}]//p[@class="js-news-item-content"]')
+            rowInfo = {
+                'date': date,
+                'title': title,
+                'href': href,
+                # 'content': content
+            }
+            if rowInfo not in rowsInfo:
+                # logger.info(rowInfo)
+                rowsInfo.append(rowInfo)
+        PlayWright.mouse_wheel(800)
+        time.sleep(5)
     return rowsInfo
 
 
 def getRowDetail(rowInfo, startDate):
-    base = 'https://cn.investing.com'
+    base = 'https://www.investing.com'
     link = base + rowInfo['href']
     for roll in range(1, 4):
         status = PlayWright.goto(link)
@@ -81,12 +97,12 @@ def getRowDetail(rowInfo, startDate):
     time.sleep(5)
 
     publishTime = PlayWright.get_text('(//div[@class="flex flex-row items-center"])[2]/span')
-    year, month, day = startDate.split('-')
-    month = month if not month.startswith('0') else month[1]
-    day = day if not day.startswith('0') else day[1]
-
-    if f'{year}-{month}-{day}' not in publishTime:
-        return rowInfo
+    # year, month, day = startDate.split('-')
+    # month = month if not month.startswith('0') else month[1]
+    # day = day if not day.startswith('0') else day[1]
+    #
+    # if f'{year}-{month}-{day}' not in publishTime:
+    #     return rowInfo
 
     contentEle = '//div[contains(@class, "article")]/div[1]/p'
     contentCount = PlayWright.get_count(contentEle)
@@ -105,11 +121,11 @@ def getRowDetail(rowInfo, startDate):
     return rowInfo
 
 
-def getRowsDetail(startDate):
+def getRowsDetail(startDate, vpn):
     csvFile = os.path.join(BASE_DIR, 'yesterday.csv')
     fileHeader = ['title', 'date', 'url', 'author', 'content']
     fileExists = os.path.exists(csvFile)
-    rowsInfo = getPageInfo(startDate)
+    rowsInfo = getPageInfo(startDate, vpn)
     logger.info(f'共{len(rowsInfo)}条数据')
     with open(csvFile, 'a', newline='', encoding='utf-8-sig') as f:
         writer = csv.DictWriter(f, fieldnames=fileHeader, extrasaction='ignore')
@@ -235,7 +251,8 @@ if __name__ == '__main__':
         step = input('请输入操作步骤(1获取投资信息，2获取OPEC月度报告，3获取eiv月度报告，4获取建信日评)：')
         if step == '1':
             startDate = input('请输入指定日期(例如：2026-07-17)：')
-            getRowsDetail(startDate)
+            vpn = input('请输入VPN代理(例如：127.0.0.1:7892)：')
+            getRowsDetail(startDate, vpn)
         elif step == '2':
             vpn = input('请输入VPN代理(例如：127.0.0.1:7892)：')
             getOpecReport(vpn)

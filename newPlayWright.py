@@ -92,7 +92,10 @@ class PlayWrightClass(object):
             viewport=None,
             user_agent=self.user_agent,
             accept_downloads=True,
-            proxy=proxy
+            proxy=proxy,
+            extra_http_headers={
+                'Accept-Language': 'en-US,en;q=0.9',
+            }
         )
 
         # 创建页面
