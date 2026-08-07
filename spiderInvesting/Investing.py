@@ -46,8 +46,8 @@ def getPageInfo(startDate, vpn):
     PlayWright.mouse_wheel(200)
     PlayWright.click('(//span[@class="datePickerIcon"])[1]')
 
-    # endDate = time.strftime('%Y-%m-%d', time.localtime(time.mktime(time.strptime(startDate, "%Y-%m-%d")) + 86400))
-    endDate = time.strftime('%Y-%m-%d', time.localtime(time.time()))
+    endDate = time.strftime('%Y-%m-%d', time.localtime(time.mktime(time.strptime(startDate, "%Y-%m-%d")) + 86400))
+    # endDate = time.strftime('%Y-%m-%d', time.localtime(time.time()))
     startStr = startDate.split('-')
     startStr = rf'{startStr[1]}/{startStr[2]}/{startStr[0][2:]}'
 
@@ -61,29 +61,27 @@ def getPageInfo(startDate, vpn):
     rowEle = '//div[@class="js-section-content largeTitle"]/div'
 
     rowsInfo = []
-    for roll in range(40):
-        rowCount = PlayWright.get_count(rowEle)
 
-        for rowId in range(1, rowCount + 1):
-            date = PlayWright.get_text(f'{rowEle}[{rowId}]//time')
-            # if not matchDate(date, startDate):
-            #     continue
+    rowCount = PlayWright.get_count(rowEle)
 
-            titleEle = f'{rowEle}[{rowId}]//a[@class="title"]'
-            title = PlayWright.get_text(titleEle)
-            href = PlayWright.get_attribute(titleEle, 'href')
-            # content = PlayWright.get_text(f'{rowEle}[{rowId}]//p[@class="js-news-item-content"]')
-            rowInfo = {
-                'date': date,
-                'title': title,
-                'href': href,
-                # 'content': content
-            }
-            if rowInfo not in rowsInfo:
-                # logger.info(rowInfo)
-                rowsInfo.append(rowInfo)
-        PlayWright.mouse_wheel(800)
-        time.sleep(5)
+    for rowId in range(1, rowCount + 1):
+        date = PlayWright.get_text(f'{rowEle}[{rowId}]//time')
+        if not matchDate(date, startDate):
+            continue
+
+        titleEle = f'{rowEle}[{rowId}]//a[@class="title"]'
+        title = PlayWright.get_text(titleEle)
+        href = PlayWright.get_attribute(titleEle, 'href')
+        # content = PlayWright.get_text(f'{rowEle}[{rowId}]//p[@class="js-news-item-content"]')
+        rowInfo = {
+            'date': date,
+            'title': title,
+            'href': href,
+            # 'content': content
+        }
+        if rowInfo not in rowsInfo:
+            # logger.info(rowInfo)
+            rowsInfo.append(rowInfo)
     return rowsInfo
 
 
@@ -97,12 +95,12 @@ def getRowDetail(rowInfo, startDate):
     time.sleep(5)
 
     publishTime = PlayWright.get_text('(//div[@class="flex flex-row items-center"])[2]/span')
-    # year, month, day = startDate.split('-')
-    # month = month if not month.startswith('0') else month[1]
-    # day = day if not day.startswith('0') else day[1]
-    #
-    # if f'{year}-{month}-{day}' not in publishTime:
-    #     return rowInfo
+    year, month, day = startDate.split('-')
+    month = month if not month.startswith('0') else month[1]
+    day = day if not day.startswith('0') else day[1]
+
+    if f'{year}-{month}-{day}' not in publishTime:
+        return rowInfo
 
     contentEle = '//div[contains(@class, "article")]/div[1]/p'
     contentCount = PlayWright.get_count(contentEle)
@@ -236,8 +234,8 @@ def getJianXinDaily(startDate):
     for rowIdx in range(1, rowsCount + 1):
         publishTime = PlayWright.get_text(f'({rowEle})[{rowIdx}]/span[@class="time"]')
         titleEle = f'({rowEle})[{rowIdx}]/a'
-        title = f'({publishTime})' + PlayWright.get_text(titleEle)
-        if '原油' not in title or publishTime not in startDate:
+        title = PlayWright.get_text(titleEle)[4:]
+        if '原油日评' not in title or publishTime not in startDate:
             continue
         href = 'https://www.ccbfutures.com' + PlayWright.get_attribute(titleEle, 'href')
         download(href, title)
