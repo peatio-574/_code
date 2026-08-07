@@ -286,6 +286,9 @@ class PlayWrightClass(object):
         }
         ele.screenshot(path=file, clip=clip)
 
+    def upload_file(self, location, file_path):
+        self.page.locator(location).set_input_files(file_path)
+
     def screenshot(self,file):
         self.page.screenshot(path=file)
 
