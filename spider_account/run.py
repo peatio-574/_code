@@ -1,6 +1,8 @@
 # coding='utf-8'
 import sys
 import os
+from platform import platform
+from pygments.lexers.webassembly import keywords
 
 if getattr(sys, 'frozen', False):
     bundleDir = sys._MEIPASS
@@ -78,8 +80,8 @@ class XHS(object):
             return False
 
     @classmethod
-    def fundsApiSave(cls, fileName):
-        """账号资金明细-api导出"""
+    def ApiSave(cls, fileName):
+        """api导出"""
         try:
             PlayWright.click('//span[text()="消息"]')
             PlayWright.click('(//span[text()="店铺"])[last()]')
@@ -221,7 +223,6 @@ class XHS(object):
             logger.error(f'{shopName}数据处理失败: {e}\n')
             return None
 
-
     @classmethod
     def fundsSingleRun(cls, account_id):
         """账户资金明细-单个店铺运行"""
@@ -250,7 +251,7 @@ class XHS(object):
             if saveStatus:
                 break
             # api导出
-            saveStatus = cls.fundsApiSave(fileName)
+            saveStatus = cls.ApiSave(fileName)
             if saveStatus:
                 break
 
@@ -262,23 +263,13 @@ class XHS(object):
         return True if saveStatus else False
 
     @classmethod
-    def fundsRun(cls):
+    def fundsRun(cls, startId, endId):
         """统筹运行账号资金明细"""
-        shopCount = get_config_value('login', 'xhs_shop_count', file=config_file)
-        startId = input('请输入查询店铺序号（0默认查询全部，序号+：可查询多个）：')
-        if startId == '0':
-            startId = 1
-            endId = int(shopCount) + 1
-        elif ':' in startId or '：' in startId:
-            startId = startId.replace('：', '').replace(':', '')
-            startId = int(startId)
-            endId = int(shopCount) + 1
-        else:
-            startId = int(startId)
-            endId = startId + 1
         for account_id in range(startId, endId):
-            cls.fundsSingleRun(account_id)
-
+            try:
+                cls.fundsSingleRun(account_id)
+            except Exception as e:
+                logger.error(f'第{account_id}个店铺查询【账号资金明细】操作流程失败：{e}')
 
     @classmethod
     def salesSearch(cls, startTime, endTime):
@@ -343,7 +334,7 @@ class XHS(object):
             if saveStatus:
                 break
             # api导出
-            saveStatus = cls.fundsApiSave(fileName)
+            saveStatus = cls.ApiSave(fileName)
             if saveStatus:
                 break
 
@@ -354,11 +345,42 @@ class XHS(object):
         PlayWright.clear_cookie()
         return True if saveStatus else False
 
-
+    @classmethod
+    def salesRun(cls, startId, endId):
+        """统筹运行销量明细"""
+        for account_id in range(startId, endId):
+            try:
+                cls.salesSingleRun(account_id)
+            except Exception as e:
+                logger.error(f'第{account_id}个店铺查询【销量明细】操作流程失败：{e}')
 
 
 if __name__ == '__main__':
-    XHS.salesSingleRun(2)
+    keywordsDict = {
+        '1': 'xhs_shop_count',
+    }
+    while True:
+        platform = input('请输入操作平台（1.小红书）：')
+        step = input('请输入操作步骤（1.查看账号资金明细，2.查询销量明细）：')
+        startId = input('请输入查询店铺序号（0默认查询全部，序号+：可查询多个）：')
+
+        shopCount = get_config_value('login', keywordsDict[platform], file=config_file)
+
+        if startId == '0':
+            startId = 1
+            endId = int(shopCount) + 1
+        elif ':' in startId or '：' in startId:
+            startId = startId.replace('：', '').replace(':', '')
+            startId = int(startId)
+            endId = int(shopCount) + 1
+        else:
+            startId = int(startId)
+            endId = startId + 1
+        if step == '1' and platform == '1':
+            XHS.fundsRun(startId, endId)
+        elif step == '2' and platform == '1':
+            XHS.salesRun(startId, endId)
+
 
 
 
