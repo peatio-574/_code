@@ -299,38 +299,42 @@ class PlayWrightClass(object):
         way 元素定位方式，默认xpath
         key ini配置文件对应section及option，使用.进行分割
         """
-        section, option = key.split('.')
-        cookie = get_config_value(section, option, file)
-        if cookie:
-            self.add_cookie(eval(cookie))
+        try:
+            section, option = key.split('.')
+            cookie = get_config_value(section, option, file)
+            if cookie:
+                self.add_cookie(eval(cookie))
 
-        self.goto(url)
-        if storage:
-            storage_ = get_config_value(section, 'storage', file)
-            if storage_:
-                self.add_storage(key=f'{section}.storage')
-        time.sleep(5)
-        count = self.get_count(location)
-        if count == 0:
-            logger.info('请登录......')
-        element = self.wait_for_selector(location, timeout=3 * 60 * 1000, way=way)
-        if not element:
+            self.goto(url)
+            if storage:
+                storage_ = get_config_value(section, 'storage', file)
+                if storage_:
+                    self.add_storage(key=f'{section}.storage')
+            time.sleep(5)
+            count = self.get_count(location)
+            if count == 0:
+                logger.info('请登录......')
+            element = self.wait_for_selector(location, timeout=3 * 60 * 1000, way=way)
+            if not element:
+                return False
+
+            if extra:
+                if self.get_count(extra):
+                    self.click(extra)
+                    time.sleep(3)
+
+            # 页面cookie
+            cookie_list = self.context.cookies()
+
+            # api_cookie
+            api_cookie = "; ".join([f"{cookie['name']}={cookie['value']}" for cookie in cookie_list])
+            write_config_value(section, {option: str(cookie_list), f'{option}_api': api_cookie}, file)
+            if storage:
+                self.save_sessionstorage(key=f'{section}.storage', file=file)
+            return True
+        except Exception as e:
+            logger.error(f'登录异常：{e}')
             return False
-
-        if extra:
-            if self.get_count(extra):
-                self.click(extra)
-                time.sleep(3)
-
-        # 页面cookie
-        cookie_list = self.context.cookies()
-
-        # api_cookie
-        api_cookie = "; ".join([f"{cookie['name']}={cookie['value']}" for cookie in cookie_list])
-        write_config_value(section, {option: str(cookie_list), f'{option}_api': api_cookie}, file)
-        if storage:
-            self.save_sessionstorage(key=f'{section}.storage', file=file)
-        return True
 
     def save_sessionstorage(self, key='login.storage', file=None):
         section, option = key.split('.')
