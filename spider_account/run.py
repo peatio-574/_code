@@ -1,8 +1,6 @@
 # coding='utf-8'
 import sys
 import os
-from platform import platform
-from pygments.lexers.webassembly import keywords
 
 if getattr(sys, 'frozen', False):
     bundleDir = sys._MEIPASS
@@ -358,12 +356,18 @@ class XHS(object):
 if __name__ == '__main__':
     keywordsDict = {
         '1': 'xhs_shop_count',
+        '2': 'tb_shop_count',
+        '3': 'wd_shop_count',
+        '4': 'dd_shop_count',
+        '5': 'pdd_shop_count',
     }
+
     while True:
-        platform = input('请输入操作平台（1.小红书）：')
+        platform = input('请输入操作平台（1.小红书，2.淘宝，3.微店，4.抖店，5.拼多多）：')
         step = input('请输入操作步骤（1.查看账号资金明细，2.查询销量明细）：')
         startId = input('请输入查询店铺序号（0默认查询全部，序号+：可查询多个）：')
 
+        # 获取店铺数量，处理店铺索引
         shopCount = get_config_value('login', keywordsDict[platform], file=config_file)
 
         if startId == '0':
@@ -376,6 +380,8 @@ if __name__ == '__main__':
         else:
             startId = int(startId)
             endId = startId + 1
+
+        # 根据输入，执行对应步骤
         if step == '1' and platform == '1':
             XHS.fundsRun(startId, endId)
         elif step == '2' and platform == '1':
