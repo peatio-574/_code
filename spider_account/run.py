@@ -12,7 +12,7 @@ else:
 
 sys.path.insert(0, bundleDir)
 
-
+import requests
 from newPlayWright import PlayWright, logger, get_config_value, write_config_value
 import time
 import pandas
@@ -110,7 +110,7 @@ class XHS(object):
             # 第一行链接元素href是否存在
             href = PlayWright.get_attribute(firstRowLinkEle, 'href')
             with open(fileName, mode='wb') as f:
-                f.write(PlayWright.get(href).content)
+                f.write(requests.get(href).content)
 
             # 关闭消息弹窗
             PlayWright.click('//div[@class="ark-message-title-wrap"]/span[2]')
@@ -395,7 +395,8 @@ class TB(object):
     def fundsHtmlSave(cls, fileName):
         """账号资金明细-页面导出"""
         try:
-            with PlayWright.page.context.expect_download(timeout=15000) as download_info:
+            # 直接导出
+            with PlayWright.page.expect_download(timeout=15000) as download_info:
                 PlayWright.click('//span[text()="导出"]')
                 time.sleep(3)
             download = download_info.value
@@ -604,13 +605,52 @@ class TB(object):
     @classmethod
     def salesHtmlSave(cls, fileName):
         try:
-            with PlayWright.page.context.expect_download(timeout=60000) as download_info:
-                PlayWright.click('//span[text()="批量导出"]')
-                time.sleep(2)
-                PlayWright.click('//span[text()="确定"]')
-                time.sleep(3)
+            # 勾选对应字段
+            PlayWright.click('//span[text()="批量导出"]')
+            PlayWright.click('//span[text()="宝贝销售明细报表"]')
+            choose1Ele = '//span[text()="商品标题"]/..//input[@aria-checked="false"]'
+            choose2Ele = '//span[text()="外部系统编号"]/..//input[@aria-checked="false"]'
+            if PlayWright.get_count(choose1Ele):
+                PlayWright.click(choose1Ele)
+            if PlayWright.get_count(choose2Ele):
+                PlayWright.click(choose2Ele)
+            # 点击生成报表，并切换至新页面
+            PlayWright.click('//span[text()="生成报表"]')
+            timeFlag = time.time()
+            PlayWright.click('//span[text()="确认"]')
+            time.sleep(5)
+            PlayWright.switch_page(close=False)
+
+            # 判断第一条数据时间是否符合
+            firstRowEle = '//div[@class="ice-stark-loaded"]/div/div/div[2]/div[1]'
+            rowTime = PlayWright.get_text(f'{firstRowEle}/div[1]/div[1]')[-19:]
+            rowTime = time.mktime(time.strptime(rowTime, "%Y-%m-%d %H:%M:%S"))
+            if rowTime < timeFlag:
+                logger.info(f'未找到符合时间的数据，列表第一条时间为：{rowTime}')
+                PlayWright.switch_page('old')
+                return False
+
+            # 判断第一条数据下载按钮是否存在
+            downloadEle = f'{firstRowEle}//span[text()="下载宝贝报表"]'
+            for buttonRoll in range(1, 6):
+                time.sleep(5)
+                if PlayWright.get_count(downloadEle):
+                    break
+                PlayWright.reload()
+            if not PlayWright.get_count(downloadEle):
+                logger.info('报表未生成成功')
+                PlayWright.switch_page('old')
+                return False
+            print(timeFlag, rowTime)
+
+            # 导出
+            with PlayWright.page.expect_download(timeout=15000) as download_info:
+                PlayWright.click(downloadEle)
+                pass  # 等待下载触发
             download = download_info.value
+            # 获取文件名并保存
             download.save_as(fileName)
+            PlayWright.switch_page('old')
             return True
         except Exception as e:
             logger.error(f'❌️ {fileName}-页面导出-临时下载异常：{e}')
@@ -683,7 +723,6 @@ def deleteAccount(platform, account_ids):
 
 
 if __name__ == '__main__':
-
     while True:
         step = input('请输入操作步骤（1.查看账号资金明细，2.查询销量明细，3.删除账号）：')
 

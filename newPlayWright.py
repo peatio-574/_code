@@ -258,22 +258,22 @@ class PlayWrightClass(object):
         """页面切换，target:old new， close是否关闭当前页面"""
         time.sleep(2)
         pages = self.context.pages
+        if len(pages) != 1:
+            target_page = ''
+            old_page = ''
+            if target == 'new':
+                target_page = pages[-1]
+                old_page = pages[0]
 
-        target_page = ''
-        old_page = ''
-        if target == 'new':
-            target_page = pages[-1]
-            old_page = pages[0]
+            elif target == 'old':
+                target_page = pages[0]
+                old_page = pages[-1]
 
-        elif target == 'old':
-            target_page = pages[0]
-            old_page = pages[-1]
-
-        self.page = target_page
-        self.page.bring_to_front()
-        if close:
-            old_page.close()
-        time.sleep(5)
+            self.page = target_page
+            self.page.bring_to_front()
+            if close:
+                old_page.close()
+            time.sleep(5)
 
     def element_screenshot(self, location, file, right=0):
         ele = self.page.locator(location)
