@@ -24,6 +24,7 @@ config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
 dataDir = os.path.join(os.path.dirname(__file__), '数据')
 os.makedirs(dataDir, exist_ok=True)
 
+
 class XHS(object):
 
     @classmethod
@@ -62,7 +63,7 @@ class XHS(object):
         PlayWright.click('//span[text()="查询"]')
 
     @classmethod
-    def fundsHtmlSave(cls,fileName):
+    def fundsHtmlSave(cls, fileName):
         """账号资金明细-页面导出"""
         try:
             # 直接导出
@@ -353,6 +354,307 @@ class XHS(object):
                 logger.error(f'第{account_id}个店铺查询【销量明细】操作流程失败：{e}')
 
 
+class TB(object):
+
+    @classmethod
+    def tbLogin(cls, account_id):
+        """登录淘宝千牛"""
+        logger.info('开始登录淘宝千牛....')
+        url = 'https://myseller.taobao.com/home.htm/QnworkbenchHome/'
+        ele = '//span[contains(text(),"首页")]'
+        key = f'login.tb_cookie_{account_id}'
+        loginStatus = PlayWright.login(url, ele, key, file=config_file)
+        if loginStatus:
+            shopName = PlayWright.get_text('//div[@class="user-area-pop-up-panel"]/div[1]/div/div[1]')
+            logger.info(f'✅️ 【店铺：{shopName}】淘宝登录成功....')
+            return shopName
+        else:
+            logger.error(f'❌️ 淘宝登录失败')
+            return False
+
+    @classmethod
+    def fundsSearch(cls, startTime, endTime):
+        """访问账号资金明细页面，进行搜索"""
+        PlayWright.goto('https://qn.taobao.com/home.htm/whale-accountant/pay/capital/home?active=fund_detail')
+        time.sleep(8)
+
+        PlayWright.input('//input[@placeholder="起始日期"]', startTime)
+        PlayWright.input('//input[@placeholder="结束日期"]', endTime, enter=True)
+        PlayWright.click('//span[text()="搜索"]')
+
+    @classmethod
+    def fundsHtmlSave(cls, fileName):
+        """账号资金明细-页面导出"""
+        try:
+            # 直接导出
+            with PlayWright.page.expect_download(timeout=15000) as download_info:
+                PlayWright.click('//span[text()="导出"]')
+                pass  # 等待下载触发
+            download = download_info.value
+            # 获取文件名并保存
+            download.save_as(fileName)
+            return True
+        except Exception as e:
+            logger.error(f'❌️ {fileName}-页面导出-临时下载异常：{e}')
+            return False
+
+    @classmethod
+    def fundsDataDeal(cls, shopName, fileName):
+        """汇总账号资金详细数据"""
+        try:
+            # 读取Excel文件
+            df = pandas.read_excel(fileName)
+
+            # 将数值列转换为数字类型（处理可能的文本格式数字）
+            df['收入金额（元）'] = df['收入金额（元）'].astype(str).str.replace(',', '').str.strip()
+            df['收入金额（元）'] = pandas.to_numeric(df['收入金额（元）'].replace('', '0'), errors='coerce').fillna(0)
+
+            df['支出金额'] = df['支出金额'].astype(str).str.replace(',', '').str.strip()
+            df['支出金额'] = pandas.to_numeric(df['支出金额'].replace('', '0'), errors='coerce').fillna(0)
+
+            # 提取日期（从入账时间）
+            df['日期'] = pandas.to_datetime(df['入账时间']).dt.date
+            # 分离不同类型的交易
+            df_transfer = df[df['入账类型'].apply(lambda x: '转账' in x)]
+            df_withdraw = df[df['入账类型'].apply(lambda x: '提现' in x)]
+            df_other = df[~df['入账类型'].apply(lambda x: '转账' in x or '提现' in x)]
+
+            logger.info(f'总数据量: {len(df)}, 提现数据: {len(df_withdraw)}, 转账数据: {len(df_transfer)}, '
+                        f'日数据: {len(df_other)}')
+
+            # 汇总转账数据（按日）
+            df_transfer_summary = df_transfer.groupby('日期').agg({
+                '收入金额（元）': 'sum',
+                '支出金额': 'sum'
+            }).reset_index()
+            df_transfer_summary.columns = ['日期', '转账收入', '转账支出']
+            df_transfer_summary['转账净额'] = df_transfer_summary['转账收入'] - df_transfer_summary['转账支出']
+
+            # 汇总提现数据（按日）
+            df_withdraw_summary = df_withdraw.groupby('日期').agg({
+                '支出金额': 'sum'
+            }).reset_index()
+            df_withdraw_summary.columns = ['日期', '提现支出']
+            df_withdraw_summary['提现金额'] = df_withdraw_summary['提现支出']
+
+            # 汇总其他交易数据（按日）
+            df_other_summary = df_other.groupby('日期').agg({
+                '收入金额（元）': 'sum',
+                '支出金额': 'sum'
+            }).reset_index()
+            df_other_summary.columns = ['日期', '日收入', '日支出']
+            df_other_summary['日净收入'] = df_other_summary['日收入'] - df_other_summary['日支出']
+
+            # 合并三个汇总表
+            df_summary = pandas.merge(df_other_summary, df_transfer_summary, on='日期', how='outer')
+            df_summary = pandas.merge(df_summary, df_withdraw_summary, on='日期', how='outer')
+
+            # 填充空值为0
+            df_summary = df_summary.fillna(0)
+
+            # 计算每日总净收入
+            df_summary['日净收入'] = df_summary['日净收入']
+
+            # 按日期排序
+            df_summary = df_summary.sort_values('日期', ascending=True).reset_index(drop=True)
+
+            # 添加汇总行
+            total_row = pandas.DataFrame({
+                '日期': ['所有汇总'],
+                '日收入': [df_summary['日收入'].sum()],
+                '日支出': [df_summary['日支出'].sum()],
+                '提现金额': [df_summary['提现金额'].sum()],
+                '转账收入': [df_summary['转账收入'].sum()],
+                '转账支出': [df_summary['转账支出'].sum()],
+                '转账净额': [df_summary['转账净额'].sum()],
+                '日净收入': [df_summary['日净收入'].sum()]
+            })
+            df_summary = pandas.concat([df_summary, total_row], ignore_index=True)
+
+            # 重新排列列顺序
+            columns_order = ['日期', '日收入', '日支出', '提现金额', '转账收入', '转账支出', '转账净额', '日净收入']
+            df_summary = df_summary[columns_order]
+
+            # 使用 ExcelWriter 追加到现有文件，保留原有的 Sheet
+            with pandas.ExcelWriter(fileName, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                sheet_name = '汇总数据'
+                # 先删除可能已存在的同名 Sheet
+                if sheet_name in writer.book.sheetnames:
+                    del writer.book[sheet_name]
+
+                # 写入数据
+                df_summary.to_excel(writer, sheet_name=sheet_name, index=False)
+
+                # 获取工作表对象并设置样式
+                ws = writer.sheets[sheet_name]
+                header_font = Font(bold=True, color='FFFFFF', size=11)
+                header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+                header_alignment = Alignment(horizontal='center', vertical='center')
+
+                # 遍历第一行所有单元格设置样式
+                for cell in ws[1]:
+                    cell.font = header_font
+                    cell.fill = header_fill
+                    cell.alignment = header_alignment
+
+                # 自动调整列宽
+                for column in ws.columns:
+                    max_length = 0
+                    col_letter = column[0].column_letter
+                    for cell in column:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+
+                    ws.column_dimensions[col_letter].width = min(max_length + 2, 50)
+
+                # 消除 "Workbook contains no default style" 警告
+                workbook = writer.book
+                if not workbook.style_names:
+                    default_font = Font(name='Calibri', size=11, bold=False, italic=False)
+                    default_style = openpyxl.styles.NamedStyle(name='Normal', font=default_font)
+                    workbook.add_named_style(default_style)
+
+            logger.info(f'数据汇总完成，共汇总{len(df_summary) - 1}天的数据，已保存到: {fileName}')
+
+            logger.info(f'总收入: {df_summary["日收入"].sum() / 2:.2f}，总支出: {df_summary["日支出"].sum() / 2:.2f} '
+                        f'总提现: {df_summary["提现金额"].sum() / 2:.2f}，，总转账: {df_summary["转账净额"].sum() / 2:.2f}，'
+                        f'总净收入: {df_summary["日净收入"].sum() / 2:.2f}\n')
+            return df_summary
+        except Exception as e:
+            logger.error(f'{shopName}数据处理失败: {e}\n')
+            return None
+
+    @classmethod
+    def fundsSingleRun(cls, account_id):
+        """账户资金明细-单个店铺运行"""
+        title = f'========================开始爬取淘宝第{account_id}个店铺账号资金详情======================='
+        logger.info(title)
+
+        # 结束时间为昨天，开始时间为结束时间的当月第一天
+        endTime = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
+        startTime = endTime[:-2] + '01'
+
+        shopName = cls.tbLogin(account_id)
+        if not shopName:
+            logger.error(f'淘宝第{account_id}个店铺登录异常')
+            return False
+
+        cls.fundsSearch(startTime, endTime)
+        time.sleep(3)
+        if PlayWright.get_count('//div[text()="没有数据"]'):
+            logger.info(f'{shopName}店铺报表暂无数据')
+            logger.clear_cookie()
+            return False
+
+        fileName = f'淘宝-{shopName}店铺{endTime}账户资金明细.xlsx'
+        fileName = os.path.join(dataDir, fileName)
+
+        saveStatus = False
+        for roll in range(1, 6):
+            logger.info(f'开始第{roll}次尝试导出明细')
+            # 页面导出
+            saveStatus = cls.fundsHtmlSave(fileName)
+            if saveStatus:
+                break
+
+        text = f'✅️ {shopName}明细数据下载成功：{fileName}' if saveStatus else f'❌️ {shopName}明细数据下载失败'
+        logger.info(text)
+        if saveStatus:
+            cls.fundsDataDeal(shopName, fileName)
+        PlayWright.clear_cookie()
+        return True if saveStatus else False
+
+    @classmethod
+    def fundsRun(cls, startId, endId):
+        """统筹运行账号资金明细"""
+        for account_id in range(startId, endId):
+            try:
+                cls.fundsSingleRun(account_id)
+            except Exception as e:
+                logger.error(f'第{account_id}个店铺查询【账号资金明细】操作流程失败：{e}')
+
+    @classmethod
+    def salesSearch(cls, startDate, endDate):
+        """访问销量明细页面，进行搜索"""
+        PlayWright.goto('https://qn.taobao.com/home.htm/trade-platform/tp/sold')
+        time.sleep(8)
+
+        # 循环关闭弹窗
+        know_ele = '(//button[text()="知道了" or text()="跳过" or text()="完成"])[last()]'
+        for roll in range(10):
+            if PlayWright.get_count(know_ele):
+                PlayWright.click(know_ele)
+                time.sleep(1)
+
+        PlayWright.click('(//input[@placeholder="起始日期"])[1]')
+        PlayWright.slow_input('(//input[@placeholder="YYYY-MM-DD"])[1]', startDate, enter=True)
+        PlayWright.slow_input('(//input[@placeholder="HH:mm:ss"])[1]', '00:00:00', enter=True)
+        PlayWright.slow_input('(//input[@placeholder="YYYY-MM-DD"])[2]', endDate, enter=True)
+        PlayWright.slow_input('(//input[@placeholder="HH:mm:ss"])[2]', '23:59:59', enter=True)
+        PlayWright.click('//div[@class="next-date-picker-panel-footer"]//span[text()="确定"]')
+        PlayWright.click('//span[text()="搜索订单"]')
+
+    @classmethod
+    def salesHtmlSave(cls, fileName):
+        try:
+            # 直接导出
+            with PlayWright.page.expect_download(timeout=15000) as download_info:
+                PlayWright.click('//span[text()="批量导出"]')
+                PlayWright.click('//span[text()="确定"]')
+
+                pass  # 等待下载触发
+            download = download_info.value
+            # 获取文件名并保存
+            download.save_as(fileName)
+            return True
+        except Exception as e:
+            logger.error(f'❌️ {fileName}-页面导出-临时下载异常：{e}')
+            return False
+
+    @classmethod
+    def salesSingleRun(cls, account_id):
+        """销量明细-单个店铺运行"""
+        title = f'========================开始爬取淘宝第{account_id}个店铺销量详情======================='
+        logger.info(title)
+
+        # 结束时间为昨天，开始时间为结束时间的当月第一天
+        endDate = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
+        startDate = endDate[:-2] + '01'
+
+        shopName = cls.tbLogin(account_id)
+        if not shopName:
+            logger.error(f'小红书第{account_id}个店铺登录异常')
+            return False
+
+        cls.salesSearch(startDate, endDate)
+
+        fileName = f'淘宝-{shopName}店铺{endDate}销量明细.xlsx'
+        fileName = os.path.join(dataDir, fileName)
+
+        saveStatus = False
+        for roll in range(1, 6):
+            logger.info(f'开始第{roll}次尝试导出明细')
+            # 页面导出
+            saveStatus = cls.salesHtmlSave(fileName)
+            if saveStatus:
+                break
+
+        text = f'✅️ {shopName}明细数据下载成功：{fileName}' if saveStatus else f'❌️ {shopName}明细数据下载失败'
+        logger.info(text)
+
+        PlayWright.clear_cookie()
+        return True if saveStatus else False
+
+    @classmethod
+    def salesRun(cls, startId, endId):
+        """统筹运行销量明细"""
+        for account_id in range(startId, endId):
+            try:
+                cls.salesSingleRun(account_id)
+            except Exception as e:
+                logger.error(f'第{account_id}个店铺查询【销量明细】操作流程失败：{e}')
+
+
 if __name__ == '__main__':
     keywordsDict = {
         '1': 'xhs_shop_count',
@@ -363,8 +665,10 @@ if __name__ == '__main__':
     }
 
     while True:
+        step = input('请输入操作步骤（1.查看账号资金明细，2.查询销量明细，3.删除账号）：')
+
         platform = input('请输入操作平台（1.小红书，2.淘宝，3.微店，4.抖店，5.拼多多）：')
-        step = input('请输入操作步骤（1.查看账号资金明细，2.查询销量明细）：')
+
         startId = input('请输入查询店铺序号（0默认查询全部，序号+：可查询多个）：')
 
         # 获取店铺数量，处理店铺索引
@@ -386,6 +690,10 @@ if __name__ == '__main__':
             XHS.fundsRun(startId, endId)
         elif step == '2' and platform == '1':
             XHS.salesRun(startId, endId)
+        elif step == '1' and platform == '2':
+            TB.fundsRun(startId, endId)
+        elif step == '2' and platform == '2':
+            TB.salesRun(startId, endId)
 
 
 
