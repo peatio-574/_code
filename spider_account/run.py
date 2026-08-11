@@ -1,4 +1,5 @@
 # coding='utf-8'
+# noinspection PyProtectedMember
 import sys
 import os
 
@@ -12,7 +13,7 @@ else:
 sys.path.insert(0, bundleDir)
 
 
-from newPlayWright import PlayWright, logger, get_config_value
+from newPlayWright import PlayWright, logger, get_config_value, write_config_value
 import time
 import pandas
 from openpyxl.styles import Font, Alignment, PatternFill
@@ -66,12 +67,13 @@ class XHS(object):
     def fundsHtmlSave(cls, fileName):
         """账号资金明细-页面导出"""
         try:
-            # 直接导出
-            with PlayWright.page.expect_download(timeout=15000) as download_info:
+            with PlayWright.page.expect_download(timeout=60000) as download_info:
                 PlayWright.click('//span[text()="导出"]')
-                pass  # 等待下载触发
+                time.sleep(1)
+                confirm_btn = '//span[text()="确定"]'
+                if PlayWright.get_count(confirm_btn):
+                    PlayWright.click(confirm_btn)
             download = download_info.value
-            # 获取文件名并保存
             download.save_as(fileName)
             return True
         except Exception as e:
@@ -378,6 +380,13 @@ class TB(object):
         PlayWright.goto('https://qn.taobao.com/home.htm/whale-accountant/pay/capital/home?active=fund_detail')
         time.sleep(8)
 
+        # 循环关闭弹窗
+        know_ele = '(//button[text()="知道了" or text()="跳过" or text()="完成"])[last()]'
+        for roll in range(10):
+            if PlayWright.get_count(know_ele):
+                PlayWright.click(know_ele)
+                time.sleep(1)
+
         PlayWright.input('//input[@placeholder="起始日期"]', startTime)
         PlayWright.input('//input[@placeholder="结束日期"]', endTime, enter=True)
         PlayWright.click('//span[text()="搜索"]')
@@ -386,12 +395,10 @@ class TB(object):
     def fundsHtmlSave(cls, fileName):
         """账号资金明细-页面导出"""
         try:
-            # 直接导出
-            with PlayWright.page.expect_download(timeout=15000) as download_info:
+            with PlayWright.page.context.expect_download(timeout=15000) as download_info:
                 PlayWright.click('//span[text()="导出"]')
-                pass  # 等待下载触发
+                time.sleep(3)
             download = download_info.value
-            # 获取文件名并保存
             download.save_as(fileName)
             return True
         except Exception as e:
@@ -543,7 +550,7 @@ class TB(object):
         time.sleep(3)
         if PlayWright.get_count('//div[text()="没有数据"]'):
             logger.info(f'{shopName}店铺报表暂无数据')
-            logger.clear_cookie()
+            PlayWright.clear_cookie()
             return False
 
         fileName = f'淘宝-{shopName}店铺{endTime}账户资金明细.xlsx'
@@ -597,14 +604,12 @@ class TB(object):
     @classmethod
     def salesHtmlSave(cls, fileName):
         try:
-            # 直接导出
-            with PlayWright.page.expect_download(timeout=15000) as download_info:
+            with PlayWright.page.context.expect_download(timeout=60000) as download_info:
                 PlayWright.click('//span[text()="批量导出"]')
+                time.sleep(2)
                 PlayWright.click('//span[text()="确定"]')
-
-                pass  # 等待下载触发
+                time.sleep(3)
             download = download_info.value
-            # 获取文件名并保存
             download.save_as(fileName)
             return True
         except Exception as e:
@@ -655,21 +660,49 @@ class TB(object):
                 logger.error(f'第{account_id}个店铺查询【销量明细】操作流程失败：{e}')
 
 
-if __name__ == '__main__':
-    keywordsDict = {
-        '1': 'xhs_shop_count',
-        '2': 'tb_shop_count',
-        '3': 'wd_shop_count',
-        '4': 'dd_shop_count',
-        '5': 'pdd_shop_count',
+def deleteAccount(platform, account_ids):
+    """删除指定账号"""
+    platformDict = {
+        '1': 'xhs_cookie_',
+        '2': 'tb_cookie_',
+        '3': 'wd_cookie_',
+        '4': 'dd_cookie_',
+        '5': 'pdd_cookie_',
     }
+
+    account_ids = account_ids.split(' ')
+    account_ids = [i for i in account_ids if i]
+
+    for account_id in account_ids:
+        new = {
+            platformDict[platform] + account_id: None,
+            platformDict[platform] + account_id + '_api': None,
+        }
+        write_config_value('login', new, file=config_file)
+        logger.info(f'✅️ 第{account_id}个店铺删除成功')
+
+
+if __name__ == '__main__':
 
     while True:
         step = input('请输入操作步骤（1.查看账号资金明细，2.查询销量明细，3.删除账号）：')
 
         platform = input('请输入操作平台（1.小红书，2.淘宝，3.微店，4.抖店，5.拼多多）：')
 
+        if step == '3':
+            account_ids = input('请输入删除店铺序号（0默认全部，带空格可删除多个）：')
+            deleteAccount(platform, account_ids)
+            continue
+
         startId = input('请输入查询店铺序号（0默认查询全部，序号+：可查询多个）：')
+
+        keywordsDict = {
+            '1': 'xhs_shop_count',
+            '2': 'tb_shop_count',
+            '3': 'wd_shop_count',
+            '4': 'dd_shop_count',
+            '5': 'pdd_shop_count',
+        }
 
         # 获取店铺数量，处理店铺索引
         shopCount = get_config_value('login', keywordsDict[platform], file=config_file)
