@@ -60,7 +60,7 @@ class DynamicPageCrawler:
             return True
         return False
 
-    def _wait_for_news_content(self, timeout=20):
+    def _wait_for_news_content(self, timeout=30):
         """等待新闻正文内容加载"""
         print("  等待新闻内容加载...")
         start_time = time.time()
@@ -188,31 +188,33 @@ class DynamicPageCrawler:
                 return "无标题", "无正文内容", "empty", False
 
             prompt = f"""
-请分析以下网页内容，判断它是否为文章/新闻页面，并提取标题和正文。
+请分析以下网页内容，判断它是否为文章/新闻/官方文件页面，并提取标题和正文。
 
 【第一步：判断页面类型】
 请判断这个页面是属于以下哪一类：
-1. "article" - 文章/新闻页面（有明确的标题和正文内容）
-2. "consultation" - 咨询/公告/通知页面（如政府公开咨询、招标公告等）
-3. "directory" - 目录/列表页面（如搜索结果列表、分类目录等）
-4. "other" - 其他类型（如错误页面、登录页、首页等）
+1. "article" - 文章/新闻/官方文件页面（包括：新闻稿、行政命令、政策文件、报告、博客文章等，有明确的标题和正文内容）
+2. "consultation" - 咨询/公告/通知页面（如政府公开咨询、招标公告、会议通知等）
+3. "directory" - 目录/列表页面（如搜索结果列表、分类目录、索引页等）
+4. "other" - 其他类型（如错误页面、登录页、首页、仅包含Cookie政策的页面等）
+
+【重要判断规则】
+- **文章/官方文件**的特征：有明确的标题（h1或页面标题），内容有完整的段落结构，通常包含日期、作者或发布机构信息，正文长度超过500字符。
+- **行政命令、联邦公报、政策文件**等应归类为 "article"，因为它们是完整的官方文件，包含标题和正文。
+- **咨询/公告**的特征：通常包含"Consulta Pública"、"Edital"、"Notice"、"Call for proposals"等关键词，内容主要是通知性质，而非完整的文章论述。
+- 如果页面内容主要是列表或目录，归类为 "directory"。
+- 如果页面没有实质内容，或只有导航、Cookie提示、版权信息等，归类为 "other"。
 
 【第二步：如果是文章页面，请提取标题和正文】
 1. 【标题】提取页面最核心、最准确的标题：
    - 完整、准确，不能截断
    - 通常是h1标签的内容或页面主标题
+   - 对于行政命令，标题应包含完整的命令编号和主题
    - 不要包含网站名称、栏目名称等冗余信息
 
 2. 【正文】提取文章的核心内容：
    - 排除导航、页眉、页脚、广告、版权声明、cookie提示等无关信息
    - 保留段落、列表、层次结构
    - 如果页面没有正文内容，返回"无正文内容"
-
-【判断规则】
-- 如果页面标题包含"Consulta Pública"、"Edital"、"Chamada Pública"等关键词，判断为"consultation"
-- 如果页面主要显示列表、目录、搜索结果，判断为"directory"
-- 如果页面没有h1标题，或只有少量文字，判断为"other"
-- 只有包含完整文章结构（h1标题 + 多个段落 + 长篇内容）的页面才判断为"article"
 
 URL: {url}
 
@@ -257,6 +259,7 @@ URL: {url}
                 response_text = result['choices'][0]['message']['content'].strip()
 
                 try:
+                    # 提取JSON
                     json_match = re.search(r'\{[^{}]*"page_type"[^{}]*"title"[^{}]*"content"[^{}]*\}', response_text,
                                            re.DOTALL)
                     if json_match:
@@ -316,6 +319,7 @@ URL: {url}
     def _extract_fallback(self, html_content):
         """备用提取方式"""
         try:
+            # 清理HTML标签
             text = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
             text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
             text = re.sub(r'</p>', '\n\n', text, flags=re.IGNORECASE)
@@ -325,16 +329,93 @@ URL: {url}
             text = re.sub(r'&[a-z]+;', ' ', text)
             text = re.sub(r'\s+', ' ', text).strip()
 
+            # 提取标题
             title = ""
             title_match = re.search(r'<title[^>]*>(.*?)</title>', html_content, re.DOTALL | re.IGNORECASE)
             if title_match:
                 title = re.sub(r'\s+', ' ', title_match.group(1)).strip()
+
+            # 如果没有标题，尝试找h1
+            if not title:
+                h1_match = re.search(r'<h1[^>]*>(.*?)</h1>', html_content, re.DOTALL | re.IGNORECASE)
+                if h1_match:
+                    title = re.sub(r'<[^>]+>', ' ', h1_match.group(1)).strip()
 
             return title, text
 
         except Exception as e:
             print(f"  备用提取失败: {e}")
             return "", ""
+
+    def process_url(self, url):
+        """处理单个URL"""
+        if not url or not url.strip():
+            return "无标题", "NA", "URL为空"
+
+        url = url.strip()
+
+        if self._is_pdf_link(url):
+            return "无标题", "NA", "PDF链接，跳过爬取"
+
+        try:
+            # 使用newPlayWright的goto方法访问页面
+            print(f"  访问页面...")
+            success = self.browser.goto(url, timeout=30 * 1000, proxy=self.proxy)
+
+            if not success:
+                return "无标题", "NA", "页面加载失败"
+
+            print("  页面响应成功")
+
+            # 等待新闻内容加载
+            self._wait_for_news_content(timeout=30)
+
+            # 额外等待确保渲染完成
+            time.sleep(2)
+
+            # 检测是否为错误页面
+            is_error, error_reason = self._check_error_page()
+            if is_error:
+                return "无标题", "NA", error_reason
+
+            # 获取页面HTML
+            html_content = self._get_page_html()
+            if not html_content or len(html_content) < 500:
+                return "无标题", "无正文内容", "页面HTML内容过短"
+
+            print(f"  HTML长度: {len(html_content)}")
+
+            # 使用AI判断页面类型并提取内容
+            title, content, page_type, is_article = self._extract_with_ai(html_content, url)
+
+            # 如果不是文章页面，返回无正文内容
+            if not is_article:
+                print(f"  页面类型为'{page_type}'，非文章页面，跳过")
+                return "无标题", "无正文内容", f"非文章页面(类型:{page_type})"
+
+            # 如果没有提取到标题
+            if not title:
+                title = "无标题"
+
+            print(f"  最终标题: {title[:50] if title else '无'}")
+            print(f"  最终内容长度: {len(content) if content else 0}")
+
+            if not content or len(content) < 50:
+                return title, "无正文内容", "正文内容过短"
+
+            if len(content) > 50000:
+                content = content[:50000] + "...(内容过长，已截断)"
+
+            return title, content, "SUCCESS"
+
+        except Exception as e:
+            error_msg = str(e)
+            if 'timeout' in error_msg.lower():
+                return "无标题", "NA", "访问超时"
+            elif 'net::' in error_msg:
+                return "无标题", "NA", f"网络错误: {error_msg[:50]}"
+            else:
+                return "无标题", "NA", f"访问异常: {error_msg[:100]}"
 
     def _should_wait(self, error_reason):
         """判断是否需要等待"""
@@ -373,67 +454,6 @@ URL: {url}
             time.sleep(1)
         print("\r" + " " * 40 + "\r", end="")
 
-    def process_url(self, url):
-        """处理单个URL"""
-        if not url or not url.strip():
-            return "", "NA", "URL为空"
-
-        url = url.strip()
-
-        if self._is_pdf_link(url):
-            return "", "NA", "PDF链接，跳过爬取"
-
-        try:
-            print(f"  访问页面...")
-            success = self.browser.goto(url, timeout=30 * 1000, proxy=self.proxy)
-
-            if not success:
-                return "无标题", "NA", "页面加载失败"
-
-            print("  页面响应成功")
-
-            self._wait_for_news_content(timeout=30)
-            time.sleep(2)
-
-            is_error, error_reason = self._check_error_page()
-            if is_error:
-                return "无标题", "NA", error_reason
-
-            html_content = self._get_page_html()
-            if not html_content or len(html_content) < 500:
-                return "无标题", "无正文内容", "页面HTML内容过短"
-
-            print(f"  HTML长度: {len(html_content)}")
-
-            title, content, page_type, is_article = self._extract_with_ai(html_content, url)
-
-            if not is_article:
-                print(f"  页面类型为'{page_type}'，非文章页面，跳过")
-                return "无标题", "无正文内容", f"非文章页面(类型:{page_type})"
-
-            if not title:
-                title = "无标题"
-
-            print(f"  最终标题: {title[:50] if title else '无'}")
-            print(f"  最终内容长度: {len(content) if content else 0}")
-
-            if not content or len(content) < 50:
-                return title, "无正文内容", "正文内容过短"
-
-            if len(content) > 50000:
-                content = content[:50000] + "...(内容过长，已截断)"
-
-            return title, content, "SUCCESS"
-
-        except Exception as e:
-            error_msg = str(e)
-            if 'timeout' in error_msg.lower():
-                return "无标题", "NA", "访问超时"
-            elif 'net::' in error_msg:
-                return "无标题", "NA", f"网络错误: {error_msg[:50]}"
-            else:
-                return "无标题", "NA", f"访问异常: {error_msg[:100]}"
-
     def process_csv(self):
         """处理CSV文件"""
         print("=" * 70)
@@ -453,6 +473,7 @@ URL: {url}
         print(f"请求间隔: {self.delay} 秒（仅成功时等待）")
         print("=" * 70)
 
+        # 启动浏览器
         try:
             if self.use_special:
                 self.browser = SpecialPlayWright()
@@ -591,14 +612,19 @@ def main():
     input_file = "./test.csv"
     output_file = None
 
+    # 是否使用指纹浏览器
     use_special = False
 
+    # 代理配置
     proxy = {
         'server': 'http://127.0.0.1:7892'
     }
 
+    # DeepSeek API Key - 请替换为您自己的
+    # 获取方式：https://platform.deepseek.com/api_keys
     API_KEY = "sk-c05a4aede23648a59a57990db317389c"
 
+    # 每条记录之间的间隔时间（秒），仅成功时等待
     DELAY_SECONDS = 30
 
     crawler = DynamicPageCrawler(
