@@ -654,6 +654,7 @@ class TB(object):
             return True
         except Exception as e:
             logger.error(f'❌️ {fileName}-页面导出-临时下载异常：{e}')
+            PlayWright.switch_page('old')
             return False
 
     @classmethod
@@ -683,6 +684,8 @@ class TB(object):
             saveStatus = cls.salesHtmlSave(fileName)
             if saveStatus:
                 break
+            logger.info('休息5*60秒再次尝试导出')
+            time.sleep(5*60)
 
         text = f'✅️ {shopName}明细数据下载成功：{fileName}' if saveStatus else f'❌️ {shopName}明细数据下载失败'
         logger.info(text)
