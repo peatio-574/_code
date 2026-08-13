@@ -2,7 +2,7 @@
 """
 使用newPlayWright爬取动态页面 + AI提取标题和正文（保留格式）
 支持断点续爬：已有正常标题和正文的跳过
-原地更新test.csv文件
+真正的追加写入test.csv文件（不清除已有数据）
 使用方法: python spider.py
 """
 
@@ -13,7 +13,6 @@ import re
 import time
 import random
 import json
-import shutil
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -29,7 +28,7 @@ class DynamicPageCrawler:
 
     def __init__(self, input_file, output_file=None, use_special=False, proxy=None, api_key=None, delay=30):
         self.input_file = input_file
-        self.output_file = output_file or input_file  # 默认原地更新
+        self.output_file = output_file or input_file
         self.use_special = use_special
         self.proxy = proxy
         self.api_key = api_key
@@ -40,14 +39,13 @@ class DynamicPageCrawler:
         self.success_count = 0
         self.fail_count = 0
         self.skipped_count = 0
-        self.already_done_count = 0  # 已有数据跳过的数量
+        self.already_done_count = 0
 
-        self.writer = None
-        self.output_headers = None
-        self.input_headers = None
-
-        # 临时文件
-        self.temp_file = self.input_file + ".tmp"
+        # 列索引
+        self.title_idx = -1
+        self.content_idx = -1
+        self.error_idx = -1
+        self.url_idx = 8  # learnMore列在第9列（索引8）
 
     def _is_pdf_link(self, url):
         """判断是否为PDF链接"""
@@ -62,28 +60,17 @@ class DynamicPageCrawler:
         return False
 
     def _has_valid_content(self, row):
-        """
-        检查行是否已有有效的标题和正文
-        返回: (has_valid, title, content)
-        """
-        # 检查列数是否足够
-        if len(row) < len(self.input_headers) + 3:
+        """检查行是否已有有效的标题和正文"""
+        if self.title_idx < 0 or self.content_idx < 0 or self.error_idx < 0:
             return False, "", ""
 
-        # 获取title和content列（在原有列之后）
-        title_idx = len(self.input_headers)
-        content_idx = len(self.input_headers) + 1
-        error_idx = len(self.input_headers) + 2
-
-        # 如果列不存在，返回False
-        if title_idx >= len(row) or content_idx >= len(row):
+        if self.title_idx >= len(row) or self.content_idx >= len(row):
             return False, "", ""
 
-        title = row[title_idx].strip() if row[title_idx] else ""
-        content = row[content_idx].strip() if row[content_idx] else ""
-        error_reason = row[error_idx].strip() if len(row) > error_idx else ""
+        title = row[self.title_idx].strip() if row[self.title_idx] else ""
+        content = row[self.content_idx].strip() if row[self.content_idx] else ""
+        error_reason = row[self.error_idx].strip() if len(row) > self.error_idx else ""
 
-        # 判断是否有有效内容
         has_valid = (
                 title and
                 title != "无标题" and
@@ -96,54 +83,19 @@ class DynamicPageCrawler:
 
         return has_valid, title, content
 
-    def _wait_for_news_content(self, timeout=30):
-        """等待新闻正文内容加载"""
-        print("  等待新闻内容加载...")
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                result = self.browser.page.evaluate("""
-                    () => {
-                        const selectors = [
-                            'article p',
-                            '.content p',
-                            '.press-content p',
-                            '.ec-content p',
-                            'main p',
-                            '.news-content p',
-                            '.post-content p',
-                            '.entry-content p',
-                            '.article-content p',
-                            '.body-content p'
-                        ];
-                        let maxLength = 0;
-                        for (let sel of selectors) {
-                            const elements = document.querySelectorAll(sel);
-                            let text = '';
-                            elements.forEach(el => {
-                                text += el.innerText || '';
-                            });
-                            if (text.trim().length > maxLength) {
-                                maxLength = text.trim().length;
-                            }
-                        }
-                        return { loaded: maxLength > 500, length: maxLength };
-                    }
-                """)
+    def _check_page_has_content(self):
+        """检查页面是否有实质内容"""
+        try:
+            body_text = self.browser.page.evaluate("document.body ? document.body.innerText : ''")
+            body_length = len(body_text.strip()) if body_text else 0
+            print(f"  页面正文长度: {body_length}")
 
-                if result.get('loaded', False):
-                    print(f"  新闻内容已加载，长度: {result.get('length', 0)}")
-                    return True
-
-                print(f"  等待内容加载... 当前正文长度: {result.get('length', 0)}")
-                time.sleep(2)
-
-            except Exception as e:
-                print(f"  检查内容时出错: {e}")
-                time.sleep(2)
-
-        print("  等待新闻内容超时")
-        return False
+            if body_length < 100:
+                return False, body_length
+            return True, body_length
+        except Exception as e:
+            print(f"  检查页面内容时异常: {e}")
+            return False, 0
 
     def _check_error_page(self):
         """检测是否为错误页面"""
@@ -170,8 +122,60 @@ class DynamicPageCrawler:
             print(f"  检测错误页面时异常: {e}")
             return False, None
 
+    def _check_pdf_content_page(self):
+        """检测页面是否为PDF内容形式"""
+        try:
+            has_content, body_length = self._check_page_has_content()
+            if not has_content:
+                return False, "页面无内容"
+
+            # 检查页面标题
+            title = self.browser.page.evaluate("document.title || ''")
+            title_lower = title.lower()
+            pdf_title_keywords = ['pdf', 'adobe acrobat', 'adobe reader', 'pdf viewer', 'pdf document']
+            for keyword in pdf_title_keywords:
+                if keyword in title_lower:
+                    return True, f"页面标题包含'{keyword}'"
+
+            # 检查HTML中的PDF查看器
+            html_content = self.browser.page.content()
+            html_lower = html_content.lower()
+
+            pdf_html_keywords = [
+                'pdf-viewer', 'pdfviewer',
+                'application/pdf', 'pdf.js',
+                'pdf-embed', 'pdf_embed',
+                'class="pdf"', 'id="pdf"'
+            ]
+
+            for keyword in pdf_html_keywords:
+                if keyword in html_lower:
+                    return True, f"HTML包含PDF查看器关键词'{keyword}'"
+
+            # 检查iframe/embed指向PDF
+            iframe_check = self.browser.page.evaluate("""
+                () => {
+                    const iframes = document.querySelectorAll('iframe, embed, object');
+                    for (let el of iframes) {
+                        const src = el.src || el.data || '';
+                        if (src && src.toLowerCase().includes('.pdf')) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+            """)
+            if iframe_check:
+                return True, "页面包含指向PDF的iframe/embed标签"
+
+            return False, None
+
+        except Exception as e:
+            print(f"  检测PDF内容页面时异常: {e}")
+            return False, None
+
     def _get_page_html(self):
-        """获取完整的页面HTML（渲染后）"""
+        """获取完整的页面HTML"""
         try:
             return self.browser.page.content()
         except Exception as e:
@@ -179,14 +183,11 @@ class DynamicPageCrawler:
             return ""
 
     def _extract_with_ai(self, html_content, url):
-        """
-        调用DeepSeek API判断页面类型并提取标题和正文
-        返回: (title, content, page_type, is_article)
-        """
+        """调用DeepSeek API判断页面类型并提取标题和正文"""
         if not self.api_key:
             print("  未配置API Key，使用备用提取方式")
             title, content = self._extract_fallback(html_content)
-            return title, content, "unknown", True
+            return title, content, "unknown", True, False
 
         try:
             import requests
@@ -195,7 +196,6 @@ class DynamicPageCrawler:
             text = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
             text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
 
-            # 将常见的块级标签替换为换行符，保留段落结构
             text = re.sub(r'</p>', '\n\n', text, flags=re.IGNORECASE)
             text = re.sub(r'</h1>', '\n\n', text, flags=re.IGNORECASE)
             text = re.sub(r'</h2>', '\n\n', text, flags=re.IGNORECASE)
@@ -207,50 +207,34 @@ class DynamicPageCrawler:
             text = re.sub(r'</ul>', '\n', text, flags=re.IGNORECASE)
             text = re.sub(r'</ol>', '\n', text, flags=re.IGNORECASE)
 
-            # 移除剩余的HTML标签
             text = re.sub(r'<[^>]+>', ' ', text)
             text = re.sub(r'&[a-z]+;', ' ', text)
-
-            # 清理多余的空白行，但保留段落结构
             text = re.sub(r'\n{4,}', '\n\n\n', text)
             text = text.strip()
 
-            # 如果内容过长，截断
             max_length = 25000
             if len(text) > max_length:
                 text = text[:max_length] + "\n...(内容已截断)"
 
             if len(text) < 50:
-                return "无标题", "无正文内容", "empty", False
+                return "无标题", "无正文内容", "empty", False, False
 
             prompt = f"""
 请分析以下网页内容，判断它是否为文章/新闻/官方文件页面，并提取标题和正文。
 
 【第一步：判断页面类型】
-请判断这个页面是属于以下哪一类：
-1. "article" - 文章/新闻/官方文件页面（包括：新闻稿、行政命令、政策文件、报告、博客文章等，有明确的标题和正文内容）
-2. "consultation" - 咨询/公告/通知页面（如政府公开咨询、招标公告、会议通知等）
-3. "directory" - 目录/列表页面（如搜索结果列表、分类目录、索引页等）
-4. "other" - 其他类型（如错误页面、登录页、首页、仅包含Cookie政策的页面等）
+1. "article" - 文章/新闻/官方文件页面（有明确的标题和正文内容）
+2. "consultation" - 咨询/公告/通知页面
+3. "directory" - 目录/列表页面
+4. "pdf_content" - PDF内容页面
+5. "other" - 其他类型
 
-【重要判断规则】
-- **文章/官方文件**的特征：有明确的标题（h1或页面标题），内容有完整的段落结构，通常包含日期、作者或发布机构信息，正文长度超过500字符。
-- **行政命令、联邦公报、政策文件**等应归类为 "article"，因为它们是完整的官方文件，包含标题和正文。
-- **咨询/公告**的特征：通常包含"Consulta Pública"、"Edital"、"Notice"、"Call for proposals"等关键词，内容主要是通知性质，而非完整的文章论述。
-- 如果页面内容主要是列表或目录，归类为 "directory"。
-- 如果页面没有实质内容，或只有导航、Cookie提示、版权信息等，归类为 "other"。
-
-【第二步：如果是文章页面，请提取标题和正文】
-1. 【标题】提取页面最核心、最准确的标题：
-   - 完整、准确，不能截断
-   - 通常是h1标签的内容或页面主标题
-   - 对于行政命令，标题应包含完整的命令编号和主题
-   - 不要包含网站名称、栏目名称等冗余信息
-
-2. 【正文】提取文章的核心内容：
-   - 排除导航、页眉、页脚、广告、版权声明、cookie提示等无关信息
-   - 保留段落、列表、层次结构
-   - 如果页面没有正文内容，返回"无正文内容"
+【判断规则】
+- 有明确标题（h1或页面标题），正文有完整段落结构，长度超过500字符 → article
+- 行政命令、联邦公报、政策文件 → article
+- 包含"Consulta Pública"、"Edital"、"Notice"等关键词 → consultation
+- 主要是列表/目录 → directory
+- 没有实质内容，只有导航/Cookie/版权 → other
 
 URL: {url}
 
@@ -258,11 +242,7 @@ URL: {url}
 {text}
 
 请按以下JSON格式返回结果：
-{{
-    "page_type": "article/consultation/directory/other",
-    "title": "提取的标题（仅当page_type为article时有效）",
-    "content": "提取的正文内容（仅当page_type为article时有效）"
-}}
+{{"page_type": "article/consultation/directory/pdf_content/other", "title": "标题", "content": "正文"}}
 """
 
             api_url = "https://api.deepseek.com/v1/chat/completions"
@@ -295,7 +275,6 @@ URL: {url}
                 response_text = result['choices'][0]['message']['content'].strip()
 
                 try:
-                    # 提取JSON
                     json_match = re.search(r'\{[^{}]*"page_type"[^{}]*"title"[^{}]*"content"[^{}]*\}', response_text,
                                            re.DOTALL)
                     if json_match:
@@ -316,9 +295,10 @@ URL: {url}
                         content = re.sub(r'\n{4,}', '\n\n\n', content)
 
                     is_article = (page_type == 'article')
-                    print(f"  页面类型: {page_type}, 是否文章: {is_article}")
+                    is_pdf = (page_type == 'pdf_content')
+                    print(f"  页面类型: {page_type}, 是否文章: {is_article}, 是否PDF内容: {is_pdf}")
 
-                    return title, content, page_type, is_article
+                    return title, content, page_type, is_article, is_pdf
 
                 except json.JSONDecodeError:
                     print("  JSON解析失败，尝试正则提取...")
@@ -336,26 +316,26 @@ URL: {url}
                         content = ""
 
                     is_article = (page_type == 'article')
-                    return title, content, page_type, is_article
+                    is_pdf = (page_type == 'pdf_content')
+                    return title, content, page_type, is_article, is_pdf
 
             else:
                 print(f"  API调用失败: {response.status_code}")
                 title, content = self._extract_fallback(html_content)
-                return title, content, "unknown", True
+                return title, content, "unknown", True, False
 
         except ImportError:
             print("  未安装requests库，使用备用提取方式")
             title, content = self._extract_fallback(html_content)
-            return title, content, "unknown", True
+            return title, content, "unknown", True, False
         except Exception as e:
             print(f"  AI提取失败: {e}")
             title, content = self._extract_fallback(html_content)
-            return title, content, "unknown", True
+            return title, content, "unknown", True, False
 
     def _extract_fallback(self, html_content):
         """备用提取方式"""
         try:
-            # 清理HTML标签
             text = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
             text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
             text = re.sub(r'</p>', '\n\n', text, flags=re.IGNORECASE)
@@ -365,13 +345,11 @@ URL: {url}
             text = re.sub(r'&[a-z]+;', ' ', text)
             text = re.sub(r'\s+', ' ', text).strip()
 
-            # 提取标题
             title = ""
             title_match = re.search(r'<title[^>]*>(.*?)</title>', html_content, re.DOTALL | re.IGNORECASE)
             if title_match:
                 title = re.sub(r'\s+', ' ', title_match.group(1)).strip()
 
-            # 如果没有标题，尝试找h1
             if not title:
                 h1_match = re.search(r'<h1[^>]*>(.*?)</h1>', html_content, re.DOTALL | re.IGNORECASE)
                 if h1_match:
@@ -394,7 +372,6 @@ URL: {url}
             return "无标题", "NA", "PDF链接，跳过爬取"
 
         try:
-            # 使用newPlayWright的goto方法访问页面
             print(f"  访问页面...")
             success = self.browser.goto(url, timeout=30 * 1000, proxy=self.proxy)
 
@@ -403,33 +380,42 @@ URL: {url}
 
             print("  页面响应成功")
 
-            # 等待新闻内容加载
-            self._wait_for_news_content(timeout=30)
-
-            # 额外等待确保渲染完成
+            # 等待2秒让页面基本渲染
             time.sleep(2)
 
-            # 检测是否为错误页面
+            # 先检测错误页面
             is_error, error_reason = self._check_error_page()
             if is_error:
                 return "无标题", "NA", error_reason
 
-            # 获取页面HTML
+            # 检查页面是否有内容
+            has_content, body_length = self._check_page_has_content()
+            if not has_content:
+                print(f"  页面无实质内容(长度:{body_length})，跳过后续处理")
+                return "无标题", "无正文内容", "页面无正文内容(内容过短)"
+
+            # 检测PDF内容页面
+            is_pdf_content, pdf_reason = self._check_pdf_content_page()
+            if is_pdf_content:
+                print(f"  检测到PDF内容页面: {pdf_reason}")
+                return "无标题", "NA", "PDF内容页面"
+
             html_content = self._get_page_html()
             if not html_content or len(html_content) < 500:
                 return "无标题", "无正文内容", "页面HTML内容过短"
 
             print(f"  HTML长度: {len(html_content)}")
 
-            # 使用AI判断页面类型并提取内容
-            title, content, page_type, is_article = self._extract_with_ai(html_content, url)
+            title, content, page_type, is_article, is_pdf = self._extract_with_ai(html_content, url)
 
-            # 如果不是文章页面，返回无正文内容
+            if is_pdf:
+                print(f"  AI识别为PDF内容页面，跳过")
+                return "无标题", "NA", "PDF内容页面"
+
             if not is_article:
                 print(f"  页面类型为'{page_type}'，非文章页面，跳过")
                 return "无标题", "无正文内容", f"非文章页面(类型:{page_type})"
 
-            # 如果没有提取到标题
             if not title:
                 title = "无标题"
 
@@ -454,13 +440,11 @@ URL: {url}
                 return "无标题", "NA", f"访问异常: {error_msg[:100]}"
 
     def _should_wait(self, error_reason):
-        """判断是否需要等待"""
         if error_reason == "SUCCESS":
             return True
         return False
 
     def _wait_between_requests(self, idx, total, should_wait=True):
-        """在请求之间等待"""
         if idx >= total:
             return
         if not should_wait:
@@ -473,18 +457,30 @@ URL: {url}
             time.sleep(1)
         print("\r" + " " * 40 + "\r", end="")
 
+    def _append_row_to_csv(self, row):
+        """追加一行数据到CSV文件"""
+        try:
+            with open(self.input_file, 'a', encoding='utf-8', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(row)
+            return True
+        except Exception as e:
+            print(f"  追加写入失败: {e}")
+            return False
+
     def process_csv(self):
-        """处理CSV文件（原地更新，支持断点续爬）"""
+        """处理CSV文件（真正的追加写入，不清除已有数据）"""
         print("=" * 70)
         print("动态页面爬虫 (newPlayWright + AI 判断页面类型并提取)")
         print("=" * 70)
         print(f"输入文件: {self.input_file}")
-        print(f"输出文件: {self.output_file} (原地更新)")
+        print(f"输出文件: {self.output_file} (追加写入，不清除已有数据)")
         if self.proxy:
             print(f"代理配置: {self.proxy.get('server', '无')}")
         if self.api_key:
             print("AI提取: 已启用 (DeepSeek API)")
-            print("  - AI判断页面类型(article/consultation/directory/other)")
+            print("  - AI判断页面类型(article/consultation/directory/pdf_content/other)")
+            print("  - PDF内容页面自动跳过")
             print("  - 仅文章页面提取标题和正文")
             print("  - 正文保留格式（段落、列表、层次结构）")
             print("  - 已有有效标题和正文的记录自动跳过（断点续爬）")
@@ -492,6 +488,116 @@ URL: {url}
             print("AI提取: 未启用 (使用备用提取方式)")
         print(f"请求间隔: {self.delay} 秒（仅成功时等待）")
         print("=" * 70)
+
+        # 检查文件是否存在
+        file_exists = os.path.exists(self.input_file)
+
+        if not file_exists:
+            print("文件不存在，将创建新文件并写入表头")
+            # 创建新文件并写入表头
+            # 这里使用与原始CSV相同的表头
+            headers = [
+                'title', 'description', 'status', 'year', 'jurisdiction',
+                'source', 'datePromulgated', 'yearEnded', 'learnMore',
+                'learnMoreLanguage', 'dateModified', 'countries', 'states',
+                'technologies', 'tags', 'policyType'
+            ]
+            with open(self.input_file, 'w', encoding='utf-8', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+            print("已创建新文件并写入表头")
+            # 更新表头
+            self.input_headers = headers
+            existing_rows = []
+        else:
+            # 读取现有数据，只为了获取表头和统计
+            try:
+                with open(self.input_file, 'r', encoding='utf-8') as f:
+                    reader = csv.reader(f)
+                    self.input_headers = next(reader)
+                    existing_rows = list(reader)
+                print(f"已读取现有文件，共 {len(existing_rows)} 条记录")
+            except Exception as e:
+                print(f"读取现有文件失败: {e}")
+                return False
+
+        # 检查新增列是否存在
+        self.has_title_col = 'title' in self.input_headers
+        self.has_content_col = 'content' in self.input_headers
+        self.has_error_col = 'error_reason' in self.input_headers
+
+        # 确定索引
+        self.title_idx = self.input_headers.index('title') if self.has_title_col else -1
+        self.content_idx = self.input_headers.index('content') if self.has_content_col else -1
+        self.error_idx = self.input_headers.index('error_reason') if self.has_error_col else -1
+
+        # 如果新增列不存在，需要添加表头
+        if not self.has_title_col or not self.has_content_col or not self.has_error_col:
+            print("检测到新增列不存在，正在添加表头...")
+            # 读取所有行
+            rows = []
+            with open(self.input_file, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                headers = next(reader)
+                rows = list(reader)
+
+            # 添加新列
+            new_headers = headers.copy()
+            if not self.has_title_col:
+                self.title_idx = len(new_headers)
+                new_headers.append('title')
+            if not self.has_content_col:
+                self.content_idx = len(new_headers)
+                new_headers.append('content')
+            if not self.has_error_col:
+                self.error_idx = len(new_headers)
+                new_headers.append('error_reason')
+
+            # 更新现有行，添加空列
+            new_rows = []
+            for row in rows:
+                while len(row) < len(new_headers):
+                    row.append('')
+                new_rows.append(row)
+
+            # 重新写入文件
+            with open(self.input_file, 'w', encoding='utf-8', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(new_headers)
+                writer.writerows(new_rows)
+
+            self.input_headers = new_headers
+            self.has_title_col = True
+            self.has_content_col = True
+            self.has_error_col = True
+            print("表头添加完成")
+
+        # 构建需要处理的记录列表（跳过已有有效数据的）
+        pending_rows = []
+        for row in existing_rows:
+            # 确保行有足够的列
+            while len(row) < len(self.input_headers):
+                row.append('')
+
+            # 获取URL
+            url = row[self.url_idx] if len(row) > self.url_idx else ''
+
+            # 检查是否已有有效数据
+            if url and url.strip():
+                has_valid, _, _ = self._has_valid_content(row)
+                if has_valid:
+                    self.already_done_count += 1
+                    continue
+
+            pending_rows.append(row)
+
+        self.total = len(pending_rows)
+        print(f"\n共有 {len(existing_rows)} 条记录，其中 {self.already_done_count} 条已有有效数据跳过")
+        print(f"需要处理 {self.total} 条记录\n")
+
+        if self.total == 0:
+            print("所有记录已处理完成，无需操作")
+            return True
 
         # 启动浏览器
         try:
@@ -512,120 +618,44 @@ URL: {url}
             return False
 
         try:
-            # 使用临时文件，保证数据安全
-            with open(self.input_file, 'r', encoding='utf-8') as infile, \
-                    open(self.temp_file, 'w', encoding='utf-8', newline='') as outfile:
+            for idx, row in enumerate(pending_rows, 1):
+                # 确保行有足够的列
+                while len(row) < len(self.input_headers):
+                    row.append('')
 
-                reader = csv.reader(infile)
-                self.writer = csv.writer(outfile)
+                # 获取URL
+                url = row[self.url_idx] if len(row) > self.url_idx else ''
 
-                # 读取表头
-                try:
-                    self.input_headers = next(reader)
-                except StopIteration:
-                    print("CSV文件为空")
-                    return False
+                print(f"\n[{idx}/{self.total}] 处理URL: {url[:80]}..." if url else f"[{idx}/{self.total}] URL为空")
+                print("-" * 60)
 
-                if len(self.input_headers) <= 8:
-                    print(f"错误: CSV文件列数不足，需要至少9列，实际{len(self.input_headers)}列")
-                    return False
-
-                # 检查是否已有title、content、error_reason列
-                has_title_col = 'title' in self.input_headers
-                has_content_col = 'content' in self.input_headers
-                has_error_col = 'error_reason' in self.input_headers
-
-                # 如果缺少列，添加
-                self.output_headers = self.input_headers.copy()
-                if not has_title_col:
-                    self.output_headers.append('title')
-                if not has_content_col:
-                    self.output_headers.append('content')
-                if not has_error_col:
-                    self.output_headers.append('error_reason')
-
-                self.writer.writerow(self.output_headers)
-
-                # 统计总行数
-                infile.seek(0)
-                next(infile)
-                self.total = 0
-                for _ in infile:
-                    self.total += 1
-                infile.seek(0)
-                next(infile)
-
-                print(f"共有 {self.total} 条记录需要处理\n")
-                print(f"注意: 已有有效标题和正文的记录将自动跳过\n")
-
-                for idx, row in enumerate(reader, 1):
-                    # 确保行有足够的列
+                if not url or not url.strip():
+                    # URL为空
                     while len(row) < len(self.input_headers):
                         row.append('')
+                    row[self.title_idx] = '无标题'
+                    row[self.content_idx] = 'NA'
+                    row[self.error_idx] = 'URL为空'
 
-                    url = row[8] if len(row) > 8 else ''
-
-                    print(f"\n[{idx}/{self.total}] 处理URL: {url[:80]}..." if url else f"[{idx}/{self.total}] URL为空")
-                    print("-" * 60)
-
-                    # 检查是否已有有效数据
-                    if url and url.strip():
-                        has_valid, existing_title, existing_content = self._has_valid_content(row)
-                        if has_valid:
-                            print(f"  ⏭ 已有有效数据，跳过 (标题: {existing_title[:50] if existing_title else '无'})")
-                            self.already_done_count += 1
-                            # 确保行有完整的列
-                            while len(row) < len(self.output_headers):
-                                row.append('')
-                            self.writer.writerow(row)
-                            continue
-
-                    if not url or not url.strip():
-                        # 确保有足够的列
-                        while len(row) < len(self.output_headers):
-                            row.append('')
-                        # 设置默认值
-                        title_idx = len(self.input_headers) if not has_title_col else self.input_headers.index('title')
-                        content_idx = len(self.input_headers) + 1 if not has_content_col else self.input_headers.index(
-                            'content')
-                        error_idx = len(self.input_headers) + 2 if not has_error_col else self.input_headers.index(
-                            'error_reason')
-
-                        # 填充数据
-                        while len(row) <= max(title_idx, content_idx, error_idx):
-                            row.append('')
-                        row[title_idx] = '无标题'
-                        row[content_idx] = 'NA'
-                        row[error_idx] = 'URL为空'
-
+                    if self._append_row_to_csv(row):
                         self.fail_count += 1
-                        self.writer.writerow(row)
-                        self._wait_between_requests(idx, self.total, should_wait=False)
-                        continue
+                    self._wait_between_requests(idx, self.total, should_wait=False)
+                    continue
 
-                    # 处理URL
-                    title, content, error_reason = self.process_url(url)
+                # 处理URL
+                title, content, error_reason = self.process_url(url)
 
-                    # 确保行有足够的列
-                    while len(row) < len(self.output_headers):
-                        row.append('')
+                # 确保行有足够的列
+                while len(row) < len(self.input_headers):
+                    row.append('')
 
-                    # 确定各列的索引
-                    title_idx = len(self.input_headers) if not has_title_col else self.input_headers.index('title')
-                    content_idx = len(self.input_headers) + 1 if not has_content_col else self.input_headers.index(
-                        'content')
-                    error_idx = len(self.input_headers) + 2 if not has_error_col else self.input_headers.index(
-                        'error_reason')
+                # 填充数据
+                row[self.title_idx] = title
+                row[self.content_idx] = content
+                row[self.error_idx] = error_reason
 
-                    # 填充数据
-                    row[title_idx] = title
-                    row[content_idx] = content
-                    row[error_idx] = error_reason
-
-                    self.writer.writerow(row)
-                    outfile.flush()
-
-                    # 统计和日志
+                # 追加写入CSV
+                if self._append_row_to_csv(row):
                     if error_reason == "SUCCESS":
                         self.success_count += 1
                         print(f"  ✓ 成功 (标题: {title[:50] if title else '无'}, 内容: {len(content)} 字符)")
@@ -633,7 +663,7 @@ URL: {url}
                         print(f"  预览: {preview}...")
                     elif "PDF" in error_reason:
                         self.skipped_count += 1
-                        print(f"  ⏭ 跳过 (PDF链接)")
+                        print(f"  ⏭ 跳过 (PDF)")
                     elif "非文章页面" in error_reason:
                         self.fail_count += 1
                         print(f"  ⚠ {error_reason}")
@@ -646,10 +676,12 @@ URL: {url}
                     else:
                         self.fail_count += 1
                         print(f"  ✗ 失败: {error_reason}")
+                else:
+                    print(f"  ✗ 写入失败: {error_reason}")
+                    self.fail_count += 1
 
-                    # 判断是否需要等待
-                    should_wait = (error_reason == "SUCCESS")
-                    self._wait_between_requests(idx, self.total, should_wait=should_wait)
+                should_wait = (error_reason == "SUCCESS")
+                self._wait_between_requests(idx, self.total, should_wait=should_wait)
 
         except KeyboardInterrupt:
             print("\n\n用户中断，已保存已处理的数据")
@@ -664,26 +696,17 @@ URL: {url}
             except:
                 pass
 
-        # 用临时文件替换原文件
-        try:
-            if os.path.exists(self.temp_file):
-                shutil.move(self.temp_file, self.input_file)
-                print(f"\n数据已保存到: {self.input_file}")
-        except Exception as e:
-            print(f"保存文件失败: {e}")
-            return False
-
         print("\n" + "=" * 60)
         print(f"处理完成!")
-        print(f"总链接数: {self.total}")
+        print(f"总记录数: {len(existing_rows)}")
         print(f"已有数据跳过: {self.already_done_count}")
-        print(f"成功爬取: {self.success_count}")
-        print(f"跳过(PDF): {self.skipped_count}")
-        print(f"失败数量: {self.fail_count}")
+        print(f"本次处理: {self.total}")
+        print(f"  - 成功爬取: {self.success_count}")
+        print(f"  - 跳过(PDF): {self.skipped_count}")
+        print(f"  - 失败数量: {self.fail_count}")
         if self.total > 0:
-            print(
-                f"有效率: {(self.already_done_count + self.success_count + self.skipped_count) / self.total * 100:.1f}%")
-        print(f"结果已保存到: {self.input_file}")
+            print(f"  有效率: {(self.success_count + self.skipped_count) / self.total * 100:.1f}%")
+        print(f"结果已追加保存到: {self.input_file}")
         print("=" * 60)
 
         return True
@@ -691,7 +714,7 @@ URL: {url}
 
 def main():
     input_file = "./test.csv"
-    output_file = None  # 原地更新
+    output_file = None
 
     use_special = False
 
@@ -699,6 +722,7 @@ def main():
         'server': 'http://127.0.0.1:7892'
     }
 
+    # 统一API Key
     API_KEY = "sk-c05a4aede23648a59a57990db317389c"
 
     DELAY_SECONDS = 30
