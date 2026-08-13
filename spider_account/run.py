@@ -1,17 +1,11 @@
 # coding='utf-8'
 # noinspection PyProtectedMember
-import sys
 import os
 
-if getattr(sys, 'frozen', False):
-    bundleDir = sys._MEIPASS
-    baseDir = os.path.dirname(sys.executable)
-else:
-    bundleDir = os.path.dirname(os.path.abspath(__file__))
-    baseDir = bundleDir
+import sys
+from pathlib import Path
 
-sys.path.insert(0, bundleDir)
-
+sys.path.append(str(Path(__file__).parent.parent))
 import requests
 from newPlayWright import PlayWright, logger, get_config_value, write_config_value
 import time
