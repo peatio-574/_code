@@ -35,7 +35,7 @@ class DynamicPageCrawler:
         self.api_key = api_key
         self.delay = delay
 
-        self.browser = None
+        self.PlayWright = None
         self.total = 0
         self.success_count = 0
         self.fail_count = 0
@@ -90,7 +90,7 @@ class DynamicPageCrawler:
     def _check_page_has_content(self):
         """检查页面是否有实质内容"""
         try:
-            body_text = self.browser.page.evaluate("document.body ? document.body.innerText : ''")
+            body_text = self.PlayWright.page.evaluate("document.body ? document.body.innerText : ''")
             body_length = len(body_text.strip()) if body_text else 0
             print(f"  页面正文长度: {body_length}")
 
@@ -104,7 +104,7 @@ class DynamicPageCrawler:
     def _check_error_page(self):
         """检测是否为错误页面"""
         try:
-            title = self.browser.page.evaluate("document.title || ''")
+            title = self.PlayWright.page.evaluate("document.title || ''")
             title_lower = title.lower()
 
             error_keywords = ['404', '403', '500', 'not found', 'forbidden', 'access denied',
@@ -113,7 +113,7 @@ class DynamicPageCrawler:
                 if keyword in title_lower:
                     return True, f"页面标题包含{keyword.upper()}"
 
-            body_text = self.browser.page.evaluate("document.body ? document.body.innerText : ''")
+            body_text = self.PlayWright.page.evaluate("document.body ? document.body.innerText : ''")
             if len(body_text) < 2000:
                 body_lower = body_text.lower()
                 for keyword in error_keywords:
@@ -134,7 +134,7 @@ class DynamicPageCrawler:
                 return False, "页面无内容"
 
             # 检查页面标题
-            title = self.browser.page.evaluate("document.title || ''")
+            title = self.PlayWright.page.evaluate("document.title || ''")
             title_lower = title.lower()
             pdf_title_keywords = ['pdf', 'adobe acrobat', 'adobe reader', 'pdf viewer', 'pdf document']
             for keyword in pdf_title_keywords:
@@ -142,7 +142,7 @@ class DynamicPageCrawler:
                     return True, f"页面标题包含'{keyword}'"
 
             # 检查HTML中的PDF查看器
-            html_content = self.browser.page.content()
+            html_content = self.PlayWright.page.content()
             html_lower = html_content.lower()
 
             pdf_html_keywords = [
@@ -157,7 +157,7 @@ class DynamicPageCrawler:
                     return True, f"HTML包含PDF查看器关键词'{keyword}'"
 
             # 检查iframe/embed指向PDF
-            iframe_check = self.browser.page.evaluate("""
+            iframe_check = self.PlayWright.page.evaluate("""
                 () => {
                     const iframes = document.querySelectorAll('iframe, embed, object');
                     for (let el of iframes) {
@@ -181,7 +181,7 @@ class DynamicPageCrawler:
     def _get_page_html(self):
         """获取完整的页面HTML"""
         try:
-            return self.browser.page.content()
+            return self.PlayWright.page.content()
         except Exception as e:
             print(f"  获取HTML失败: {e}")
             return ""
@@ -377,8 +377,7 @@ URL: {url}
 
         try:
             print(f"  访问页面...")
-            success = self.browser.goto(url, timeout=30 * 1000, proxy=self.proxy)
-            time.sleep(20)
+            success = self.PlayWright.goto(url, timeout=30 * 1000, proxy=self.proxy)
 
             if not success:
                 return "无标题", "NA", "页面加载失败"
@@ -556,7 +555,8 @@ URL: {url}
             print("表头添加完成")
 
         # 构建需要处理的记录列表（跳过已有有效数据的）
-        pending_indices = []  # 存储需要处理的行的索引
+        # 同时记录每个待处理行在原始行中的实际索引
+        pending_items = []  # 存储 (原始行索引, row)
         for idx, row in enumerate(rows):
             # 确保行有足够的列
             while len(row) < len(self.input_headers):
@@ -572,26 +572,27 @@ URL: {url}
                     self.already_done_count += 1
                     continue
 
-            pending_indices.append(idx)
+            pending_items.append((idx, row))
 
-        self.total = len(pending_indices)
-        print(f"\n共有 {len(rows)} 条记录，其中 {self.already_done_count} 条已有有效数据跳过")
-        print(f"需要处理 {self.total} 条记录\n")
+        self.total = len(rows)  # 总行数（包含已跳过的）
+        pending_total = len(pending_items)
+        print(f"\n共有 {self.total} 条记录，其中 {self.already_done_count} 条已有有效数据跳过")
+        print(f"需要处理 {pending_total} 条记录\n")
 
-        if self.total == 0:
+        if pending_total == 0:
             print("所有记录已处理完成，无需操作")
             return True
 
         # 启动浏览器
         try:
             if self.use_special:
-                self.browser = SpecialPlayWright()
+                self.PlayWright = SpecialPlayWright()
                 print("使用SpecialPlayWright（指纹浏览器）")
             else:
-                self.browser = PlayWrightClass()
+                self.PlayWright = PlayWrightClass()
                 print("使用普通PlayWright浏览器")
 
-            self.browser.start_borwser(proxy=self.proxy)
+            self.PlayWright.start_borwser(proxy=self.proxy)
             print("浏览器启动成功\n")
 
         except Exception as e:
@@ -601,9 +602,7 @@ URL: {url}
             return False
 
         try:
-            for idx_in_pending, row_idx in enumerate(pending_indices, 1):
-                row = rows[row_idx]
-
+            for idx_in_pending, (row_idx, row) in enumerate(pending_items, 1):
                 # 确保行有足够的列
                 while len(row) < len(self.input_headers):
                     row.append('')
@@ -611,8 +610,9 @@ URL: {url}
                 # 获取URL
                 url = row[self.url_idx] if len(row) > self.url_idx else ''
 
-                print(
-                    f"\n[{idx_in_pending}/{self.total}] 处理URL: {url[:80]}..." if url else f"[{idx_in_pending}/{self.total}] URL为空")
+                # 打印实际行号（从1开始）
+                actual_row_num = row_idx + 1
+                print(f"\n[{actual_row_num}/{self.total}] 处理URL: {url[:80]}..." if url else f"[{actual_row_num}/{self.total}] URL为空")
                 print("-" * 60)
 
                 if not url or not url.strip():
@@ -623,7 +623,7 @@ URL: {url}
                     row[self.content_idx] = 'NA'
                     row[self.error_idx] = 'URL为空'
                     self.fail_count += 1
-                    self._wait_between_requests(idx_in_pending, self.total, should_wait=False)
+                    self._wait_between_requests(idx_in_pending, pending_total, should_wait=False)
                     continue
 
                 # 处理URL
@@ -660,7 +660,7 @@ URL: {url}
                     print(f"  ✗ 失败: {error_reason}")
 
                 should_wait = (error_reason == "SUCCESS")
-                self._wait_between_requests(idx_in_pending, self.total, should_wait=should_wait)
+                self._wait_between_requests(idx_in_pending, pending_total, should_wait=should_wait)
 
         except KeyboardInterrupt:
             print("\n\n用户中断，正在保存已处理的数据...")
@@ -670,7 +670,7 @@ URL: {url}
             traceback.print_exc()
         finally:
             try:
-                self.browser.close()
+                self.PlayWright.close()
                 print("浏览器已关闭")
             except:
                 pass
@@ -691,14 +691,14 @@ URL: {url}
 
         print("\n" + "=" * 60)
         print(f"处理完成!")
-        print(f"总记录数: {len(rows)}")
+        print(f"总记录数: {self.total}")
         print(f"已有数据跳过: {self.already_done_count}")
-        print(f"本次处理: {self.total}")
+        print(f"本次处理: {pending_total}")
         print(f"  - 成功爬取: {self.success_count}")
         print(f"  - 跳过(PDF): {self.skipped_count}")
         print(f"  - 失败数量: {self.fail_count}")
-        if self.total > 0:
-            print(f"  有效率: {(self.success_count + self.skipped_count) / self.total * 100:.1f}%")
+        if pending_total > 0:
+            print(f"  有效率: {(self.success_count + self.skipped_count) / pending_total * 100:.1f}%")
         print(f"结果已保存到: {self.input_file}")
         print("=" * 60)
 
