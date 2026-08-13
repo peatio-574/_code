@@ -2,7 +2,7 @@
 """
 使用newPlayWright爬取动态页面 + AI提取标题和正文（保留格式）
 支持断点续爬：已有正常标题和正文的跳过
-原地更新test.csv文件（更新原有行的字段，不追加新行）
+边处理边写入test.csv文件（每处理一条立即写入）
 使用方法: python spider.py
 """
 
@@ -366,7 +366,7 @@ URL: {url}
             return "", ""
 
     def process_url(self, url):
-        """处理单个URL"""
+        """处理单个URL，返回(title, content, error_reason)"""
         if not url or not url.strip():
             return "无标题", "NA", "URL为空"
 
@@ -443,11 +443,6 @@ URL: {url}
             else:
                 return "无标题", "NA", f"访问异常: {error_msg[:100]}"
 
-    def _should_wait(self, error_reason):
-        if error_reason == "SUCCESS":
-            return True
-        return False
-
     def _wait_between_requests(self, idx, total, should_wait=True):
         if idx >= total:
             return
@@ -461,13 +456,25 @@ URL: {url}
             time.sleep(1)
         print("\r" + " " * 40 + "\r", end="")
 
+    def _flush_rows_to_file(self, rows):
+        """将所有行写入文件（在中断或完成时调用）"""
+        try:
+            with open(self.temp_file, 'w', encoding='utf-8', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(self.input_headers)
+                writer.writerows(rows)
+            return True
+        except Exception as e:
+            print(f"  写入文件失败: {e}")
+            return False
+
     def process_csv(self):
-        """处理CSV文件（原地更新，在原有行中填充字段，不追加新行）"""
+        """处理CSV文件（边处理边写入，每处理一条立即保存）"""
         print("=" * 70)
         print("动态页面爬虫 (newPlayWright + AI 判断页面类型并提取)")
         print("=" * 70)
         print(f"输入文件: {self.input_file}")
-        print(f"输出文件: {self.output_file} (原地更新，不清除已有数据)")
+        print(f"输出文件: {self.output_file} (边处理边写入)")
         if self.proxy:
             print(f"代理配置: {self.proxy.get('server', '无')}")
         if self.api_key:
@@ -477,6 +484,7 @@ URL: {url}
             print("  - 仅文章页面提取标题和正文")
             print("  - 正文保留格式（段落、列表、层次结构）")
             print("  - 已有有效标题和正文的记录自动跳过（断点续爬）")
+            print("  - 每处理一条立即写入文件")
         else:
             print("AI提取: 未启用 (使用备用提取方式)")
         print(f"请求间隔: {self.delay} 秒（仅成功时等待）")
@@ -554,8 +562,10 @@ URL: {url}
             self.has_error_col = True
             print("表头添加完成")
 
-        # 构建需要处理的记录列表（跳过已有有效数据的）
-        # 同时记录每个待处理行在原始行中的实际索引
+            # 立即写入更新后的表头
+            self._flush_rows_to_file(rows)
+
+        # 构建需要处理的记录列表
         pending_items = []  # 存储 (原始行索引, row)
         for idx, row in enumerate(rows):
             # 确保行有足够的列
@@ -612,7 +622,8 @@ URL: {url}
 
                 # 打印实际行号（从1开始）
                 actual_row_num = row_idx + 1
-                print(f"\n[{actual_row_num}/{self.total}] 处理URL: {url[:80]}..." if url else f"[{actual_row_num}/{self.total}] URL为空")
+                print(
+                    f"\n[{actual_row_num}/{self.total}] 处理URL: {url[:80]}..." if url else f"[{actual_row_num}/{self.total}] URL为空")
                 print("-" * 60)
 
                 if not url or not url.strip():
@@ -623,6 +634,11 @@ URL: {url}
                     row[self.content_idx] = 'NA'
                     row[self.error_idx] = 'URL为空'
                     self.fail_count += 1
+
+                    # 立即写入文件
+                    self._flush_rows_to_file(rows)
+                    print(f"  ⚠ URL为空，已保存")
+
                     self._wait_between_requests(idx_in_pending, pending_total, should_wait=False)
                     continue
 
@@ -638,36 +654,45 @@ URL: {url}
                 row[self.content_idx] = content
                 row[self.error_idx] = error_reason
 
+                # 立即写入文件
+                self._flush_rows_to_file(rows)
+
+                # 打印结果
                 if error_reason == "SUCCESS":
                     self.success_count += 1
                     print(f"  ✓ 成功 (标题: {title[:50] if title else '无'}, 内容: {len(content)} 字符)")
+                    print(f"  📝 已保存")
                     preview = content[:200].replace('\n', ' ')
                     print(f"  预览: {preview}...")
                 elif "PDF" in error_reason:
                     self.skipped_count += 1
-                    print(f"  ⏭ 跳过 (PDF)")
+                    print(f"  ⏭ 跳过 (PDF) - 已保存")
                 elif "非文章页面" in error_reason:
                     self.fail_count += 1
-                    print(f"  ⚠ {error_reason}")
+                    print(f"  ⚠ {error_reason} - 已保存")
                 elif "无正文内容" in error_reason:
                     self.fail_count += 1
-                    print(f"  ⚠ {error_reason}")
+                    print(f"  ⚠ {error_reason} - 已保存")
                 elif "403" in error_reason or "404" in error_reason or "错误页面" in error_reason:
                     self.fail_count += 1
-                    print(f"  ⚠ 错误页面: {error_reason}")
+                    print(f"  ⚠ 错误页面: {error_reason} - 已保存")
                 else:
                     self.fail_count += 1
-                    print(f"  ✗ 失败: {error_reason}")
+                    print(f"  ✗ 失败: {error_reason} - 已保存")
 
                 should_wait = (error_reason == "SUCCESS")
                 self._wait_between_requests(idx_in_pending, pending_total, should_wait=should_wait)
 
         except KeyboardInterrupt:
             print("\n\n用户中断，正在保存已处理的数据...")
+            self._flush_rows_to_file(rows)
+            print("数据已保存")
         except Exception as e:
             print(f"处理过程中发生错误: {e}")
             import traceback
             traceback.print_exc()
+            self._flush_rows_to_file(rows)
+            print("已保存已处理的数据")
         finally:
             try:
                 self.PlayWright.close()
@@ -675,16 +700,14 @@ URL: {url}
             except:
                 pass
 
-        # 写入更新后的数据到临时文件，然后替换原文件
-        try:
-            with open(self.temp_file, 'w', encoding='utf-8', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(self.input_headers)
-                writer.writerows(rows)
+        # 最终保存
+        self._flush_rows_to_file(rows)
 
-            # 用临时文件替换原文件
-            shutil.move(self.temp_file, self.input_file)
-            print(f"\n数据已保存到: {self.input_file}")
+        # 用临时文件替换原文件
+        try:
+            if os.path.exists(self.temp_file):
+                shutil.move(self.temp_file, self.input_file)
+                print(f"\n数据已保存到: {self.input_file}")
         except Exception as e:
             print(f"保存文件失败: {e}")
             return False
