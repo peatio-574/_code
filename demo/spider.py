@@ -26,7 +26,7 @@ csv.field_size_limit(50 * 1024 * 1024)
 class DynamicPageCrawler:
     """使用newPlayWright爬取动态页面 + AI提取标题和正文（保留格式）"""
 
-    def __init__(self, input_file, output_file=None, use_special=False, proxy=None, api_key=None, delay=30):
+    def __init__(self, input_file, output_file=None, use_special=False, proxy=None, api_key=None, delay=10):
         self.input_file = input_file
         self.output_file = output_file or input_file
         self.use_special = use_special
@@ -725,7 +725,7 @@ def main():
     # 统一API Key
     API_KEY = "sk-c05a4aede23648a59a57990db317389c"
 
-    DELAY_SECONDS = 30
+    DELAY_SECONDS = 10
 
     crawler = DynamicPageCrawler(
         input_file=input_file,
