@@ -719,7 +719,153 @@ def deleteAccount(platform, account_ids):
         logger.info(f'✅️ 第{account_id}个店铺删除成功')
 
 
+class WeiDian(object):
+
+    @classmethod
+    def wdLogin(cls, account):
+        logger.info('开始登录微店....')
+        url = 'https://d.weidian.com/weidian-pc/login/#/shopSelect'
+        ele = '//div[@class="nick-name"]'
+        if account <= 5:
+            key = f'login.wd_cookie_1'
+        elif account <= 10:
+            key = f'login.wd_cookie_2'
+        else:
+            key = f'login.wd_cookie_3'
+
+        idx = (account - 1) % 5 + 1
+        extra = f'(//div[text()="子账号店铺:"]/../../div[@data-spider-mode="trackAction"])[{idx}]/div[1]'
+        loginStatus = PlayWright.login(url, ele, key, extra=extra, file=config_file)
+
+        if loginStatus:
+            shopName = PlayWright.get_text('//div[@class="user-name"]')
+            logger.info(f'✅️ 【店铺：{shopName}】微店登录成功....')
+            return shopName
+        else:
+            logger.error(f'❌️ 淘宝登录失败')
+            return False
+
+    @classmethod
+    def salesSearch(cls, startDate, endDate):
+        """访问销量明细页面，进行搜索"""
+        PlayWright.goto('https://d.weidian.com/weidian-pc/weidian-loader/#/pc-vue-order/orderList')
+        time.sleep(8)
+
+        # 循环关闭弹窗
+        know_ele = '(//button[text()="知道了" or text()="跳过" or text()="完成"])[last()]'
+        for roll in range(10):
+            if PlayWright.get_count(know_ele):
+                PlayWright.click(know_ele)
+                time.sleep(1)
+
+        PlayWright.click('//input[@placeholder="请输入起始下单时间"]')
+        PlayWright.input('//input[@placeholder="选择日期"]', startDate)
+        PlayWright.input('//input[@placeholder="选择时间"]', '00:00:00', enter=True)
+        PlayWright.page.press('//input[@placeholder="选择时间"]', 'Enter')
+
+        PlayWright.click('//input[@placeholder="请输入结束下单时间"]')
+        PlayWright.input('(//input[@placeholder="选择日期"])[2]', endDate)
+        PlayWright.input('(//input[@placeholder="选择时间"])[2]', '23:59:59', enter=True)
+        PlayWright.page.press('(//input[@placeholder="选择时间"])[2]', 'Enter')
+        PlayWright.click('(//span[contains(text(),"筛选")])[1]')
+        PlayWright.click('//div[@class="tab-list"]/div[1]')
+        PlayWright.click('(//span[contains(text(),"批量导出")])[1]')
+        PlayWright.mouse_wheel(200)
+
+    @classmethod
+    def salesHtmlSave(cls, fileName):
+        try:
+            # 勾选对应字段
+            timeFlag = time.time()
+
+            PlayWright.click_catch_new_page('(//span[contains(text(),"确认导出")])[1]')
+
+            # 切换新页面
+            PlayWright.switch_page(close=False)
+
+            # 判断第一条数据时间是否符合
+            firstRowEle = '//div[@class="report-card"][1]'
+            rowTime = PlayWright.get_text(f'{firstRowEle}//div[@class="down-time"]')[7:26]
+            rowTime = time.mktime(time.strptime(rowTime, "%Y-%m-%d %H:%M:%S"))
+            if rowTime < timeFlag:
+                logger.info(f'未找到符合时间的数据，列表第一条时间为：{rowTime}')
+                PlayWright.switch_page('old')
+                return False
+
+            # 判断第一条数据下载按钮是否存在
+            downloadEle = f'{firstRowEle}//span[text()="下载报表"]'
+            for buttonRoll in range(1, 6):
+                time.sleep(5)
+                if PlayWright.get_count(downloadEle):
+                    break
+                PlayWright.reload()
+            if not PlayWright.get_count(downloadEle):
+                logger.info('报表未生成成功')
+                PlayWright.switch_page('old')
+                return False
+
+            # 导出
+            with PlayWright.page.expect_download(timeout=15000) as download_info:
+                PlayWright.click(downloadEle)
+                pass  # 等待下载触发
+            download = download_info.value
+            # 获取文件名并保存
+            download.save_as(fileName)
+            PlayWright.switch_page('old')
+            return True
+        except Exception as e:
+            logger.error(f'❌️ {fileName}-页面导出-临时下载异常：{e}')
+            PlayWright.switch_page('old')
+            return False
+
+    @classmethod
+    def salesSingleRun(cls, account_id):
+        """销量明细-单个店铺运行"""
+        title = f'========================开始爬取微店第{account_id}个店铺销量详情======================='
+        logger.info(title)
+
+        # 结束时间为昨天，开始时间为结束时间的当月第一天
+        endDate = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
+        startDate = endDate[:-2] + '01'
+
+        shopName = cls.wdLogin(account_id)
+        if not shopName:
+            logger.error(f'微店第{account_id}个店铺登录异常')
+            return False
+
+        cls.salesSearch(startDate, endDate)
+
+        fileName = f'微店-{shopName}店铺{endDate}销量明细.xlsx'
+        fileName = os.path.join(dataDir, fileName)
+
+        saveStatus = False
+        for roll in range(1, 6):
+            logger.info(f'开始第{roll}次尝试导出明细')
+            # 页面导出
+            saveStatus = cls.salesHtmlSave(fileName)
+            if saveStatus:
+                break
+            logger.info('休息5*60秒再次尝试导出')
+            time.sleep(5*60)
+
+        text = f'✅️ {shopName}明细数据下载成功：{fileName}' if saveStatus else f'❌️ {shopName}明细数据下载失败'
+        logger.info(text)
+
+        PlayWright.clear_cookie()
+        return True if saveStatus else False
+
+    @classmethod
+    def salesRun(cls, startId, endId):
+        """统筹运行销量明细"""
+        for account_id in range(startId, endId):
+            try:
+                cls.salesSingleRun(account_id)
+            except Exception as e:
+                logger.error(f'第{account_id}个店铺查询【销量明细】操作流程失败：{e}')
+
+
 if __name__ == '__main__':
+    # WeiDian.wdLogin(1)
     while True:
         step = input('请输入操作步骤（1.查看账号资金明细，2.查询销量明细，3.删除账号）：')
 
@@ -763,6 +909,8 @@ if __name__ == '__main__':
             TB.fundsRun(startId, endId)
         elif step == '2' and platform == '2':
             TB.salesRun(startId, endId)
+        elif step == '2' and platform == '3':
+            WeiDian.salesRun(startId, endId)
 
 
 

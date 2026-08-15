@@ -203,6 +203,7 @@ class PlayWrightClass(object):
                 pass
 
     def input(self, location, text, enter=False):
+        self.page.locator(location).clear()
         self.page.fill(location, text)
         if enter:
             self.page.press(location, 'Enter')
@@ -254,6 +255,17 @@ class PlayWrightClass(object):
     def get_attribute(self, location, key):
         return self.page.locator(location).get_attribute(key)
 
+    def click_catch_new_page(self, location):
+        """点击后调整新页面"""
+        with self.context.expect_page() as new_page_info:
+            # 执行打开新页面的操作
+            PlayWright.click(location)
+        # 获取新页面对象
+        new_page = new_page_info.value
+
+        # 等待新页面加载完成
+        new_page.wait_for_load_state('networkidle')
+
     def switch_page(self, target='new', close=True):
         """页面切换，target:old new， close是否关闭当前页面"""
         time.sleep(2)
@@ -272,6 +284,7 @@ class PlayWrightClass(object):
 
         self.page = target_page
         self.page.bring_to_front()
+        self.page.wait_for_load_state('networkidle')
         if close:
             old_page.close()
         time.sleep(5)
