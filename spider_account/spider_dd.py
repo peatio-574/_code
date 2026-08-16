@@ -49,7 +49,7 @@ def dd_login(account_id=1):
         # 未登录
         if not element:
             logger.info('请登录......')
-            choose =  ((account_id - 1) % 6)
+            choose = ((account_id - 1) % 6)
             sub_account = f'//div[text()="{shop_names[choose]}"]'
             element = Playwright_.wait_for_selector(sub_account, timeout=3 * 60 * 1000)
             if not element:
