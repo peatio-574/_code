@@ -611,7 +611,7 @@ class TB(object):
             # 点击生成报表，并切换至新页面
             PlayWright.click('//span[text()="生成报表"]')
             timeFlag = time.time()
-            PlayWright.click('//span[text()="确认"]')
+            PlayWright.click_catch_new_page('//span[text()="确认"]')
             time.sleep(5)
             PlayWright.switch_page(close=False)
 
