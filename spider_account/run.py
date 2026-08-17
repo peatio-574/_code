@@ -13,6 +13,7 @@ import pandas
 from openpyxl.styles import Font, Alignment, PatternFill
 import openpyxl
 import warnings
+import zipfile
 
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
@@ -233,14 +234,14 @@ class XHS(object):
             logger.error(f'小红书第{account_id}个店铺登录异常')
             return False
 
-        cls.fundsSearch(startTime, endTime)
-
         fileName = f'小红书-{shopName}店铺{endTime}账户资金明细.xlsx'
         fileName = os.path.join(dataDir, fileName)
 
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
+            # 搜索
+            cls.fundsSearch(startTime, endTime)
             # 页面导出
             saveStatus = cls.fundsHtmlSave(fileName)
             if saveStatus:
@@ -316,14 +317,14 @@ class XHS(object):
             logger.error(f'小红书第{account_id}个店铺登录异常')
             return False
 
-        cls.salesSearch(startTime, endTime)
-
         fileName = f'小红书-{shopName}店铺{endDate}销量明细.xlsx'
         fileName = os.path.join(dataDir, fileName)
 
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
+            # 搜索
+            cls.salesSearch(startTime, endTime)
             # 页面导出
             saveStatus = cls.salesHtmlSave(fileName)
             if saveStatus:
@@ -541,12 +542,6 @@ class TB(object):
             logger.error(f'淘宝第{account_id}个店铺登录异常')
             return False
 
-        cls.fundsSearch(startTime, endTime)
-        time.sleep(3)
-        if PlayWright.get_count('//div[text()="没有数据"]'):
-            logger.info(f'{shopName}店铺报表暂无数据')
-            PlayWright.clear_cookie()
-            return False
 
         fileName = f'淘宝-{shopName}店铺{endTime}账户资金明细.xlsx'
         fileName = os.path.join(dataDir, fileName)
@@ -554,6 +549,13 @@ class TB(object):
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
+            # 搜索
+            cls.fundsSearch(startTime, endTime)
+            time.sleep(3)
+            if PlayWright.get_count('//div[text()="没有数据"]'):
+                logger.info(f'{shopName}店铺报表暂无数据')
+                PlayWright.clear_cookie()
+                return False
             # 页面导出
             saveStatus = cls.fundsHtmlSave(fileName)
             if saveStatus:
@@ -672,7 +674,7 @@ class TB(object):
             logger.error(f'淘宝第{account_id}个店铺登录异常')
             return False
 
-        cls.salesSearch(startDate, endDate)
+
 
         fileName = f'淘宝-{shopName}店铺{endDate}销量明细.xlsx'
         fileName = os.path.join(dataDir, fileName)
@@ -680,6 +682,8 @@ class TB(object):
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
+            # 搜索
+            cls.salesSearch(startDate, endDate)
             # 页面导出
             saveStatus = cls.salesHtmlSave(fileName)
             time.sleep(10)
@@ -703,28 +707,6 @@ class TB(object):
                 cls.salesSingleRun(account_id)
             except Exception as e:
                 logger.error(f'第{account_id}个店铺查询【销量明细】操作流程失败：{e}')
-
-
-def deleteAccount(platform, account_ids):
-    """删除指定账号"""
-    platformDict = {
-        '1': 'xhs_cookie_',
-        '2': 'tb_cookie_',
-        '3': 'wd_cookie_',
-        '4': 'dd_cookie_',
-        '5': 'pdd_cookie_',
-    }
-
-    account_ids = account_ids.split(' ')
-    account_ids = [i for i in account_ids if i]
-
-    for account_id in account_ids:
-        new = {
-            platformDict[platform] + account_id: None,
-            platformDict[platform] + account_id + '_api': None,
-        }
-        write_config_value('login', new, file=config_file)
-        logger.info(f'✅️ 第{account_id}个店铺删除成功')
 
 
 class WeiDian(object):
@@ -952,8 +934,10 @@ class WeiDian(object):
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
+            # 搜索
             cls.fundsSearch(startTime, endTime)
             time.sleep(3)
+            # 预生成
             timeFlag = cls.fundsPreHtmlSave()
             if not timeFlag:
                 continue
@@ -1070,17 +1054,17 @@ class WeiDian(object):
             logger.error(f'微店第{account_id}个店铺登录异常')
             return False
 
-        existData = cls.salesSearch(startDate, endDate)
-        if not existData:
-            logger.info('当前账号暂无销量数据')
-            return False
-
         fileName = f'微店-{shopName}店铺{endDate}销量明细.xlsx'
         fileName = os.path.join(dataDir, fileName)
 
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
+            # 搜索
+            existData = cls.salesSearch(startDate, endDate)
+            if not existData:
+                logger.info('当前账号暂无销量数据')
+                return False
             # 页面导出
             saveStatus = cls.salesHtmlSave(fileName)
             time.sleep(10)
@@ -1159,7 +1143,6 @@ class DouDian(object):
             write_config_value('login', config_info, file=config_file)
 
             logger.info('抖店登录成功....')
-            time.sleep(100000)
             return choose_shop
 
         except Exception as e:
@@ -1206,7 +1189,7 @@ class DouDian(object):
                 pass  # 等待下载触发
             download = download_info.value
             # 获取文件名并保存
-            tmpFile = fileName[:-3] + 'csv'
+            tmpFile = fileName[:-5] + 'csv'
             download.save_as(tmpFile)
             df = pandas.read_csv(tmpFile, encoding="utf-8")
             df.to_excel(fileName, index=False, engine="openpyxl")
@@ -1374,6 +1357,7 @@ class DouDian(object):
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
+            # 搜索
             cls.fundsSearch(startTime, endTime)
             time.sleep(3)
 
@@ -1406,11 +1390,11 @@ class DouDian(object):
         time.sleep(8)
 
         startMonth = startDate.split('-')[1]
-        startMonth = startMonth[1] if startDate[0] == '0' else startMonth
+        startMonth = startMonth[1] if startMonth[0] == '0' else startMonth
         startDay = startDate.split('-')[2]
-        startDay = startDay[1] if startDate[0] == '0' else startDay
+        startDay = startDay[1] if startDay[0] == '0' else startDay
         endMonth = endDate.split('-')[1]
-        endMonth = endMonth[1] if endDate[0] == '0' else endMonth
+        endMonth = endMonth[1] if endMonth[0] == '0' else endMonth
         endDay = endDate.split('-')[2]
         endDay = endDay[1] if endDate[0] == '0' else endDay
 
@@ -1444,26 +1428,21 @@ class DouDian(object):
             PlayWright.reload()
 
             # 判断第一条数据时间是否符合
-            firstRowEle = '//li[contains(@class,"cardItem")]/div[1]'
+            firstRowEle = '//li[contains(@class,"cardItem")][1]'
             rowTime = PlayWright.get_text(f'{firstRowEle}//span[text()="生成时间"]/../span[2]')
             rowTime = time.mktime(time.strptime(rowTime, "%Y/%m/%d %H:%M:%S"))
             if rowTime < timeFlag:
                 logger.info(f'未找到符合时间的数据，列表第一条时间为：{rowTime}')
-                PlayWright.switch_page('old')
                 return False
 
             # 判断第一条数据下载按钮是否存在
             downloadEle = f'{firstRowEle}//span[text()="下载报表"]'
-            # PlayWright.click('//span[text()="获取验证码"]')
-            for buttonRoll in range(1, 6):
-                time.sleep(5)
-                if PlayWright.get_count(downloadEle):
-                    break
-                PlayWright.reload()
-            if not PlayWright.get_count(downloadEle):
-                logger.info('报表未生成成功')
-                PlayWright.switch_page('old')
-                return False
+            verifyEle = '//span[text()="获取验证码"]'
+            if PlayWright.get_count(verifyEle):
+                PlayWright.click(verifyEle)
+                logger.info('请在60s内手动输入验证码，注：无需点击确定')
+                time.sleep(60)
+                downloadEle = '//span[text()="确定"]'
 
             # 导出
             with PlayWright.page.expect_download(timeout=15000) as download_info:
@@ -1494,17 +1473,17 @@ class DouDian(object):
             logger.error(f'抖店第{account_id}个店铺登录异常')
             return False
 
-        existData = cls.salesSearch(startDate, endDate)
-        if not existData:
-            logger.info('当前账号暂无销量数据')
-            return False
-
         fileName = f'抖店-{shopName}店铺{endDate}销量明细.xlsx'
         fileName = os.path.join(dataDir, fileName)
 
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
+            # 搜索
+            existData = cls.salesSearch(startDate, endDate)
+            if not existData:
+                logger.info('当前账号暂无销量数据')
+                return False
             # 页面导出
             saveStatus = cls.salesHtmlSave(fileName)
             if saveStatus:
@@ -1528,8 +1507,262 @@ class DouDian(object):
                 logger.error(f'第{account_id}个店铺查询【销量明细】操作流程失败：{e}')
 
 
+class PDD(object):
+
+    @classmethod
+    def pddLogin(cls, account_id):
+        logger.info('开始登录拼多多....')
+        url = 'https://mms.pinduoduo.com/home'
+        ele = '//div[@class="user-name-name"]/span'
+        key = f'login.pdd_cookie_{account_id}'
+        loginStatus = PlayWright.login(url, ele, key, file=config_file)
+        if loginStatus:
+            shopName = PlayWright.get_text('//span[contains(@class,"Header_header_name")]')
+            logger.info(f'✅️ 【店铺：{shopName}】拼多多登录成功....')
+            return shopName
+        else:
+            logger.error(f'❌️ 拼多多登录失败')
+            return False
+
+    @classmethod
+    def fundsSearch(cls, startDate, endDate):
+        """访问账号资金明细页面，进行搜索"""
+        PlayWright.page.mouse.click(700, 500, button='left')
+        PlayWright.click('//span[text()="资金中心"]')
+        PlayWright.switch_to_page()
+        time.sleep(5)
+
+        start = startDate[-1:] if startDate[-2] == '0' else startDate[-2:]
+        end = endDate[-1:] if endDate[-2] == '0' else endDate[-2:]
+
+        PlayWright.click('//a[text()="收支明细"]')
+        PlayWright.click('//input[@placeholder="开始日期-结束日期"]')
+        PlayWright.click(f'(//td[not (contains(@class,"outOfMonth"))]/div[text()="{start}"])[last()]')
+        PlayWright.click(f'(//td[not (contains(@class,"outOfMonth"))]/div[text()="{end}"])[last()]')
+        PlayWright.mouse_wheel(80)
+        sure_ele = '//span[text()="确认"]'
+
+        for sureRoll in range(1, 6):
+            if PlayWright.get_count(sure_ele):
+                PlayWright.click(sure_ele)
+        PlayWright.click('//span[text()="查询"]')
+
+    @classmethod
+    def fundsHtmlSave(cls, fileName):
+        """账号资金明细-页面导出"""
+        try:
+            with PlayWright.page.expect_download(timeout=15000) as download_info:
+                PlayWright.click('(//div[@class="export-history-bills-card"])[1]//span[text()="下载账单"]')
+                pass  # 等待下载触发
+            download = download_info.value
+            # 获取文件名并保存
+            tmpFile = fileName[:-5] + 'zip'
+            # 解压zip文件
+            with zipfile.ZipFile(tmpFile, 'r') as zip_ref:
+                # 获取压缩包内的文件名
+                file_list = zip_ref.namelist()
+                if len(file_list) == 0:
+                    logger.error('压缩包内没有文件')
+                    return False
+
+                # 获取第一个文件（通常只有一个）
+                inner_filename = file_list[0]
+
+                # 解压到临时目录
+                zip_ref.extractall(os.path.dirname(tmpFile))
+
+            # 构建解压后的文件路径
+            extracted_file = os.path.join(os.path.dirname(tmpFile), inner_filename)
+
+            inner_filename = os.path.join(os.path.dirname(tmpFile), inner_filename)
+            # 如果解压出来的是csv文件，直接重命名为目标文件名
+            if inner_filename.endswith('.csv'):
+                df = pandas.read_csv(inner_filename, encoding="gbk", skiprows=4)
+                if len(df) > 4:
+                    df = df.iloc[:-4]
+                df.to_excel(fileName, index=False, engine="openpyxl")
+
+            # 删除zip文件
+
+            os.remove(tmpFile)
+            os.remove(inner_filename)
+
+            return True
+        except Exception as e:
+            logger.error(f'❌️ {fileName}-页面导出-临时下载异常：{e}')
+            return False
+
+    @classmethod
+    def fundsDataDeal(cls, shopName, fileName):
+        """汇总账号资金详细数据"""
+        try:
+            # 读取Excel文件
+            df = pandas.read_excel(fileName)
+
+            # 将数值列转换为数字类型（处理可能的文本格式数字）
+            df['收入金额'] = pandas.to_numeric(df['收入金额（+元）'], errors='coerce').fillna(0)
+            df['支出金额'] = pandas.to_numeric(df['支出金额（-元）'].replace('-', '0'), errors='coerce').fillna(0)
+            # 提取日期
+            df['日期'] = pandas.to_datetime(df['发生时间']).dt.date
+
+            # 分离提现和非提现数据
+            df_withdraw = df[df['账务类型'].str.contains('提现', na=False)]
+            df_normal = df[~df['账务类型'].str.contains('提现', na=False)]
+
+            # 汇总非提现的收入和支出
+            df_normal_summary = df_normal.groupby('日期').agg({
+                '收入金额': 'sum',
+                '支出金额': 'sum'
+            }).reset_index()
+            df_normal_summary.columns = ['日期', '日收入', '日支出']
+
+            # 汇总提现数据（提现金额在支出列）
+            df_withdraw_summary = df_withdraw.groupby('日期').agg({
+                '支出金额': 'sum'
+            }).reset_index()
+            df_withdraw_summary.columns = ['日期', '日提现金额']
+
+            # 合并两个汇总表
+            df_summary = pandas.merge(df_normal_summary, df_withdraw_summary, on='日期', how='outer')
+
+            # 填充空值为0
+            df_summary = df_summary.fillna(0)
+
+            # 计算日净收入（收入 - 支出 - 提现）
+            df_summary['日净收入'] = df_summary['日收入'] + df_summary['日支出']
+
+            # 按日期排序
+            df_summary = df_summary.sort_values('日期', ascending=True).reset_index(drop=True)
+
+            # 汇总数据
+            total_row = pandas.DataFrame({
+                '日期': ['所有汇总'],
+                '日收入': [df_summary['日收入'].sum()],
+                '日支出': [df_summary['日支出'].sum()],
+                '日提现金额': [df_summary['日提现金额'].sum()],
+                '日净收入': [df_summary['日净收入'].sum()]
+            })
+            df_summary = pandas.concat([df_summary, total_row], ignore_index=True)
+
+            # 使用 ExcelWriter 追加到现有文件，保留原有的 Sheet1
+            with pandas.ExcelWriter(fileName, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                sheet_name = '汇总数据'
+                # 先删除可能已存在的同名 Sheet
+                if sheet_name in writer.book.sheetnames:
+                    del writer.book[sheet_name]
+
+                # 写入数据
+                df_summary.to_excel(writer, sheet_name=sheet_name, index=False)
+
+                # 获取工作表对象并设置样式
+                ws = writer.sheets[sheet_name]
+                header_font = Font(bold=True, color='FFFFFF', size=11)
+                header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+                header_alignment = Alignment(horizontal='center', vertical='center')
+
+                # 遍历第一行所有单元格设置样式
+                for cell in ws[1]:
+                    cell.font = header_font
+                    cell.fill = header_fill
+                    cell.alignment = header_alignment
+
+                # 自动调整列宽
+                for column in ws.columns:
+                    max_length = 0
+                    col_letter = column[0].column_letter
+                    for cell in column:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+
+                    ws.column_dimensions[col_letter].width = min(max_length + 2, 50)
+
+                # 消除 "Workbook contains no default style" 警告
+                workbook = writer.book
+                if not workbook.style_names:
+                    default_font = Font(name='Calibri', size=11, bold=False, italic=False)
+                    default_style = openpyxl.styles.NamedStyle(name='Normal', font=default_font)
+                    workbook.add_named_style(default_style)
+
+            logger.info(f'数据汇总完成，共汇总{len(df_summary)}天的数据，已保存到: {fileName}')
+
+            # 打印汇总统计
+            logger.info(f'总收入: {df_summary["日收入"].sum() / 2:.2f}，总支出: {df_summary["日支出"].sum() / 2:.2f} '
+                        f'总提现: {df_summary["日提现金额"].sum() / 2:.2f}，总净收入: {df_summary["日净收入"].sum() / 2:.2f}\n')
+            return df_summary
+
+        except Exception as e:
+            logger.error(f'{shopName}数据处理失败: {e}\n')
+            return None
+
+    @classmethod
+    def fundsSingleRun(cls, account_id):
+        """账户资金明细-单个店铺运行"""
+        title = f'========================开始爬取拼多多第{account_id}个店铺账号资金详情======================='
+        logger.info(title)
+
+        # 结束时间为昨天，开始时间为结束时间的当月第一天
+        endTime = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
+        startTime = endTime[:-2] + '01'
+
+        shopName = cls.pddLogin(account_id)
+        if not shopName:
+            logger.error(f'拼多多第{account_id}个店铺登录异常')
+            return False
+
+        fileName = f'拼多多-{shopName}店铺{endTime}账户资金明细.xlsx'
+        fileName = os.path.join(dataDir, fileName)
+
+        saveStatus = False
+        for roll in range(1, 6):
+            logger.info(f'开始第{roll}次尝试导出明细')
+            cls.fundsSearch(startTime, endTime)
+            time.sleep(3)
+
+            # 页面导出
+            saveStatus = cls.fundsHtmlSave(fileName)
+            if saveStatus:
+                break
+
+        text = f'✅️ {shopName}明细数据下载成功：{fileName}' if saveStatus else f'❌️ {shopName}明细数据下载失败'
+        logger.info(text)
+        if saveStatus:
+            cls.fundsDataDeal(shopName, fileName)
+        PlayWright.clear_cookie()
+        return True if saveStatus else False
+
+    @classmethod
+    def fundsRun(cls, startId, endId):
+        """统筹运行账号资金明细"""
+        for account_id in range(startId, endId):
+            try:
+                cls.fundsSingleRun(account_id)
+            except Exception as e:
+                logger.error(f'第{account_id}个店铺查询【账号资金明细】操作流程失败：{e}')
+
+
+def deleteAccount(platform, account_ids):
+    """删除指定账号"""
+    platformDict = {
+        '1': 'xhs_cookie_',
+        '2': 'tb_cookie_',
+        '3': 'wd_cookie_',
+        '4': 'dd_cookie_',
+        '5': 'pdd_cookie_',
+    }
+
+    account_ids = account_ids.split(' ')
+    account_ids = [i for i in account_ids if i]
+
+    for account_id in account_ids:
+        new = {
+            platformDict[platform] + account_id: None,
+            platformDict[platform] + account_id + '_api': None,
+        }
+        write_config_value('login', new, file=config_file)
+        logger.info(f'✅️ 第{account_id}个店铺删除成功')
+
+
 if __name__ == '__main__':
-    DouDian.ddLogin(2)
     while True:
         step = input('请输入操作步骤（1.查看账号资金明细，2.查询销量明细，3.删除账号）：')
 
@@ -1577,6 +1810,12 @@ if __name__ == '__main__':
             WeiDian.fundsRun(startId, endId)
         elif step == '2' and platform == '3':
             WeiDian.salesRun(startId, endId)
+        elif step == '1' and platform == '4':
+            DouDian.fundsRun(startId, endId)
+        elif step == '2' and platform == '4':
+            DouDian.salesRun(startId, endId)
+        elif step == '1' and platform == '5':
+            PDD.fundsRun(startId, endId)
 
 
 
