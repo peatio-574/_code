@@ -13,15 +13,20 @@ from newPlayWright import PlayWright, logger
 import time
 import csv
 import requests
+from datetime import datetime
 
 
 
 def matchDate(date, startDate):
     """匹配前一天以及..小时以前的时间，返回bool"""
-    year, month, day = startDate.split('-')
-    month = month if not month.startswith('0') else month[1]
-    day = day if not day.startswith('0') else day[1]
-    templateDate = ['以前', f'{year}年{month}月{day}日']
+    # year, month, day = startDate.split('-')
+    # month = month if not month.startswith('0') else month[1]
+    # day = day if not day.startswith('0') else day[1]
+
+    date_obj = datetime.strptime(startDate, "%Y-%m-%d")
+    formatted = date_obj.strftime("%b %d, %Y")
+
+    templateDate = ['ago', formatted]
     for template in templateDate:
         if template in date:
             return True
@@ -56,7 +61,7 @@ def getPageInfo(startDate, vpn):
     PlayWright.slow_input('//input[@id="startDate"]', startStr)
     time.sleep(1)
     PlayWright.slow_input('//input[@id="endDate"]', endStr, enter=True)
-    time.sleep(5)
+    time.sleep(10)
 
     rowEle = '//div[@class="js-section-content largeTitle"]/div'
 
