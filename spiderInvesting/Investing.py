@@ -11,8 +11,8 @@ sys.path.insert(0, os.path.join(BASE_DIR, '..', ))
 
 from newPlayWright import PlayWright, logger
 import time
-import csv
 import requests
+from openpyxl import Workbook, load_workbook
 from datetime import datetime
 
 
@@ -125,40 +125,39 @@ def getRowDetail(rowInfo, startDate):
 
 
 def getRowsDetail(startDate, vpn):
-    csvFile = os.path.join(BASE_DIR, 'yesterday.csv')
+    xlsxFile = os.path.join(BASE_DIR, 'yesterday.xlsx')
     fileHeader = ['title', 'date', 'url', 'author', 'content']
-    fileExists = os.path.exists(csvFile)
     rowsInfo = getPageInfo(startDate, vpn)
     logger.info(f'共{len(rowsInfo)}条数据')
-    with open(csvFile, 'a', newline='', encoding='utf-8-sig') as f:
-        writer = csv.DictWriter(f, fieldnames=fileHeader, extrasaction='ignore')
 
-        # 文件不存在时才写入表头（追加模式不重复写入表头）
-        if not fileExists:
-            writer.writeheader()
+    # 文件不存在时创建新工作簿并写入表头，存在则加载追加
+    if os.path.exists(xlsxFile):
+        wb = load_workbook(xlsxFile)
+        ws = wb.active
+    else:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = '数据'
+        ws.append(fileHeader)
 
-        # 遍历处理每一行数据
-        for rowInfo in rowsInfo:
-            logger.info(f'爬取详情：{rowInfo}')
-            rowInfo = getRowDetail(rowInfo, startDate)
+    # 遍历处理每一行数据
+    for rowInfo in rowsInfo:
+        logger.info(f'爬取详情：{rowInfo}')
+        rowInfo = getRowDetail(rowInfo, startDate)
 
-            # 只处理有发布时间的数据
-            if rowInfo.get('publishTime'):
-                # 构造符合表头格式的数据字典
-                csv_row = {
-                    'title': rowInfo.get('title', ''),
-                    'date': rowInfo.get('publishTime', ''),
-                    'url': rowInfo.get('url', ''),
-                    'author': rowInfo.get('author', ''),
-                    'content': rowInfo.get('contents', '')
-                }
+        # 只处理有发布时间的数据
+        if rowInfo.get('publishTime'):
+            ws.append([
+                rowInfo.get('title', ''),
+                rowInfo.get('publishTime', ''),
+                rowInfo.get('url', ''),
+                rowInfo.get('author', ''),
+                rowInfo.get('contents', '')
+            ])
 
-                # 逐行追加写入CSV
-                logger.info(rowInfo)
-                writer.writerow(csv_row)
-
-                # 可选：立即刷新到磁盘，防止数据丢失
-                f.flush()
+            # 逐行保存到磁盘，防止数据丢失
+            wb.save(xlsxFile)
+            logger.info(rowInfo)
 
 def download(url, file, vpn=None):
     file = file.replace('/', '-').replace(' ', '-')
