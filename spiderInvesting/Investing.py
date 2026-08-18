@@ -101,11 +101,11 @@ def getRowDetail(rowInfo, startDate):
 
     publishTime = PlayWright.get_text('(//div[@class="flex flex-row items-center"])[2]/span')
     year, month, day = startDate.split('-')
-    month = month if not month.startswith('0') else month[1]
-    day = day if not day.startswith('0') else day[1]
+    # month = month if not month.startswith('0') else month[1]
+    # day = day if not day.startswith('0') else day[1]
 
-    if f'{year}-{month}-{day}' not in publishTime:
-        return rowInfo
+    # if f'{year}-{month}-{day}' not in publishTime:
+    #     return rowInfo
 
     contentEle = '//div[contains(@class, "article")]/div[1]/p'
     contentCount = PlayWright.get_count(contentEle)
