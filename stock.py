@@ -19,8 +19,7 @@ def getData(stockCode):
     result = requests.get(url).content.decode('utf-8')
     dataOne = re.findall('<span class="ui-font-large ui-color-red ui-num">(.*?)<', result)[0]
     dataTwo = re.findall('<span class="ui-font-middle ui-color-red ui-num">(.*?)<', result)[0]
-    print(dataOne)
-    print(dataTwo)
+
     return [dataOne, dataTwo]
 
 def getOld(string):
@@ -41,7 +40,7 @@ def replaceData(string, newAmounts=None, newDate=None):
     result = re.sub('>日期：.*?<', f'>日期：{newDate}<', result)
     for row in re.findall(r'<tr.*?</tr>', result, re.S):
         code = next((c for c in stockCodes if f'<span class="gray">{c}</span>' in row), None)
-        if code is None or code in skipCodes:
+        if code is None:
             continue
         newWan, newRate = getData(code)
         newRate = newRate.rstrip('%')
@@ -50,12 +49,12 @@ def replaceData(string, newAmounts=None, newDate=None):
             f'<span class="bold">{newWan}</span>（<span class="bold">{newRate}%</span>）',
             row)
 
-        cells = re.findall(r'<td class="tar bold">([^<]+)</td>', newRow)
-
-        for key, newVal in (newAmounts.get(code) or {}).items():
-            idx = positions[key]
-            oldCell = f'<td class="tar bold">{cells[idx]}</td>'
-            newRow = newRow.replace(oldCell, f'<td class="tar bold">{newVal}</td>')
+        if code not in skipCodes:
+            cells = re.findall(r'<td class="tar bold">([^<]+)</td>', newRow)
+            for key, newVal in (newAmounts.get(code) or {}).items():
+                idx = positions[key]
+                oldCell = f'<td class="tar bold">{cells[idx]}</td>'
+                newRow = newRow.replace(oldCell, f'<td class="tar bold">{newVal}</td>')
         result = result.replace(row, newRow)
     return result
 
@@ -70,7 +69,7 @@ def escapeString(string):
 
 if __name__ == '__main__':
     string = """
-    "result": "<table class=\"balancetable\" style=\"width: 100%\"><thead><tr><th class=\"tac\">基金简称</th><th class=\"tal\"><span class=\"order\">每万份收益</span>（7日年化）</th><th class=\"tar\">可用&nbsp;/&nbsp;可取&nbsp;/&nbsp;总份额（份）</th><th class=\"tar\">未付收益（元）</th><th class=\"tac\">累计收益（元）</th><th class=\"tac\">操作</th></tr></thead><tbody data-c=\"3\"><tr class='even'><td class='tal'><a href=\"http://fund.eastmoney.com/002183.html?spm=xjbsy\" class=\"lk\" target=\"_blank\">广发天天红货币B</a><br/><span class=\"gray\">002183</span></td><td class=\"tal\"><span class=\"bold\">0.3147</span>（<span class=\"bold\">1.1560%</span>）<br/><span class=\"gray\">日期：08-20</span></td><td class=\"tar bold\">0.04 / 0.04 / 0.04</td><td class=\"tar bold\">0.00</td><td class=\"tar bold\">0.04</td><td class='cz'><a class=\"lk\" href=\"/xjb/recharge?code=002183\" title=\"T日15：00前充值，T+1日即享货币基金收益。\">充值</a>|<a class=\"lk\" href=\"/xjb/withdrawcash?code=002183#cq\" title=\"T日15：00前取现，资金T+1后到账，无限额。\">取现</a>|<a class='lk' title=\"T日15：00前互转，T+1日确认，投资不间断\" href='/xjb/transfer?code=002183'>一键互转</a></td></tr><tr><td class='tal'><a href=\"http://fund.eastmoney.com/004863.html?spm=xjbsy\" class=\"lk\" target=\"_blank\">泰康现金管家货币C</a><br/><span class=\"gray\">004863</span></td><td class=\"tal\"><span class=\"bold\">0.4018</span>（<span class=\"bold\">1.2110%</span>）<br/><span class=\"gray\">日期：08-20</span></td><td class=\"tar bold\">50390.36 / 0.00 / 50390.36</td><td class=\"tar bold\">0.00</td><td class=\"tar bold\">2143.65</td><td class='cz'><a class=\"lk\" href=\"/xjb/recharge?code=004863\" title=\"T日15：00前充值，T+1日即享货币基金收益。\">充值</a>|<a class=\"lk\" href=\"/xjb/withdrawcash?code=004863#cq\" title=\"T日15：00前取现，资金T+1后到账，无限额。\">取现</a>|<a class='lk' title=\"T日15：00前互转，T+1日确认，投资不间断\" href='/xjb/transfer?code=004863'>一键互转</a></td></tr><tr class='even'><td class='tal'><a href=\"http://fund.eastmoney.com/018655.html?spm=xjbsy\" class=\"lk\" target=\"_blank\">光大保德信耀钱包货币C</a><br/><span class=\"gray\">018655</span></td><td class=\"tal\"><span class=\"bold\">0.3431</span>（<span class=\"bold\">1.5840%</span>）<br/><span class=\"gray\">日期：08-20</span></td><td class=\"tar bold\">44611.43 / 0.00 / 44611.43</td><td class=\"tar bold\">0.00</td><td class=\"tar bold\">611.43</td><td class='cz'><a class=\"lk\" href=\"/xjb/recharge?code=018655\" title=\"T日15：00前充值，T+1日即享货币基金收益。\">充值</a>|<a class=\"lk\" href=\"/xjb/withdrawcash?code=018655#cq\" title=\"T日15：00前取现，资金T+1后到账，无限额。\">取现</a>|<a class='lk' title=\"T日15：00前互转，T+1日确认，投资不间断\" href='/xjb/transfer?code=018655'>一键互转</a></td></tr>",
+    "result": "<table class=\"balancetable\" style=\"width: 100%\"><thead><tr><th class=\"tac\">基金简称</th><th class=\"tal\"><span class=\"order\">每万份收益</span>（7日年化）</th><th class=\"tar\">可用&nbsp;/&nbsp;可取&nbsp;/&nbsp;总份额（份）</th><th class=\"tar\">未付收益（元）</th><th class=\"tac\">累计收益（元）</th><th class=\"tac\">操作</th></tr></thead><tbody data-c=\"3\"><tr class='even'><td class='tal'><a href=\"http://fund.eastmoney.com/002183.html?spm=xjbsy\" class=\"lk\" target=\"_blank\">广发天天红货币B</a><br/><span class=\"gray\">002183</span></td><td class=\"tal\"><span class=\"bold\">0.3151</span>（<span class=\"bold\">1.1560%</span>）<br/><span class=\"gray\">日期：08-21</span></td><td class=\"tar bold\">0.04 / 0.04 / 0.04</td><td class=\"tar bold\">0.00</td><td class=\"tar bold\">0.04</td><td class='cz'><a class=\"lk\" href=\"/xjb/recharge?code=002183\" title=\"T日15：00前充值，T+1日即享货币基金收益。\">充值</a>|<a class=\"lk\" href=\"/xjb/withdrawcash?code=002183#cq\" title=\"T日15：00前取现，资金T+1后到账，无限额。\">取现</a>|<a class='lk' title=\"T日15：00前互转，T+1日确认，投资不间断\" href='/xjb/transfer?code=002183'>一键互转</a></td></tr><tr><td class='tal'><a href=\"http://fund.eastmoney.com/004863.html?spm=xjbsy\" class=\"lk\" target=\"_blank\">泰康现金管家货币C</a><br/><span class=\"gray\">004863</span></td><td class=\"tal\"><span class=\"bold\">0.3217</span>（<span class=\"bold\">1.2130%</span>）<br/><span class=\"gray\">日期：08-21</span></td><td class=\"tar bold\">41036.08 / 0.00 / 41036.08</td><td class=\"tar bold\">0.00</td><td class=\"tar bold\">2158.90</td><td class='cz'><a class=\"lk\" href=\"/xjb/recharge?code=004863\" title=\"T日15：00前充值，T+1日即享货币基金收益。\">充值</a>|<a class=\"lk\" href=\"/xjb/withdrawcash?code=004863#cq\" title=\"T日15：00前取现，资金T+1后到账，无限额。\">取现</a>|<a class='lk' title=\"T日15：00前互转，T+1日确认，投资不间断\" href='/xjb/transfer?code=004863'>一键互转</a></td></tr><tr class='even'><td class='tal'><a href=\"http://fund.eastmoney.com/018655.html?spm=xjbsy\" class=\"lk\" target=\"_blank\">光大保德信耀钱包货币C</a><br/><span class=\"gray\">018655</span></td><td class=\"tal\"><span class=\"bold\">0.3383</span>（<span class=\"bold\">1.6290%</span>）<br/><span class=\"gray\">日期：08-21</span></td><td class=\"tar bold\">54000.00 / 0.00 / 54000.00</td><td class=\"tar bold\">0.00</td><td class=\"tar bold\">630.47</td><td class='cz'><a class=\"lk\" href=\"/xjb/recharge?code=018655\" title=\"T日15：00前充值，T+1日即享货币基金收益。\">充值</a>|<a class=\"lk\" href=\"/xjb/withdrawcash?code=018655#cq\" title=\"T日15：00前取现，资金T+1后到账，无限额。\">取现</a>|<a class='lk' title=\"T日15：00前互转，T+1日确认，投资不间断\" href='/xjb/transfer?code=018655'>一键互转</a></td></tr>",
     """
     newDate = '08-21'
 
