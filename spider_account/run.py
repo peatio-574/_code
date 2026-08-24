@@ -1437,6 +1437,8 @@ class DouDian(object):
 
             # 判断第一条数据下载按钮是否存在
             downloadEle = f'{firstRowEle}//span[text()="下载报表"]'
+            PlayWright.click(downloadEle)
+            time.sleep(3)
             verifyEle = '//span[text()="获取验证码"]'
             if PlayWright.get_count(verifyEle):
                 PlayWright.click(verifyEle)
