@@ -751,7 +751,7 @@ class WeiDian(object):
     def fundsPreHtmlSave(cls):
         """账号资金明细-页面预导出"""
         timeFlag = time.time()
-        PlayWright.click('//span[text()="导出报表"]')
+        PlayWright.click('(//span[text()="导出报表"])[1]')
         if PlayWright.get_count('//span[text()="暂无数据"]'):
             return False
         PlayWright.click('//span[text()="生成报表"]')
@@ -941,8 +941,8 @@ class WeiDian(object):
             timeFlag = cls.fundsPreHtmlSave()
             if not timeFlag:
                 continue
-            logger.info('正在预生成，休息5*60秒导出')
-            time.sleep(5*60)
+            logger.info('正在预生成，休息60秒导出')
+            time.sleep(60)
             # 页面导出
             saveStatus = cls.fundsHtmlSave(fileName, timeFlag)
             if saveStatus:
