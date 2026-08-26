@@ -379,7 +379,7 @@ class PlayWrightClass(object):
         """
         try:
             self.page.mouse.wheel(delta_x, delta_y)
-            time.sleep(random.uniform(0.5, 1.0))
+            time.sleep(random.uniform(0.1, 0.5))
             return True
         except Exception as e:
             logger.error(f'鼠标滑动失败：{e}')
