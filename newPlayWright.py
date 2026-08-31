@@ -36,8 +36,96 @@ class PlayWrightClass(object):
         self.height = get_monitors()[0].height  # 当前屏幕分辨率height
         self.timeout = 30 * 1000  # 超时时间
 
-    def start_exists_browser(self):
-        pass
+    def start_exists_browser(self, debug_port=9222):
+        """连接已打开的本地Edge浏览器（通过CDP）"""
+        import subprocess
+
+        self.playwright = sync_playwright().start()
+
+        # 检测Edge是否已开启调试端口
+        edge_running = self._is_edge_running()
+        need_restart = False
+
+        if edge_running:
+            # 检查调试端口是否可达
+            import urllib.request
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{debug_port}/json/version", timeout=3)
+                logger.info(f"Edge调试端口 {debug_port} 已就绪")
+            except Exception as e:
+                logger.info(f"Edge正在运行但未开启调试端口，正在重启...{e}")
+                self._kill_edge()
+                need_restart = True
+        else:
+            need_restart = True
+
+        if need_restart:
+            # 用调试端口启动Edge（复用原有用户数据目录）
+            user_data_dir = self._get_user_data_dir()
+            cmd = [
+                self.edge_path,
+                f"--remote-debugging-port={debug_port}",
+                f"--user-data-dir={user_data_dir}",
+                "--no-first-run",
+                "--start-maximized",
+            ]
+            logger.info(f"启动Edge: {cmd}")
+            subprocess.Popen(cmd)
+            time.sleep(8)
+
+        # 通过CDP连接
+        cdp_url = f"http://127.0.0.1:{debug_port}"
+        logger.info(f"连接Edge: {cdp_url}")
+        self.browser = self.playwright.chromium.connect_over_cdp(cdp_url)
+
+        # 复用已有上下文
+        self.context = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
+
+        # 复用已有页面，没有则新建
+        if self.context.pages:
+            self.page = self.context.pages[0]
+            # 关闭多余页面
+            for p in self.context.pages[1:]:
+                p.close()
+        else:
+            self.page = self.context.new_page()
+
+        # 注入反检测脚本
+        self.page.add_init_script("""
+            () => {
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                    configurable: true,
+                    enumerable: false
+                });
+            }
+        """)
+        logger.info("Edge连接成功")
+
+    def _is_edge_running(self):
+        """检查Edge是否正在运行"""
+        import subprocess
+        result = subprocess.run(
+            ['tasklist', '/FI', 'IMAGENAME eq msedge.exe'],
+            capture_output=True, text=True, creationflags=0x08000000
+        )
+        return 'msedge.exe' in result.stdout
+
+    def _kill_edge(self):
+        """关闭所有Edge进程"""
+        import subprocess
+        subprocess.run(
+            ['taskkill', '/f', '/im', 'msedge.exe'],
+            capture_output=True, creationflags=0x08000000
+        )
+        time.sleep(3)
+
+    def _get_user_data_dir(self):
+        """获取Edge用户数据目录（保留书签、密码等）"""
+        return os.path.join(
+            os.path.expanduser("~"),
+            "AppData", "Local", "Microsoft", "Edge", "UserData"
+        )
 
 
     def start_borwser(self, proxy=None):
@@ -132,18 +220,20 @@ class PlayWrightClass(object):
         if self.playwright:
             self.playwright.stop()
 
-    def goto(self, url, timeout=None, proxy=None):
+    def goto(self, url, timeout=None, proxy=None, way='new'):
         """proxy格式：{'server': 'http://127.0.0.1:7892'}"""
         if not self.playwright:
-            self.start_borwser(proxy)
+            if way == 'new':
+                self.start_borwser(proxy)
+            else:
+                self.start_exists_browser()
         for i in range(3):
             try:
-                # self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='domcontentloaded')
-                self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='commit')
+                self.page.goto(url, timeout=self.timeout if not timeout else timeout, wait_until='commit')  # domcontentloaded
                 time.sleep(5)
                 return True
             except Exception as e:
-                print('%s地址访问失败：%s' % (url, e))
+                logger.info('%s地址访问失败：%s' % (url, e))
                 continue
         return False
 
@@ -400,7 +490,7 @@ class SpecialPlayWright(PlayWrightClass):
 
         self.environment_id = None
 
-    def goto(self, url, timeout=None, proxy=None):
+    def goto(self, url, timeout=None, proxy=None, way='new'):
         """重写goto，使用AdsPower指纹浏览器"""
         if not self.playwright:
             self.start_browser()
@@ -410,7 +500,7 @@ class SpecialPlayWright(PlayWrightClass):
                 time.sleep(5)
                 return True
             except Exception as e:
-                print('%s地址访问失败：%s' % (url, e))
+                logger.info('%s地址访问失败：%s' % (url, e))
                 continue
         return False
 
@@ -474,7 +564,7 @@ class SpecialPlayWright(PlayWrightClass):
                 "region": "",
                 "city": "",
                 "remark": "remark",
-                "fingerprint_config": {
+                "fingerlogger.info_config": {
                     "client_hints": {
                         "model": "",
                         "wow64": "",
@@ -637,3 +727,5 @@ class SpecialPlayWright(PlayWrightClass):
 
 
 PlayWright = PlayWrightClass()
+PlayWright.goto('https://www.baidu.com/', way='old')
+time.sleep(5000)
