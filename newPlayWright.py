@@ -727,5 +727,3 @@ class SpecialPlayWright(PlayWrightClass):
 
 
 PlayWright = PlayWrightClass()
-PlayWright.goto('https://www.baidu.com/', way='old')
-time.sleep(5000)
