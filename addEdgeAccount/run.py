@@ -47,7 +47,7 @@ def checkAccountStatus(account: str = "yumi-ufu@f2.dion.ne.jp") -> str:
     其他返回值会原样返回，调用方据此决定是否跳过。
     """
     try:
-        time.sleep(random.randint(1, 1.5))
+        time.sleep(random.uniform(0.5, 1.5))
         url = "https://odc.officeapps.live.com/odc/v2.1/idp"
         user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"
         headers = {
@@ -301,15 +301,48 @@ def delete_all_profiles(close_browser: bool = True) -> list[dict]:
     return results
 
 
+def is_blank_value(value) -> bool:
+    """判断 Excel 单元格值是否应视为空。
+
+    pandas/openpyxl 在读取空单元格时可能返回 None、NaN，或者字符串
+    'nan'。这些值都不能被当作“已有状态”，否则会导致空状态被跳过。
+    """
+    if value is None:
+        return True
+    try:
+        if value != value:  # NaN 不等于自身
+            return True
+    except Exception:
+        pass
+    return str(value).strip().lower() in {"", "nan", "none", "null", "nat"}
+
+
 def main(accounts_file: str, force_new=False, step='1') -> None:
-    """运行"""
+    """按 Excel 第一列账号、第二列状态批量处理账号。
+
+    逻辑与 execute.py 保持一致：
+    1. 默认使用活动工作表，不强依赖 Sheet1。
+    2. 第一列作为账号列，第二列作为状态列。
+    3. 状态为空、None、NaN、'nan' 时继续处理；其他状态跳过。
+    4. 每处理 10 条自动保存一次。
+    """
     wb = load_workbook(accounts_file)
-    ws = wb['Sheet1']
+    ws = wb.active
+
+    if ws.max_row < 2:
+        raise SystemExit(f"账号文件为空或无有效账号：{accounts_file}")
+
+    # 对齐 execute.py 的读取规则：第一列是账号，第二列是状态。
+    ws.cell(row=1, column=1, value='账号')
     ws.cell(row=1, column=2, value='状态')
     wb.save(accounts_file)
+
     datas = ReadData.read_xlsx_col(accounts_file)
-    accounts = datas['账号']
-    allStatus = datas['状态']
+    if not datas or '账号' not in datas:
+        raise SystemExit(f"账号文件为空或无有效账号：{accounts_file}")
+
+    accounts = datas.get('账号', [])
+    allStatus = datas.get('状态', [''] * len(accounts))
 
     if not accounts:
         raise SystemExit(f"账号文件为空或无有效账号：{accounts_file}")
@@ -318,10 +351,19 @@ def main(accounts_file: str, force_new=False, step='1') -> None:
         logger.info("Edge 正在运行，正在关闭...")
         close_edge()
 
-    for rowId, account in enumerate(accounts, start=2):
-        if allStatus[rowId-2]:
-            logger.info(f'账号【{account}】已备注')
+    for index, account in enumerate(accounts):
+        rowId = index + 2
+        account = str(account or '').strip()
+        status_value = allStatus[index] if index < len(allStatus) else ''
+
+        if is_blank_value(account):
+            logger.info(f'第 {rowId} 行账号为空，跳过')
             continue
+
+        if not is_blank_value(status_value):
+            logger.info(f'账号【{account}】已备注：{status_value}')
+            continue
+
         logger.info(f'开始执行账号【{account}】')
 
         status = checkAccountStatus(account)
@@ -332,6 +374,8 @@ def main(accounts_file: str, force_new=False, step='1') -> None:
         logger.info(f'{account}状态：{status}')
         if rowId % 10 == 0 or rowId == len(accounts) + 1:
             wb.save(accounts_file)
+
+    wb.save(accounts_file)
 
 
 if __name__ == "__main__":
@@ -348,4 +392,4 @@ if __name__ == "__main__":
     else:
         force_new = False  # 账号已存在时是否仍创建新配置。
         file = r"C:\Users\Administrator\Desktop\data.xlsx"
-        main(file, force_new)
+        main(file, force_new=force_new, step=step)
