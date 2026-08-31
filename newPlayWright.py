@@ -36,6 +36,10 @@ class PlayWrightClass(object):
         self.height = get_monitors()[0].height  # 当前屏幕分辨率height
         self.timeout = 30 * 1000  # 超时时间
 
+    def start_exists_browser(self):
+        pass
+
+
     def start_borwser(self, proxy=None):
         """打开浏览器"""
         self.playwright = sync_playwright().start()
@@ -74,19 +78,21 @@ class PlayWrightClass(object):
             '--disable-autofill',
         ]
 
-        # 2. 启动浏览器（隐藏自动化标识）
-        self.browser = self.playwright.chromium.launch(
-            executable_path=self.edge_path,  # edge浏览器
-            # channel=self.browser_type,  # chrome浏览器
-            headless=False,
-            args=browser_args,
-            # 移除Playwright默认的自动化参数
-            ignore_default_args=["--enable-automation"],
-            # 随机放慢操作（模拟人类速度）
-            slow_mo=random.randint(100, 300),
-            # 禁用自动化相关日志
-            # env={"GOOGLE_CHROME_BIN": ""}
-        )
+        kwargs = {
+            'headless': False,
+            'args': browser_args,
+            'ignore_default_args': ["--enable-automation"],  # 移除Playwright默认的自动化参数
+            'slow_mo': random.randint(100, 300)  # 随机放慢操作（模拟人类速度）
+        }
+
+        if self.browser_type == 'chrome':  # chrome浏览器
+            kwargs['channel'] = self.browser_type
+        elif self.browser_type == 'msedge':
+            kwargs['executable_path'] = self.edge_path  # edge浏览器
+
+        self.browser = self.playwright.chromium.launch(**kwargs)
+
+
         # 创建上下文
         self.context = self.browser.new_context(
             viewport=None,
@@ -197,10 +203,8 @@ class PlayWrightClass(object):
             os.makedirs(errorDir, exist_ok=True)
             errorFile = os.path.join(errorDir, f'{time.strftime("%Y%m%d%H%M%S")}_error.png')
             logger.error(f'点击失败，截图：{errorFile}\n{e}')
-            try:
-                self.page.screenshot(path=errorFile, timeout=5000)
-            except:
-                pass
+            self.page.screenshot(path=errorFile, timeout=5000)
+
 
     def input(self, location, text, enter=False):
         self.page.locator(location).clear()
