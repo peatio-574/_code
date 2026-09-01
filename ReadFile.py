@@ -4,7 +4,7 @@ from Logger import logger
 
 class ReadData(object):
     @classmethod
-    def read_xlsx_row(cls, file, sheetname=0, header=0, index_col=None):
+    def read_xlsx_row(cls, file, sheetname=0, header=0, index_col=None, row_type='dict'):
         """按行读取xlsx，[{},{},{}]"""
         try:
             file = os.path.abspath(file)
@@ -14,8 +14,11 @@ class ReadData(object):
             datalist = list()
             for row in range(rows):
                 # 每行用字典保存
-                row_dict = {col: pd[col][row] for col in col_key}
-                datalist.append(row_dict)
+                if row_type == 'dict':
+                    row_info = {col: pd[col][row] for col in col_key}
+                else:
+                    row_info = [pd[col][row] for col in col_key]
+                datalist.append(row_info)
             # logger.info('%s文件按行读取成功' % file)
             return datalist
         except Exception as e:
