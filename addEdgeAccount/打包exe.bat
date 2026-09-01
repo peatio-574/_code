@@ -68,6 +68,7 @@ echo [5/5] 开始打包可视化程序...
     --clean ^
     --onefile ^
     --windowed ^
+    --strip ^
     --name "%APP_NAME%" ^
     --paths "." ^
     --paths ".." ^
@@ -77,8 +78,23 @@ echo [5/5] 开始打包可视化程序...
     --hidden-import "requests" ^
     --hidden-import "urllib3" ^
     --hidden-import "tkinter" ^
-    --collect-submodules "pandas" ^
-    --collect-submodules "openpyxl" ^
+    --exclude-module "numpy" ^
+    --exclude-module "scipy" ^
+    --exclude-module "matplotlib" ^
+    --exclude-module "pandas.tests" ^
+    --exclude-module "openpyxl.tests" ^
+    --exclude-module "pydoc" ^
+    --exclude-module "unittest" ^
+    --exclude-module "test" ^
+    --exclude-module "distutils" ^
+    --exclude-module "setuptools" ^
+    --exclude-module "pkg_resources" ^
+    --exclude-module "email" ^
+    --exclude-module "xml" ^
+    --exclude-module "logging" ^
+    --exclude-module "pdb" ^
+    --exclude-module "profile" ^
+    --exclude-module "cProfile" ^
     "%ENTRY%"
 
 if errorlevel 1 (
