@@ -4,33 +4,33 @@ setlocal enabledelayedexpansion
 
 REM ============================================================
 REM Edge 账号批量处理工具 - PyInstaller 打包脚本
-REM 入口：addEdgeAccount\execute.py
+REM 入口：execute.py
 REM 输出：dist\Edge账号批量处理工具.exe
 REM ============================================================
 
-cd /d "%~dp0\.."
-
 set "APP_NAME=Edge账号批量处理工具"
-set "ENTRY=addEdgeAccount\execute.py"
+set "ENTRY=execute.py"
 set "DIST_DIR=dist"
 set "BUILD_DIR=build"
 set "SPEC_FILE=%APP_NAME%.spec"
 
+set "PYTHON=d:\_code\python\python.exe"
+
 echo.
 echo [1/5] 检查 Python 环境...
-python --version >nul 2>nul
+"%PYTHON%" --version >nul 2>nul
 if errorlevel 1 (
     echo [错误] 未检测到 Python，请先安装 Python 并加入 PATH。
     pause
     exit /b 1
 )
-python --version
+"%PYTHON%" --version
 
 echo.
 echo [2/5] 检查并安装打包依赖 PyInstaller...
-python -m pip show pyinstaller >nul 2>nul
+"%PYTHON%" -m pip show pyinstaller >nul 2>nul
 if errorlevel 1 (
-    python -m pip install pyinstaller -i https://pypi.tuna.tsinghua.edu.cn/simple
+    "%PYTHON%" -m pip install pyinstaller -i https://pypi.tuna.tsinghua.edu.cn/simple
     if errorlevel 1 (
         echo [错误] PyInstaller 安装失败。
         pause
@@ -42,18 +42,12 @@ if errorlevel 1 (
 
 echo.
 echo [3/5] 检查项目依赖...
-python -c "import tkinter, pandas, openpyxl, requests, urllib3" >nul 2>nul
+"%PYTHON%" -c "import tkinter, pandas, openpyxl, requests, urllib3" >nul 2>nul
 if errorlevel 1 (
-    echo [提示] 检测到缺少运行依赖，开始安装 requirements.txt 中的依赖...
-    if exist requirements.txt (
-        python -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-        if errorlevel 1 (
-            echo [错误] 依赖安装失败，请检查 requirements.txt 或网络环境。
-            pause
-            exit /b 1
-        )
-    ) else (
-        echo [错误] 未找到 requirements.txt，请手动安装 pandas openpyxl requests urllib3。
+    echo [提示] 检测到缺少运行依赖，开始安装...
+    "%PYTHON%" -m pip install pandas openpyxl requests urllib3 -i https://pypi.tuna.tsinghua.edu.cn/simple
+    if errorlevel 1 (
+        echo [错误] 依赖安装失败。
         pause
         exit /b 1
     )
@@ -69,14 +63,15 @@ if exist "%SPEC_FILE%" del /f /q "%SPEC_FILE%"
 
 echo.
 echo [5/5] 开始打包可视化程序...
-python -m PyInstaller ^
+"%PYTHON%" -m PyInstaller ^
     --noconfirm ^
     --clean ^
     --onefile ^
     --windowed ^
     --name "%APP_NAME%" ^
     --paths "." ^
-    --paths "addEdgeAccount" ^
+    --paths ".." ^
+    --hidden-import "ReadFile" ^
     --hidden-import "pandas" ^
     --hidden-import "openpyxl" ^
     --hidden-import "requests" ^

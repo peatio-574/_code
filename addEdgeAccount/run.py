@@ -61,7 +61,7 @@ def checkAccountStatus(account: str = "yumi-ufu@f2.dion.ne.jp") -> str:
         }
         response = requests.get(url, headers=headers, params=params, verify=False, timeout=20).json()
         info = response.get("account")
-        if info == "Both":
+        if info == "Both" or info == 'MSAccount':
             return "正常"
         return info or "未知"
     except Exception as e:
