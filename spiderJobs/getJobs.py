@@ -250,6 +250,11 @@ class BaseSpiderGUI:
         self.current_city = ''
         self.start_time = None
 
+        self.all_rows = []
+        self.page_size = 100
+        self.current_page = 0
+        self._refresh_pending = False
+
         self._build_ui()
 
     # ==================== UI 构建 ====================
@@ -258,6 +263,7 @@ class BaseSpiderGUI:
         self._build_header()
         self._build_control_panel()
         self._build_table()
+        self._build_pagination()
         self._build_status_bar()
 
     def _build_header(self):
@@ -311,11 +317,11 @@ class BaseSpiderGUI:
         table_frame = tk.Frame(self.root)
         table_frame.pack(fill='both', expand=True, padx=10, pady=(5, 5))
 
-        columns = ('date', 'province', 'city', 'job_name', 'company_name', 'nature', 'scale',
+        columns = ('id', 'date', 'province', 'city', 'job_name', 'company_name', 'nature', 'scale',
                    'industry', 'recruit_type', 'job_type', 'category', 'salary',
                    'amount', 'education', 'experience', 'major', 'location',
                    'address', 'deadline', 'description')
-        headings = ('采集日期', '省份', '城市', '职位名称', '公司名称', '公司性质', '公司规模',
+        headings = ('ID', '采集日期', '省份', '城市', '职位名称', '公司名称', '公司性质', '公司规模',
                     '公司行业', '招聘类型', '职位性质', '职位类别', '薪资范围',
                     '招聘人数', '学历要求', '经验要求', '专业要求', '工作地点',
                     '详细地址', '报名截止', '职位描述')
@@ -324,16 +330,65 @@ class BaseSpiderGUI:
         self.tree.heading('#0', text='')
         self.tree.column('#0', width=0, stretch=False)
 
-        widths = [80, 60, 70, 160, 200, 60, 80, 140, 70, 50, 100, 110,
+        widths = [50, 80, 60, 70, 160, 200, 60, 80, 140, 70, 50, 100, 110,
                   50, 60, 60, 180, 90, 180, 130, 250]
         for col, heading, w in zip(columns, headings, widths):
             self.tree.heading(col, text=heading, anchor='w')
             self.tree.column(col, width=w, minwidth=40, anchor='w')
 
         vsb = ttk.Scrollbar(table_frame, orient='vertical', command=self.tree.yview)
-        self.tree.configure(yscrollcommand=vsb.set)
-        self.tree.pack(side='left', fill='both', expand=True)
-        vsb.pack(side='right', fill='y')
+        hsb = ttk.Scrollbar(table_frame, orient='horizontal', command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        self.tree.grid(row=0, column=0, sticky='nsew')
+        vsb.grid(row=0, column=1, sticky='ns')
+        hsb.grid(row=1, column=0, sticky='ew')
+        table_frame.grid_rowconfigure(0, weight=1)
+        table_frame.grid_columnconfigure(0, weight=1)
+
+        self.tree.bind('<MouseWheel>', lambda e: self.tree.yview_scroll(int(-1 * (e.delta / 120)), 'units'))
+
+    def _build_pagination(self):
+        frame = tk.Frame(self.root)
+        frame.pack(fill='x', padx=10, pady=(0, 5))
+
+        self.btn_prev = tk.Button(frame, text='< 上一页', width=10, state='disabled',
+                                  command=self._on_prev_page)
+        self.btn_prev.pack(side='left')
+
+        self.lbl_page = tk.Label(frame, text='第 0/0 页  共 0 条', font=('微软雅黑', 9))
+        self.lbl_page.pack(side='left', expand=True)
+
+        self.btn_next = tk.Button(frame, text='下一页 >', width=10, state='disabled',
+                                  command=self._on_next_page)
+        self.btn_next.pack(side='right')
+
+    def _on_prev_page(self):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self._refresh_table()
+
+    def _on_next_page(self):
+        max_page = (len(self.all_rows) - 1) // self.page_size
+        if self.current_page < max_page:
+            self.current_page += 1
+            self._refresh_table()
+
+    def _do_refresh(self):
+        self._refresh_pending = False
+        self._refresh_table()
+
+    def _refresh_table(self):
+        self.tree.delete(*self.tree.get_children())
+        start = self.current_page * self.page_size
+        end = start + self.page_size
+        page_data = self.all_rows[start:end]
+        for i, row in enumerate(page_data, start=start + 1):
+            values = (str(i),) + tuple(str(v) if v is not None else '' for v in row)
+            self.tree.insert('', 'end', values=values)
+        total_pages = max(1, (len(self.all_rows) - 1) // self.page_size + 1)
+        self.lbl_page.config(text=f'第 {self.current_page + 1}/{total_pages} 页  共 {len(self.all_rows)} 条')
+        self.btn_prev.config(state='normal' if self.current_page > 0 else 'disabled')
+        self.btn_next.config(state='normal' if self.current_page < total_pages - 1 else 'disabled')
 
     def _build_status_bar(self):
         bar = tk.Frame(self.root, bg='#ecf0f1', height=24)
@@ -430,13 +485,17 @@ class BaseSpiderGUI:
 
     def on_data(self, row):
         self.today_count += 1
-        self.root.after(0, lambda: self._insert_row(row))
+        self.all_rows.append(row)
+        if not self._refresh_pending:
+            self._refresh_pending = True
+            self.root.after(200, self._do_refresh)
 
     def check_pause(self):
         self.pause_event.wait()
 
     def _insert_row(self, row):
-        values = tuple(str(v) if v is not None else '' for v in row)
+        row_id = len(self.tree.get_children()) + 1
+        values = (str(row_id),) + tuple(str(v) if v is not None else '' for v in row)
         self.tree.insert('', 'end', values=values)
         self.tree.yview_moveto(1.0)
 
