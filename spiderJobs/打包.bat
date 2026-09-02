@@ -2,7 +2,7 @@
 chcp 936 >nul
 setlocal enabledelayedexpansion
 
-set "APP_NAME=guopin_spider"
+set "APP_NAME=GuoPin"
 set "ENTRY=getJobs.py"
 set "DIST_DIR=dist"
 set "BUILD_DIR=build"
