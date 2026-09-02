@@ -7,6 +7,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 import time
 import os
 import sys
+from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import ttk
 import threading
@@ -60,8 +61,8 @@ class GuoPin(object):
     @classmethod
     def load_yesterday_data(cls, data_file):
         """读取昨天数据"""
-        yesterday = time.strftime('%Y-%m-%d', time.localtime(time.time() - 86400))
-        today = time.strftime('%Y-%m-%d', time.localtime(time.time()))
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        today = datetime.now().strftime('%Y-%m-%d')
         all_data = _read_xlsx_rows(data_file)
         yesterday_data = []
         for row in all_data:
@@ -146,7 +147,7 @@ class GuoPin(object):
             job_name = row['job_name']
             company_name = row['company_name']
             row_info = [
-                str(time.strftime('%Y-%m-%d', time.localtime(time.time() - 86400))),
+                datetime.now().strftime('%Y-%m-%d'),
                 province_name,
                 city_name,
                 job_name,
