@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}{{ '编辑' if job else '新增' }}岗位 - 岗位管理系统{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-{{ 'pencil' if job else 'plus-lg' }}"></i>
+                    {{ '编辑' if job else '新增' }}岗位
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">单位名称 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="company_name" 
+                                   value="{{ job.company_name if job else '' }}" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">岗位名称 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="job_name" 
+                                   value="{{ job.job_name if job else '' }}" required>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">学历要求</label>
+                            <select class="form-select" name="education_req">
+                                <option value="">不限</option>
+                                <option value="大专" {% if job and job.education_req == '大专' %}selected{% endif %}>大专</option>
+                                <option value="本科" {% if job and job.education_req == '本科' %}selected{% endif %}>本科</option>
+                                <option value="硕士" {% if job and job.education_req == '硕士' %}selected{% endif %}>硕士</option>
+                                <option value="博士" {% if job and job.education_req == '博士' %}selected{% endif %}>博士</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">专业要求</label>
+                            <input type="text" class="form-control" name="major_req" 
+                                   value="{{ job.major_req if job else '' }}" placeholder="如：计算机、金融">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">证书要求</label>
+                            <input type="text" class="form-control" name="certificate_req" 
+                                   value="{{ job.certificate_req if job else '' }}">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">工作地点</label>
+                            <input type="text" class="form-control" name="work_location" 
+                                   value="{{ job.work_location if job else '' }}">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">招录人数</label>
+                            <input type="number" class="form-control" name="recruit_count" min="1"
+                                   value="{{ job.recruit_count if job else 1 }}">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">报名截止时间</label>
+                            <input type="date" class="form-control" name="deadline"
+                                   value="{{ job.deadline.strftime('%Y-%m-%d') if job and job.deadline else '' }}">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">岗位标签</label>
+                            <input type="text" class="form-control" name="tags" 
+                                   value="{{ job.tags if job else '' }}" 
+                                   placeholder="如：央企、能源行业、垄断国企">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">&nbsp;</label>
+                            <div class="form-check mt-2">
+                                <input type="checkbox" class="form-check-input" name="party_member_req" 
+                                       id="party_member_req" {% if job and job.party_member_req %}checked{% endif %}>
+                                <label class="form-check-label" for="party_member_req">要求党员</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">岗位详情</label>
+                        <textarea class="form-control" name="job_detail" rows="8">{{ job.job_detail if job else '' }}</textarea>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> {{ '更新' if job else '保存' }}
+                        </button>
+                        <a href="{{ url_for('admin.jobs_list') }}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> 返回
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

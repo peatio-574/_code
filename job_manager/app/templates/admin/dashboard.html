@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}首页 - 岗位管理系统{% endblock %}
+
+{% block content %}
+<h4 class="mb-4"><i class="bi bi-house-door"></i> 工作台</h4>
+
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-4 mb-3">
+        <div class="card stat-card blue">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted mb-1">在架岗位</h6>
+                        <h2 class="mb-0">{{ total_jobs }}</h2>
+                    </div>
+                    <i class="bi bi-briefcase display-4 text-muted"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card stat-card green">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted mb-1">学员总数</h6>
+                        <h2 class="mb-0">{{ total_students }}</h2>
+                    </div>
+                    <i class="bi bi-people display-4 text-muted"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card stat-card orange">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted mb-1">推送记录</h6>
+                        <h2 class="mb-0">{{ total_pushes }}</h2>
+                    </div>
+                    <i class="bi bi-send display-4 text-muted"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Pushes -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">最近推送</h5>
+        <a href="{{ url_for('admin.push_list') }}" class="btn btn-sm btn-outline-primary">查看全部</a>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>岗位名称</th>
+                        <th>推送学员</th>
+                        <th>推送时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for push in recent_pushes %}
+                    <tr>
+                        <td>{{ push.job.job_name }}</td>
+                        <td>{{ push.student.real_name or push.student.username }}</td>
+                        <td>{{ push.pushed_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not recent_pushes %}
+                    <tr>
+                        <td colspan="3" class="text-center text-muted py-4">暂无推送记录</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

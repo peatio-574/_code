@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}{{ '编辑' if student else '新增' }}学员 - 岗位管理系统{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-{{ 'pencil' if student else 'person-plus' }}"></i>
+                    {{ '编辑' if student else '新增' }}学员
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">用户名 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="username" 
+                                   value="{{ student.username if student else '' }}" 
+                                   {{ 'readonly' if student else 'required' }}>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">{{ '新' if student else '' }}密码 {{ '' if student else '<span class="text-danger">*</span>' }}</label>
+                            <input type="password" class="form-control" name="password" 
+                                   {{ '' if student else 'required' }} minlength="6"
+                                   placeholder="{{ '留空则不修改' if student else '默认123456' }}">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">姓名</label>
+                            <input type="text" class="form-control" name="real_name" 
+                                   value="{{ student.real_name if student else '' }}">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">手机号</label>
+                            <input type="text" class="form-control" name="phone" 
+                                   value="{{ student.phone if student else '' }}">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">邮箱</label>
+                            <input type="email" class="form-control" name="email" 
+                                   value="{{ student.email if student else '' }}">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">学历</label>
+                            <select class="form-select" name="education">
+                                <option value="">请选择</option>
+                                <option value="大专" {% if student and student.education == '大专' %}selected{% endif %}>大专</option>
+                                <option value="本科" {% if student and student.education == '本科' %}selected{% endif %}>本科</option>
+                                <option value="硕士" {% if student and student.education == '硕士' %}selected{% endif %}>硕士</option>
+                                <option value="博士" {% if student and student.education == '博士' %}selected{% endif %}>博士</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">专业</label>
+                            <input type="text" class="form-control" name="major" 
+                                   value="{{ student.major if student else '' }}">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">意向城市</label>
+                            <input type="text" class="form-control" name="intention_city" 
+                                   value="{{ student.intention_city if student else '' }}">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">证书</label>
+                            <input type="text" class="form-control" name="certificate" 
+                                   value="{{ student.certificate if student else '' }}"
+                                   placeholder="如：CET-6、CPA">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">&nbsp;</label>
+                            <div class="form-check mt-2">
+                                <input type="checkbox" class="form-check-input" name="is_party_member" 
+                                       id="is_party_member" {% if student and student.is_party_member %}checked{% endif %}>
+                                <label class="form-check-label" for="is_party_member">党员</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> {{ '更新' if student else '保存' }}
+                        </button>
+                        <a href="{{ url_for('admin.students_list') }}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> 返回
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

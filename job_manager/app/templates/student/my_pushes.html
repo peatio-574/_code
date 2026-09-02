@@ -1,0 +1,213 @@
+{% extends "student/base_student.html" %}
+
+{% block title %}我的推送 - 岗位系统{% endblock %}
+
+{% block content %}
+<!-- Left Panel - Job List -->
+<div class="job-list-panel">
+    <div class="list-header">
+        <div class="tab-group">
+            <button class="tab-btn active">全部</button>
+            <button class="tab-btn">最新</button>
+        </div>
+        <a href="{{ url_for('student.my_pushes') }}" class="clear-filter">
+            <i class="bi bi-x-circle"></i> 清空筛选
+        </a>
+    </div>
+
+    <!-- Filter Bar -->
+    <div style="padding: 12px 16px; border-bottom: 1px solid #f0f0f0;">
+        <form method="GET" class="d-flex gap-2">
+            <select class="form-select form-select-sm" name="deadline_before" style="width: auto; font-size: 13px;">
+                <option value="">截止时间</option>
+                <option value="7" {% if deadline_before == '7' %}selected{% endif %}>7天内</option>
+                <option value="30" {% if deadline_before == '30' %}selected{% endif %}>30天内</option>
+                <option value="90" {% if deadline_before == '90' %}selected{% endif %}>90天内</option>
+            </select>
+            <button type="submit" class="btn btn-sm btn-primary" style="font-size: 13px;">筛选</button>
+        </form>
+    </div>
+
+    <div class="job-list">
+        {% for push in pushes %}
+        <div class="job-card {% if selected_job and selected_job.id == push.job.id %}active{% endif %}" 
+             onclick="selectJob({{ push.job.id }})">
+            <div class="job-card-header">
+                <div class="job-title">
+                    <a href="{{ url_for('student.job_detail', id=push.job.id) }}">
+                        {{ push.job.job_name }}
+                    </a>
+                </div>
+            </div>
+            <div class="job-tags">
+                {% if push.job.tags %}
+                <span class="job-tag type-tag">{{ push.job.tags.split(',')[0] if push.job.tags else '' }}</span>
+                {% endif %}
+                {% if push.job.education_req %}
+                <span class="job-tag">{{ push.job.education_req }}</span>
+                {% endif %}
+                {% if push.job.party_member_req %}
+                <span class="job-tag" style="background: #fff7e6; color: #fa8c16;">党员</span>
+                {% endif %}
+            </div>
+            <div class="job-meta">
+                {% if push.job.work_location %}
+                <span><i class="bi bi-geo-alt"></i> {{ push.job.work_location }}</span>
+                {% endif %}
+                <span><i class="bi bi-people"></i> {{ push.job.recruit_count }}人</span>
+                {% if push.job.deadline %}
+                <span><i class="bi bi-clock"></i> {{ push.job.deadline.strftime('%m-%d') }}截止</span>
+                {% endif %}
+            </div>
+            <div class="job-company">
+                <div class="company-logo">{{ push.job.company_name[0] if push.job.company_name else '企' }}</div>
+                <div class="company-info">
+                    <div class="company-name">{{ push.job.company_name }}</div>
+                    <div class="company-location">{{ push.job.work_location }}</div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not pushes %}
+        <div class="empty-state">
+            <i class="bi bi-inbox"></i>
+            <p>暂无推送岗位</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Pagination -->
+    {% if pagination.pages > 1 %}
+    <div style="padding: 12px; border-top: 1px solid #f0f0f0; background: white;">
+        <nav>
+            <ul class="pagination pagination-sm justify-content-center mb-0">
+                {% if pagination.has_prev %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ pagination.prev_num }}&deadline_before={{ deadline_before }}">上一页</a>
+                </li>
+                {% endif %}
+                {% for p in pagination.iter_pages() %}
+                {% if p %}
+                <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                    <a class="page-link" href="?page={{ p }}&deadline_before={{ deadline_before }}">{{ p }}</a>
+                </li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+                {% endfor %}
+                {% if pagination.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ pagination.next_num }}&deadline_before={{ deadline_before }}">下一页</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Right Panel - Job Detail -->
+<div class="job-detail-panel">
+    {% if selected_job %}
+    <div class="detail-card">
+        <div class="detail-header">
+            <div class="d-flex align-items-center">
+                <h1 class="detail-title mb-0">{{ selected_job.job_name }}</h1>
+                {% if selected_job.deadline %}
+                {% set days_left = (selected_job.deadline - now).days if selected_job.deadline > now else 0 %}
+                {% if days_left <= 7 and days_left > 0 %}
+                <span class="deadline-badge urgent ms-3">
+                    <i class="bi bi-clock"></i> 剩余{{ days_left }}天
+                </span>
+                {% elif days_left > 7 %}
+                <span class="deadline-badge normal ms-3">
+                    <i class="bi bi-clock"></i> 剩余{{ days_left }}天
+                </span>
+                {% else %}
+                <span class="deadline-badge urgent ms-3">
+                    <i class="bi bi-clock"></i> 已截止
+                </span>
+                {% endif %}
+                {% endif %}
+            </div>
+            <div class="detail-tags">
+                <span class="detail-tag"><i class="bi bi-geo-alt"></i> {{ selected_job.work_location or '不限' }}</span>
+                <span class="detail-tag"><i class="bi bi-mortarboard"></i> {{ selected_job.education_req or '不限' }}</span>
+                <span class="detail-tag"><i class="bi bi-book"></i> {{ selected_job.major_req or '不限' }}</span>
+                {% if selected_job.party_member_req %}
+                <span class="detail-tag" style="background: #fff7e6; color: #fa8c16;"><i class="bi bi-patch-check"></i> 党员</span>
+                {% endif %}
+                <span class="detail-tag"><i class="bi bi-people"></i> {{ selected_job.recruit_count }}人</span>
+            </div>
+        </div>
+
+        <div class="detail-company">
+            <div class="detail-company-logo">{{ selected_job.company_name[0] if selected_job.company_name else '企' }}</div>
+            <div class="detail-company-info">
+                <div class="detail-company-name">{{ selected_job.company_name }}</div>
+            </div>
+        </div>
+
+        <div class="detail-body">
+            {% if selected_job.certificate_req %}
+            <div class="detail-section">
+                <h3 class="detail-section-title">证书要求</h3>
+                <div class="detail-content">{{ selected_job.certificate_req }}</div>
+            </div>
+            {% endif %}
+
+            {% if selected_job.tags %}
+            <div class="detail-section">
+                <h3 class="detail-section-title">岗位标签</h3>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for tag in selected_job.tags.split(',') %}
+                    <span class="badge bg-primary">{{ tag.strip() }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="detail-section">
+                <h3 class="detail-section-title">岗位详情</h3>
+                <div class="detail-content">{{ selected_job.job_detail or '暂无详情' }}</div>
+            </div>
+
+            {% if selected_job.deadline %}
+            <div class="detail-section">
+                <h3 class="detail-section-title">截止时间</h3>
+                <div class="detail-content">
+                    <i class="bi bi-calendar-event text-primary"></i>
+                    {{ selected_job.deadline.strftime('%Y年%m月%d日') }}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <i class="bi bi-arrow-left-circle"></i>
+        <p>请从左侧选择查看岗位详情</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function selectJob(jobId) {
+    // Update URL without reload
+    const url = new URL(window.location);
+    url.searchParams.set('job_id', jobId);
+    window.location.href = url.toString();
+}
+
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+    });
+});
+</script>
+{% endblock %}

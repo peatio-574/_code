@@ -1,0 +1,100 @@
+{% extends "student/base_student.html" %}
+
+{% block title %}{{ job.job_name }} - 岗位系统{% endblock %}
+
+{% block content %}
+<!-- Left Panel - Job List (simplified) -->
+<div class="job-list-panel">
+    <div class="list-header">
+        <div class="tab-group">
+            <button class="tab-btn active">全部</button>
+            <button class="tab-btn">最新</button>
+        </div>
+        <a href="{{ url_for('student.my_pushes') }}" class="clear-filter">
+            <i class="bi bi-arrow-left"></i> 返回列表
+        </a>
+    </div>
+    <div class="job-list" style="padding: 20px; text-align: center; color: #999;">
+        <i class="bi bi-arrow-left-circle" style="font-size: 48px; opacity: 0.3;"></i>
+        <p style="margin-top: 12px;">当前查看岗位详情</p>
+    </div>
+</div>
+
+<!-- Right Panel - Job Detail -->
+<div class="job-detail-panel">
+    <div class="detail-card">
+        <div class="detail-header">
+            <div class="d-flex align-items-center">
+                <h1 class="detail-title mb-0">{{ job.job_name }}</h1>
+                {% if job.deadline %}
+                {% set days_left = (job.deadline - now).days if job.deadline > now else 0 %}
+                {% if days_left <= 7 and days_left > 0 %}
+                <span class="deadline-badge urgent ms-3">
+                    <i class="bi bi-clock"></i> 剩余{{ days_left }}天
+                </span>
+                {% elif days_left > 7 %}
+                <span class="deadline-badge normal ms-3">
+                    <i class="bi bi-clock"></i> 剩余{{ days_left }}天
+                </span>
+                {% else %}
+                <span class="deadline-badge urgent ms-3">
+                    <i class="bi bi-clock"></i> 已截止
+                </span>
+                {% endif %}
+                {% endif %}
+            </div>
+            <div class="detail-tags">
+                <span class="detail-tag"><i class="bi bi-geo-alt"></i> {{ job.work_location or '不限' }}</span>
+                <span class="detail-tag"><i class="bi bi-mortarboard"></i> {{ job.education_req or '不限' }}</span>
+                <span class="detail-tag"><i class="bi bi-book"></i> {{ job.major_req or '不限' }}</span>
+                {% if job.party_member_req %}
+                <span class="detail-tag" style="background: #fff7e6; color: #fa8c16;"><i class="bi bi-patch-check"></i> 党员</span>
+                {% endif %}
+                <span class="detail-tag"><i class="bi bi-people"></i> {{ job.recruit_count }}人</span>
+            </div>
+        </div>
+
+        <div class="detail-company">
+            <div class="detail-company-logo">{{ job.company_name[0] if job.company_name else '企' }}</div>
+            <div class="detail-company-info">
+                <div class="detail-company-name">{{ job.company_name }}</div>
+            </div>
+        </div>
+
+        <div class="detail-body">
+            {% if job.certificate_req %}
+            <div class="detail-section">
+                <h3 class="detail-section-title">证书要求</h3>
+                <div class="detail-content">{{ job.certificate_req }}</div>
+            </div>
+            {% endif %}
+
+            {% if job.tags %}
+            <div class="detail-section">
+                <h3 class="detail-section-title">岗位标签</h3>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for tag in job.tags.split(',') %}
+                    <span class="badge bg-primary">{{ tag.strip() }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="detail-section">
+                <h3 class="detail-section-title">岗位详情</h3>
+                <div class="detail-content">{{ job.job_detail or '暂无详情' }}</div>
+            </div>
+
+            {% if job.deadline %}
+            <div class="detail-section">
+                <h3 class="detail-section-title">截止时间</h3>
+                <div class="detail-content">
+                    <i class="bi bi-calendar-event text-primary"></i>
+                    {{ job.deadline.strftime('%Y年%m月%d日') }}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
