@@ -159,7 +159,7 @@ class GuoPin(object):
                 row['nature_cn'],
                 row['category_cn'],
                 f"{row['min_wage']}~{row['max_wage']} {row['wage_unit_cn']}",
-                row['amount'] if row['amount'] > 0 else '若干',
+                str(row['amount']) if row['amount'] > 0 else '若干',
                 row['education_cn'],
                 row['experience_cn'],
                 ', '.join(row.get('major_cn', [])),
