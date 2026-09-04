@@ -1,6 +1,6 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
-{% block title %}导入管理员 - 岗位管理系统{% endblock %}
+{% block title %}导入管理员 - 聘安途岗推系统{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
@@ -14,8 +14,8 @@
                     <h6><i class="bi bi-info-circle"></i> 导入说明</h6>
                     <ul class="mb-0">
                         <li>请下载模板填写数据后上传</li>
-                        <li><strong>必填：</strong>姓名、手机号</li>
-                        <li><strong>选填：</strong>密码（默认123456）、校区名称、角色、权限</li>
+                        <li><strong>必填：</strong>姓名、手机号、校区名称</li>
+                        <li><strong>选填：</strong>密码（默认手机号后6位）、角色、状态（默认启用）、权限（默认全选）</li>
                         <li>手机号作为登录账号，不可重复</li>
                         <li>校区名称如果不存在会自动创建</li>
                     </ul>

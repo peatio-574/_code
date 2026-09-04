@@ -1,6 +1,6 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
-{% block title %}{{ '编辑' if user_obj else '新增' }}管理员 - 岗位管理系统{% endblock %}
+{% block title %}{{ '编辑' if user_obj else '新增' }}管理员 - 聘安途岗推系统{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
@@ -29,11 +29,11 @@
                                    value="{{ user_obj.phone if user_obj else '' }}" required>
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label class="form-label">密码 {% if not user_obj %}<span class="text-danger">*</span>{% endif %}</label>
+                            <label class="form-label">密码 {% if user_obj %}<span class="text-danger">*</span>{% endif %}</label>
                             <input type="text" class="form-control" name="password"
                                    value="{{ user_obj.password_plain if user_obj and current_user.is_super_admin() else '' }}"
-                                   placeholder="{{ '留空则不修改' if user_obj else '请设置初始密码' }}"
-                                   {% if not user_obj %}required{% endif %}>
+                                   placeholder="{{ '留空则不修改' if user_obj else '默认手机号后6位' }}"
+                                   {% if user_obj %}required{% endif %}>
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">状态 <span class="text-danger">*</span></label>
@@ -56,8 +56,8 @@
                             </select>
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label class="form-label">角色 <span class="text-danger">*</span></label>
-                            <select class="form-select" name="role" required>
+                            <label class="form-label">角色</label>
+                            <select class="form-select" name="role">
                                 <option value="">请选择角色</option>
                                 {% for role in roles %}
                                 <option value="{{ role.name }}" {% if user_obj and user_obj.role == role.name %}selected{% endif %}>{{ role.name }}</option>

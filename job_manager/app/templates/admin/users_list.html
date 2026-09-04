@@ -1,17 +1,14 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
-{% block title %}用户管理 - 岗位管理系统{% endblock %}
+{% block title %}用户管理 - 聘安途岗推系统{% endblock %}
 
 {% block content %}
 <div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
-<div class="d-flex justify-content-between align-items-center mb-3 flex-shrink-0">
-    <h4 class="mb-0"><i class="bi bi-people"></i> 用户管理</h4>
-</div>
 
 <!-- 搜索筛选 -->
-<div class="card mb-3 flex-shrink-0">
-    <div class="card-body">
-        <form id="usersForm">
+<div class="card mb-3 flex-shrink-0" style="margin-top:0;">
+    <div class="card-body" style="padding-top:0;">
+        <form id="usersForm" style="padding-top:8px;">
             <div class="row g-3 mb-3">
                 <div class="col-md-2">
                     <label class="form-label fw-bold">关键字：</label>
@@ -52,19 +49,18 @@
                     </select>
                 </div>
             </div>
-            <div class="d-flex gap-2 flex-wrap">
+            <div class="d-flex align-items-center gap-2 pt-2">
                 <button type="submit" class="btn btn-primary fw-bold">
                     <i class="bi bi-search"></i> 搜索
                 </button>
                 <a href="{{ url_for('admin.users_page') }}" class="btn btn-reset fw-bold">
                     <i class="bi bi-arrow-counterclockwise"></i> 重置
                 </a>
-                <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
                 <a href="{{ url_for('admin.user_add') }}" class="btn btn-primary fw-bold">
                     <i class="bi bi-plus-lg"></i> 新增管理员
                 </a>
                 <a href="{{ url_for('admin.import_admins') }}" class="btn btn-primary fw-bold">
-                    <i class="bi bi-upload"></i> 导入管理员
+                    <i class="bi bi-upload"></i> 批量导入
                 </a>
                 <button type="button" class="btn btn-primary fw-bold" id="batchDeleteBtn">
                     <i class="bi bi-trash"></i> 批量删除
@@ -82,33 +78,29 @@
     <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
             <colgroup>
-                <col style="width:40px;">
-                <col style="width:8%;">
+                <col style="width:5%;">
+                <col style="width:7%;">
+                <col style="width:7%;">
                 <col style="width:10%;">
-                <col style="width:10%;">
-                <col style="width:10%;">
                 <col style="width:8%;">
-                <col style="width:14%;">
                 <col style="width:8%;">
-                <col style="width:6%;">
                 <col style="width:12%;">
-                <col style="width:12%;">
+                <col style="width:5%;">
+                <col style="width:11%;">
                 <col style="width:8%;">
             </colgroup>
             <thead class="sticky-thead">
                 <tr>
-                    <th style="width:40px;"><input type="checkbox" id="selectAll"></th>
+                    <th><input type="checkbox" id="selectAll"></th>
+                    <th>所属校区</th>
                     <th style="padding-left:15px;">姓名</th>
                     <th>手机号</th>
                     <th>密码</th>
-                    <th>校区</th>
                     <th>角色</th>
                     <th>权限</th>
-                    <th>创建人</th>
                     <th>状态</th>
-                    <th>创建时间</th>
                     <th>修改时间</th>
-                    <th>操作</th>
+                    <th style="text-align:center;">操作</th>
                 </tr>
             </thead>
             <tbody id="usersBody"></tbody>
@@ -199,21 +191,21 @@ function updateUrl() {}
 
 async function loadUsers() {
     const body = document.getElementById('usersBody');
-    body.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-5">加载中...</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-5">加载中...</td></tr>';
     try {
         const res = await fetch('{{ url_for("admin.users_list") }}?' + buildQuery());
         const data = await res.json();
         renderUsers(data.users);
         renderPagination(data.pagination);
     } catch (e) {
-        body.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-5">加载失败</td></tr>';
+        body.innerHTML = '<tr><td colspan="9" class="text-center text-danger py-5">加载失败</td></tr>';
     }
 }
 
 function renderUsers(users) {
     const body = document.getElementById('usersBody');
     if (!users || users.length === 0) {
-        body.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-5">暂无管理员数据</td></tr>';
+        body.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-5">暂无管理员数据</td></tr>';
         return;
     }
     body.innerHTML = users.map(u => {
@@ -229,17 +221,15 @@ function renderUsers(users) {
         ops += `<button type="button" class="btn btn-sm btn-outline-danger" title="删除" onclick="showDeleteModal('${u.id}','${escapeAttr(u.real_name)}','${escapeAttr(u.phone)}')"><i class="bi bi-trash"></i></button>`;
         return `<tr>
             <td style="padding-left:15px;"><input type="checkbox" name="user_ids" value="${u.id}" class="user-checkbox"></td>
-            <td>${escapeHtml(u.real_name)}</td>
+            <td>${escapeHtml(u.campus)}</td>
+            <td style="padding-left:15px;">${escapeHtml(u.real_name)}</td>
             <td>${escapeHtml(u.phone)}</td>
             <td>${u.password ? escapeHtml(u.password) : '-'}</td>
-            <td>${escapeHtml(u.campus)}</td>
             <td>${escapeHtml(u.role)}</td>
             <td>${perm}</td>
-            <td>${escapeHtml(u.creator)}</td>
             <td>${statusSwitch}</td>
-            <td>${escapeHtml(u.created_at)}</td>
             <td>${escapeHtml(u.updated_at)}</td>
-            <td>${ops}</td>
+            <td style="text-align:center; white-space:nowrap;">${ops}</td>
         </tr>`;
     }).join('');
     // 全选联动
@@ -320,7 +310,7 @@ function selectCampus(value) {
     const input = document.getElementById('campusSearch');
     const dropdown = document.getElementById('campusDropdown');
     const select = document.getElementById('campusFilter');
-    input.value = value;
+    input.value = value || '全部';
     select.value = value;
     dropdown.style.display = 'none';
     applyFilters();
@@ -428,13 +418,21 @@ async function confirmDelete() {
     } catch (e) { showToast('删除失败', 'danger'); }
 }
 
-// 从URL读取campus参数
+// 从URL读取参数
 const urlParams = new URLSearchParams(window.location.search);
 const campusParam = urlParams.get('campus');
 if (campusParam) {
     document.getElementById('campusSearch').value = campusParam;
     document.getElementById('campusFilter').value = campusParam;
     filters.campus = campusParam;
+} else {
+    document.getElementById('campusSearch').value = '全部';
+}
+
+const roleParam = urlParams.get('role');
+if (roleParam) {
+    document.getElementById('roleFilter').value = roleParam;
+    filters.role = roleParam;
 }
 
 loadUsers();

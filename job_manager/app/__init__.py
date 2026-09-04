@@ -36,20 +36,14 @@ def create_app(config_name='default'):
 
 
 def _create_defaults():
-    # 创建默认校区
-    default_campuses = ['总校区', '东区分校', '西区分校']
-    for name in default_campuses:
-        if not Campus.query.filter_by(name=name).first():
-            db.session.add(Campus(name=name))
-
     # 创建2个超管账号
-    if not User.query.filter_by(username='admin').first():
-        admin = User(username='admin', user_type='super_admin', real_name='超级管理员1')
+    if not User.query.filter_by(username='admin1').first():
+        admin = User(username='admin1', user_type='super_admin', real_name='超级管理员1')
         admin.set_password('admin123')
         db.session.add(admin)
 
-    if not User.query.filter_by(username='superadmin').first():
-        admin2 = User(username='superadmin', user_type='super_admin', real_name='超级管理员2')
+    if not User.query.filter_by(username='admin2').first():
+        admin2 = User(username='admin2', user_type='super_admin', real_name='超级管理员2')
         admin2.set_password('admin123')
         db.session.add(admin2)
 

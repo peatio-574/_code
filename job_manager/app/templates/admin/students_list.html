@@ -1,17 +1,14 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
-{% block title %}学员管理 - 岗位管理系统{% endblock %}
+{% block title %}学员管理 - 聘安途岗推系统{% endblock %}
 
 {% block content %}
 <div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
-<div class="d-flex justify-content-between align-items-center mb-3 flex-shrink-0">
-    <h4 class="mb-0"><i class="bi bi-person-lines-fill"></i> 学员管理</h4>
-</div>
 
 <!-- 搜索筛选 -->
-<div class="card mb-3 flex-shrink-0">
-    <div class="card-body">
-        <form id="studentsForm">
+<div class="card mb-3 flex-shrink-0" style="margin-top:0;">
+    <div class="card-body" style="padding-top:0;">
+        <form id="studentsForm" style="padding-top:8px;">
             <div class="row g-3 mb-3">
                 <div class="col-md-2">
                     <label class="form-label fw-bold">关键词：</label>
@@ -54,6 +51,23 @@
                         <option value="disabled">禁用</option>
                     </select>
                 </div>
+                <div class="col-md" style="position:relative;">
+                    <label class="form-label fw-bold">隶属人员：</label>
+                    <input type="text" class="form-control" id="creatorSearch" placeholder="请选择隶属人员" 
+                           onfocus="showCreatorDropdown()" oninput="filterCreatorOptions()" autocomplete="off">
+                    <select class="form-select" name="creator_id" id="creatorInput" style="display:none;">
+                        <option value="">全部</option>
+                        {% for admin in admins %}
+                        <option value="{{ admin.id }}">{{ admin.real_name or admin.username }}</option>
+                        {% endfor %}
+                    </select>
+                    <div id="creatorDropdown" class="bg-white border rounded shadow-sm w-100" style="position:absolute; left:0; right:0; max-height:240px; overflow-y:auto; z-index:1000; display:none; margin-top:4px;">
+                        <div class="dropdown-item py-2 px-3" onclick="selectCreator('')" style="cursor:pointer; font-size:14px;">全部</div>
+                        {% for admin in admins %}
+                        <div class="dropdown-item py-2 px-3" onclick="selectCreator('{{ admin.id }}', '{{ admin.real_name or admin.username }}')" style="cursor:pointer; font-size:14px;">{{ admin.real_name or admin.username }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
             </div>
             <div class="d-flex align-items-center gap-2 pt-2">
                 <button type="submit" class="btn btn-primary fw-bold">
@@ -62,14 +76,12 @@
                 <button type="button" class="btn btn-secondary btn-reset fw-bold" onclick="resetFilters()">
                     <i class="bi bi-arrow-counterclockwise"></i> 重置
                 </button>
-                <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
-                <a href="{{ url_for('admin.import_students') }}" class="btn btn-primary fw-bold">
-                    <i class="bi bi-upload"></i> 导入学员
-                </a>
                 <a href="{{ url_for('admin.student_add') }}" class="btn btn-primary fw-bold">
                     <i class="bi bi-plus-lg"></i> 新增学员
                 </a>
-                <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
+                <a href="{{ url_for('admin.import_students') }}" class="btn btn-primary fw-bold">
+                    <i class="bi bi-upload"></i> 批量导入
+                </a>
                 <button type="button" class="btn btn-primary fw-bold" id="batchDeleteBtn">
                     <i class="bi bi-trash"></i> 批量删除
                 </button>
@@ -86,33 +98,33 @@
     <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
             <colgroup>
-                <col style="width:40px;">
-                <col style="width:120px;">
-                <col style="width:120px;">
-                <col style="width:110px;">
-                <col style="width:100px;">
-                <col style="width:70px;">
-                <col style="width:80px;">
-                <col style="width:100px;">
-                <col style="width:100px;">
-                <col style="width:80px;">
-                <col style="width:100px;">
-                <col style="width:110px;">
+                <col style="width:4%;">
+                <col style="width:8%;">
+                <col style="width:12%;">
+                <col style="width:8%;">
+                <col style="width:14%;">
+                <col style="width:7%;">
+                <col style="width:5%;">
+                <col style="width:6%;">
+                <col style="width:8%;">
+                <col style="width:8%;">
+                <col style="width:7%;">
+                <col style="width:13%;">
             </colgroup>
             <thead class="sticky-thead">
                 <tr>
                     <th style="width:40px;"><input type="checkbox" id="selectAll"></th>
                     <th style="padding-left:15px;">所属校区</th>
+                    <th>隶属人员</th>
                     <th>姓名</th>
                     <th>手机号</th>
-                    <th>身份证后6位</th>
+                    <th>密码</th>
                     <th>性别</th>
                     <th>学历</th>
                     <th>专业</th>
                     <th>意向城市</th>
                     <th>状态</th>
-                    <th>创建人</th>
-                    <th>操作</th>
+                    <th style="text-align:center;">操作</th>
                 </tr>
             </thead>
             <tbody id="studentsBody"></tbody>
@@ -186,7 +198,7 @@ const STUDENT_EDIT_URL = '{{ url_for("admin.student_edit", id=0) }}'.replace('0'
 let currentPage = 1;
 let currentPerPage = 20;
 let currentDeleteId = null;
-let filters = { keyword: '', campus: '', education: '', status: '' };
+let filters = { keyword: '', campus: '', education: '', status: '', creator_id: '' };
 
 function buildQuery() {
     let params = new URLSearchParams();
@@ -196,6 +208,7 @@ function buildQuery() {
     if (filters.campus) params.set('campus', filters.campus);
     if (filters.education) params.set('education', filters.education);
     if (filters.status) params.set('status', filters.status);
+    if (filters.creator_id) params.set('creator_id', filters.creator_id);
     return params.toString();
 }
 
@@ -216,9 +229,32 @@ function filterCampusOptions() {
 }
 
 function selectCampus(value) {
-    document.getElementById('campusSearch').value = value;
+    document.getElementById('campusSearch').value = value || '全部';
     document.getElementById('campusInput').value = value;
     document.getElementById('campusDropdown').style.display = 'none';
+    applyFilters();
+}
+
+function showCreatorDropdown() {
+    document.getElementById('creatorDropdown').style.display = 'block';
+}
+
+function filterCreatorOptions() {
+    const input = document.getElementById('creatorSearch');
+    const dropdown = document.getElementById('creatorDropdown');
+    const filter = input.value.toLowerCase();
+    const items = dropdown.querySelectorAll('.dropdown-item');
+    dropdown.style.display = 'block';
+    items.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        item.style.display = text.includes(filter) ? 'block' : 'none';
+    });
+}
+
+function selectCreator(value, text) {
+    document.getElementById('creatorSearch').value = text || '全部';
+    document.getElementById('creatorInput').value = value;
+    document.getElementById('creatorDropdown').style.display = 'none';
     applyFilters();
 }
 
@@ -227,6 +263,7 @@ function applyFilters() {
     filters.campus = document.getElementById('campusInput').value || '';
     filters.education = document.getElementById('educationInput').value || '';
     filters.status = document.getElementById('statusInput').value || '';
+    filters.creator_id = document.getElementById('creatorInput').value || '';
     currentPage = 1;
     loadStudents();
 }
@@ -236,17 +273,25 @@ function resetFilters() {
     document.getElementById('campusInput').value = '';
     document.getElementById('educationInput').value = '';
     document.getElementById('statusInput').value = '';
-    filters = { keyword: '', campus: '', education: '', status: '' };
+    document.getElementById('creatorSearch').value = '';
+    document.getElementById('creatorInput').value = '';
+    filters = { keyword: '', campus: '', education: '', status: '', creator_id: '' };
     currentPage = 1;
     loadStudents();
 }
 
 // 点击外部关闭下拉
 document.addEventListener('click', function(e) {
-    const search = document.getElementById('campusSearch');
-    const dropdown = document.getElementById('campusDropdown');
-    if (search && dropdown && !search.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.style.display = 'none';
+    const campusSearch = document.getElementById('campusSearch');
+    const campusDropdown = document.getElementById('campusDropdown');
+    const creatorSearch = document.getElementById('creatorSearch');
+    const creatorDropdown = document.getElementById('creatorDropdown');
+    
+    if (campusSearch && campusDropdown && !campusSearch.contains(e.target) && !campusDropdown.contains(e.target)) {
+        campusDropdown.style.display = 'none';
+    }
+    if (creatorSearch && creatorDropdown && !creatorSearch.contains(e.target) && !creatorDropdown.contains(e.target)) {
+        creatorDropdown.style.display = 'none';
     }
 });
 
@@ -257,18 +302,21 @@ if (campusParam) {
     document.getElementById('campusSearch').value = campusParam;
     document.getElementById('campusInput').value = campusParam;
     filters.campus = campusParam;
+} else {
+    document.getElementById('campusSearch').value = '全部';
 }
+document.getElementById('creatorSearch').value = '全部';
 
 async function loadStudents() {
     const body = document.getElementById('studentsBody');
-    body.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-5">加载中...</td></tr>';
+    body.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-5">加载中...</td></tr>';
     try {
         const res = await fetch('{{ url_for("admin.students_list") }}?' + buildQuery());
         const data = await res.json();
         renderStudents(data.students);
         renderPagination(data.pagination);
     } catch (e) {
-        body.innerHTML = '<tr><td colspan="10" class="text-center text-danger py-5">加载失败</td></tr>';
+        body.innerHTML = '<tr><td colspan="12" class="text-center text-danger py-5">加载失败</td></tr>';
     }
 }
 
@@ -287,16 +335,16 @@ function renderStudents(students) {
         return `<tr>
             <td style="padding-left:15px;"><input type="checkbox" name="student_ids" value="${s.id}" class="student-checkbox"></td>
             <td>${escapeHtml(s.campus)}</td>
+            <td>${escapeHtml(s.creator)}</td>
             <td>${escapeHtml(s.real_name)}</td>
             <td>${escapeHtml(s.phone)}</td>
-            <td>${escapeHtml(s.id_card_last6)}</td>
+            <td>${s.password ? escapeHtml(s.password) : '-'}</td>
             <td>${escapeHtml(s.gender)}</td>
             <td>${escapeHtml(s.education)}</td>
             <td>${escapeHtml(s.major)}</td>
             <td>${escapeHtml(s.intention_city)}</td>
             <td>${statusSwitch}</td>
-            <td>${escapeHtml(s.creator)}</td>
-            <td>${ops}</td>
+            <td style="text-align:center; white-space:nowrap;">${ops}</td>
         </tr>`;
     }).join('');
     // 全选联动

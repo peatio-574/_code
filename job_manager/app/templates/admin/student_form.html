@@ -1,6 +1,6 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
-{% block title %}{{ '编辑' if student else '新增' }}学员 - 岗位管理系统{% endblock %}
+{% block title %}{{ '编辑' if student else '新增' }}学员 - 聘安途岗推系统{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
@@ -30,17 +30,17 @@
                                    value="{{ student.phone if student else '' }}" required>
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label class="form-label">密码</label>
+                            <label class="form-label">密码 {% if student %}<span class="text-danger">*</span>{% endif %}</label>
                             <input type="text" class="form-control" name="password" id="password"
-                                   value="" placeholder="{{ '留空则不修改' if student else '自动填入身份证后6位' }}">
+                                   value="{{ student.password_plain if student else '' }}" placeholder="{{ '留空则不修改' if student else '默认身份证后6位' }}"
+                                   {% if student %}required{% endif %}>
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label class="form-label">状态</label>
-                            <div class="form-check mt-2">
-                                <input type="checkbox" class="form-check-input" name="is_active" id="is_active"
-                                       {% if not student or student.is_active %}checked{% endif %}>
-                                <label class="form-check-label" for="is_active">正常</label>
-                            </div>
+                            <label class="form-label">状态 <span class="text-danger">*</span></label>
+                            <select class="form-select" name="is_active" id="is_active" required>
+                                <option value="1" {% if not student or student.is_active %}selected{% endif %}>启用</option>
+                                <option value="0" {% if student and not student.is_active %}selected{% endif %}>禁用</option>
+                            </select>
                         </div>
                     </div>
 
@@ -169,10 +169,11 @@
 function autoFillByStudent() {
     var realName = document.getElementById('real_name').value.trim();
     var idCard = document.getElementById('id_card').value.trim();
+    var phoneInput = document.getElementById('phone');
     var usernameInput = document.getElementById('username');
     var passwordInput = document.getElementById('password');
 
-    if (usernameInput && realName) usernameInput.value = realName;
+    if (usernameInput && phoneInput) usernameInput.value = phoneInput.value;
 
     if (passwordInput && idCard.length >= 6 && !passwordInput.value) {
         passwordInput.value = idCard.slice(-6);

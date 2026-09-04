@@ -1,6 +1,6 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
-{% block title %}导入学员 - 岗位管理系统{% endblock %}
+{% block title %}导入学员 - 聘安途岗推系统{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
@@ -14,11 +14,11 @@
                     <h6><i class="bi bi-info-circle"></i> 导入说明</h6>
                     <ul class="mb-0">
                         <li>请下载模板填写数据后上传</li>
-                        <li><strong>必填：</strong>身份证号（18位）、姓名</li>
-                        <li><strong>选填：</strong>手机号、学历、专业、性别、政治面貌、生源地、意向城市、意向岗位、证书、备注、毕业时间、密码</li>
-                        <li>身份证号作为登录账号，不可重复</li>
+                        <li><strong>必填：</strong>姓名、手机号、身份证号（18位）</li>
+                        <li><strong>选填：</strong>密码（默认身份证后6位）、状态（默认启用）、校区名称、学历、专业、意向城市、意向岗位、证书、备注、毕业时间、生源地</li>
+                        <li>手机号作为登录账号，不可重复</li>
                         <li>系统会自动从身份证号识别性别和出生日期</li>
-                        <li>默认密码为123456</li>
+                        <li>校区名称如果不存在会自动创建</li>
                     </ul>
                 </div>
 

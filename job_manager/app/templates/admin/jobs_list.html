@@ -1,17 +1,14 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
-{% block title %}岗位管理 - 岗位管理系统{% endblock %}
+{% block title %}岗位管理 - 聘安途岗推系统{% endblock %}
 
 {% block content %}
 <div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
-<div class="d-flex justify-content-between align-items-center mb-3 flex-shrink-0">
-    <h4 class="mb-0"><i class="bi bi-briefcase"></i> 岗位管理</h4>
-</div>
 
 <!-- 搜索筛选 -->
-<div class="card mb-3 flex-shrink-0">
-    <div class="card-body">
-        <form id="searchForm">
+<div class="card mb-3 flex-shrink-0" style="margin-top:0;">
+    <div class="card-body" style="padding-top:0;">
+        <form id="searchForm" style="padding-top:8px;">
             <div class="row g-3 mb-3">
                 <div class="col-md-2">
                     <label class="form-label fw-bold">关键字：</label>
@@ -71,16 +68,17 @@
                     <i class="bi bi-search"></i> 搜索
                 </button>
                 <a href="{{ url_for('admin.jobs_page') }}" class="btn btn-secondary btn-reset fw-bold">重置</a>
-                <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
                 <a href="{{ url_for('admin.job_add') }}{% if request.query_string %}?{{ request.query_string.decode() }}{% endif %}" class="btn btn-primary fw-bold">
                     <i class="bi bi-plus-lg"></i> 新增岗位
                 </a>
                 <a href="{{ url_for('admin.job_import') }}" class="btn btn-primary fw-bold">
                     <i class="bi bi-upload"></i> 批量导入
                 </a>
-                <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
                 <button type="button" class="btn btn-primary fw-bold" id="batchDeleteBtn">
                     <i class="bi bi-trash"></i> 批量删除
+                </button>
+                <button type="button" class="btn btn-success fw-bold" id="pushJobBtn" onclick="showPushModal()">
+                    <i class="bi bi-send"></i> 岗位推送
                 </button>
                 <button type="button" class="btn btn-warning fw-bold" id="refreshBtn" title="刷新">
                     <i class="bi bi-arrow-clockwise"></i> 刷新
@@ -96,15 +94,15 @@
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
                 <colgroup>
                     <col style="width:4%;">
-                    <col style="width:15%;">
-                    <col style="width:17%;">
-                    <col style="width:6%;">
+                    <col style="width:12%;">
+                    <col style="width:14%;">
+                    <col style="width:9%;">
                     <col style="width:7%;">
-                    <col style="width:11%;">
+                    <col style="width:9%;">
                     <col style="width:6%;">
                     <col style="width:11%;">
                     <col style="width:4%;">
-                    <col style="width:10%;">
+                    <col style="width:15%;">
                     <col style="width:9%;">
                 </colgroup>
                 <thead class="sticky-thead">
@@ -119,7 +117,7 @@
                         <th>工作地点</th>
                         <th style="text-align:center;">人数</th>
                         <th>截止时间</th>
-                        <th>操作</th>
+                        <th style="text-align:center;">操作</th>
                     </tr>
                 </thead>
                 <tbody id="jobsBody"></tbody>
@@ -162,6 +160,75 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                 <button type="button" class="btn btn-danger" onclick="confirmJobDelete()">确认删除</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 岗位推送弹窗 -->
+<style>
+#pushJobModal .table { table-layout: auto; border: none; }
+#pushJobModal .table td, #pushJobModal .table th { border: none; }
+#pushJobModal .table thead th { border-bottom: 1px solid #dee2e6 !important; padding-bottom: 26px !important; }
+#pushJobModal .modal-dialog { height: 100vh; display: flex; margin: 0 auto; }
+#pushJobModal .modal-content { height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+#pushJobModal .modal-body { overflow: hidden; flex: 1; display: flex; flex-direction: column; }
+#pushJobModal .student-list-wrap { flex: 1; overflow-y: auto; min-height: 70%; border: none; }
+#pushJobModal .modal-footer { border-top: none; }
+</style>
+<div class="modal fade" id="pushJobModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-send text-success"></i> 岗位推送</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3 d-flex align-items-center gap-2">
+                    <label class="form-label fw-bold mb-0">已选岗位：</label>
+                    <span id="selectedJobsInfo" class="text-primary fw-bold" style="font-size:14px;">0</span>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">选择校区：</label>
+                        <select class="form-select filter-select" id="pushCampusFilter" onchange="loadPushStudents()">
+                            <option value="">全部校区</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">关键字搜索：</label>
+                        <div class="d-flex gap-2">
+                            <input type="text" class="form-control" id="pushKeyword" placeholder="姓名/手机号">
+                            <button type="button" class="btn btn-primary flex-shrink-0" onclick="filterPushStudents()"><i class="bi bi-search"></i> 搜索</button>
+                        </div>
+                    </div>
+                    <div class="col-md-5 d-flex align-items-end justify-content-end">
+                        <span class="text-muted" style="font-size:14px;">已选 <strong id="selectedCount">0</strong> 人</span>
+                    </div>
+                </div>
+                <div class="border rounded student-list-wrap">
+                    <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+                        <thead class="sticky-thead">
+                            <tr>
+                                <th style="width:50px;"><input type="checkbox" id="selectAllPushStudents" onchange="toggleAllPushStudents(this.checked)"></th>
+                                <th>姓名</th>
+                                <th>手机号</th>
+                                <th>校区</th>
+                                <th>学历</th>
+                                <th>专业</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pushStudentsBody">
+                            <tr><td colspan="6" class="text-center text-muted py-4">请先选择校区</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-success fw-bold" onclick="submitPush()">
+                    <i class="bi bi-send"></i> 确认推送
+                </button>
             </div>
         </div>
     </div>
@@ -255,9 +322,9 @@ function renderJobs(jobs) {
             <td>${escapeHtml(job.location)}</td>
             <td style="text-align:center;">${job.recruit_count}</td>
             <td>${deadlineHtml}</td>
-            <td>
-                <a href="${editUrl}" class="btn btn-sm btn-outline-primary" title="编辑"><i class="bi bi-pencil"></i></a>
-                <button type="button" class="btn btn-sm btn-outline-danger" title="删除" onclick="showJobDeleteModal('${job.id}','${escapeAttr(job.job_name)}')"><i class="bi bi-trash"></i></button>
+            <td style="text-align:center; white-space:nowrap;">
+                <a href="${editUrl}" class="btn btn-sm btn-outline-primary me-1" title="�༭"><i class="bi bi-pencil"></i></a>
+                <button type="button" class="btn btn-sm btn-outline-danger" title="ɾ��" onclick="showJobDeleteModal('${job.id}','${escapeAttr(job.job_name)}')"><i class="bi bi-trash"></i></button>
             </td>
         </tr>`;
     }).join('');
@@ -491,6 +558,174 @@ async function confirmJobDelete() {
         showToast(data.message, data.success ? 'success' : 'danger');
         if (data.success) loadJobs();
     } catch (e) { showToast('删除失败', 'danger'); }
+}
+
+/* ---- 岗位推送功能 ---- */
+let pushStudents = [];
+let selectedStudentIds = new Set();
+
+function getSelectedJobIds() {
+    return Array.from(document.querySelectorAll('.job-checkbox:checked')).map(cb => cb.value);
+}
+
+function showPushModal() {
+    const jobIds = getSelectedJobIds();
+    if (jobIds.length === 0) {
+        showToast('请先选择要推送的岗位', 'warning');
+        return;
+    }
+    selectedStudentIds.clear();
+    updateSelectedCount();
+    
+    const infoDiv = document.getElementById('selectedJobsInfo');
+    infoDiv.textContent = jobIds.length;
+    
+    loadPushCampuses();
+    new bootstrap.Modal(document.getElementById('pushJobModal')).show();
+}
+
+async function loadPushCampuses() {
+    try {
+        const res = await fetch('{{ url_for("admin.campuses_list") }}');
+        const data = await res.json();
+        const select = document.getElementById('pushCampusFilter');
+        let html = '<option value="">全部校区</option>';
+        (data.campuses || []).forEach(c => {
+            html += `<option value="${escapeAttr(c.name)}">${escapeHtml(c.name)}</option>`;
+        });
+        select.innerHTML = html;
+    } catch (e) {
+        console.error('加载校区失败', e);
+    }
+}
+
+async function loadPushStudents() {
+    const campus = document.getElementById('pushCampusFilter').value;
+    const body = document.getElementById('pushStudentsBody');
+    body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">加载中...</td></tr>';
+    
+    try {
+        let url = '{{ url_for("admin.students_list") }}?per_page=0&status=active';
+        if (campus) url += '&campus=' + encodeURIComponent(campus);
+        const res = await fetch(url);
+        const data = await res.json();
+        pushStudents = data.students || [];
+        renderPushStudents(pushStudents);
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">加载失败</td></tr>';
+    }
+}
+
+function renderPushStudents(students) {
+    const body = document.getElementById('pushStudentsBody');
+    if (!students || students.length === 0) {
+        body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">暂无学员数据</td></tr>';
+        return;
+    }
+    body.innerHTML = students.map(s => {
+        const checked = selectedStudentIds.has(s.id) ? 'checked' : '';
+        return `<tr>
+            <td style="padding-left:15px;"><input type="checkbox" value="${s.id}" class="push-student-checkbox" ${checked} onchange="togglePushStudent(${s.id}, this.checked)"></td>
+            <td>${escapeHtml(s.real_name)}</td>
+            <td>${escapeHtml(s.phone)}</td>
+            <td>${escapeHtml(s.campus)}</td>
+            <td>${escapeHtml(s.education)}</td>
+            <td>${escapeHtml(s.major)}</td>
+        </tr>`;
+    }).join('');
+}
+
+function filterPushStudents() {
+    const keyword = (document.getElementById('pushKeyword').value || '').trim().toLowerCase();
+    if (!keyword) {
+        renderPushStudents(pushStudents);
+        return;
+    }
+    const filtered = pushStudents.filter(s => 
+        (s.real_name || '').toLowerCase().includes(keyword) || 
+        (s.phone || '').includes(keyword)
+    );
+    renderPushStudents(filtered);
+}
+
+function togglePushStudent(id, checked) {
+    if (checked) {
+        selectedStudentIds.add(id);
+    } else {
+        selectedStudentIds.delete(id);
+    }
+    updateSelectedCount();
+}
+
+function toggleAllPushStudents(checked) {
+    document.querySelectorAll('.push-student-checkbox').forEach(cb => {
+        cb.checked = checked;
+        const id = parseInt(cb.value);
+        if (checked) {
+            selectedStudentIds.add(id);
+        } else {
+            selectedStudentIds.delete(id);
+        }
+    });
+    updateSelectedCount();
+}
+
+function selectAllPushStudents() {
+    document.querySelectorAll('.push-student-checkbox').forEach(cb => {
+        cb.checked = true;
+        selectedStudentIds.add(parseInt(cb.value));
+    });
+    document.getElementById('selectAllPushStudents').checked = true;
+    updateSelectedCount();
+}
+
+function deselectAllPushStudents() {
+    document.querySelectorAll('.push-student-checkbox').forEach(cb => {
+        cb.checked = false;
+    });
+    selectedStudentIds.clear();
+    document.getElementById('selectAllPushStudents').checked = false;
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    document.getElementById('selectedCount').textContent = selectedStudentIds.size;
+}
+
+async function submitPush() {
+    const jobIds = getSelectedJobIds();
+    const studentIds = Array.from(selectedStudentIds);
+    
+    if (jobIds.length === 0) {
+        showToast('请选择岗位', 'warning');
+        return;
+    }
+    if (studentIds.length === 0) {
+        showToast('请选择学员', 'warning');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('csrf_token', '{{ csrf_token }}');
+    jobIds.forEach(id => formData.append('job_ids', id));
+    studentIds.forEach(id => formData.append('student_ids', id));
+    
+    try {
+        const res = await fetch('{{ url_for("admin.push_do") }}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        if (data.success !== false) {
+            showToast('推送成功', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('pushJobModal')).hide();
+        } else {
+            showToast(data.message || '推送失败', 'danger');
+        }
+    } catch (e) {
+        showToast('推送失败', 'danger');
+    }
 }
 </script>
 {% endblock %}

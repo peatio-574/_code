@@ -1,17 +1,14 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
-{% block title %}操作日志 - 岗位管理系统{% endblock %}
+{% block title %}操作日志 - 聘安途岗推系统{% endblock %}
 
 {% block content %}
 <div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
-<div class="d-flex justify-content-between align-items-center mb-3 flex-shrink-0">
-    <h4 class="mb-0"><i class="bi bi-journal-text"></i> 操作日志</h4>
-</div>
 
 <!-- 筛选 -->
-<div class="card mb-3 flex-shrink-0">
-    <div class="card-body">
-        <form method="GET" class="row g-3" id="filterForm">
+<div class="card mb-3 flex-shrink-0" style="margin-top:0;">
+    <div class="card-body" style="padding-top:0;">
+        <form method="GET" class="row g-3" id="filterForm" style="padding-top:8px;">
             <div class="col-md-3">
                 <label class="form-label fw-bold">操作类型：</label>
                 <select class="form-select" name="action" id="actionFilter" onchange="applyFilters()">
@@ -45,18 +42,16 @@
     <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
             <colgroup>
+                <col style="width:180px;">
+                <col style="width:140px;">
                 <col style="width:160px;">
-                <col style="width:120px;">
-                <col style="width:120px;">
-                <col style="width:340px;">
-                <col style="width:130px;">
+                <col style="width:150px;">
             </colgroup>
             <thead class="sticky-thead">
                 <tr>
                     <th style="padding-left:15px;">时间</th>
                     <th>操作人</th>
                     <th>操作类型</th>
-                    <th>详情</th>
                     <th>IP地址</th>
                 </tr>
             </thead>
@@ -127,7 +122,7 @@ async function loadLogs() {
 function renderLogs(logs) {
     const body = document.getElementById('logsBody');
     if (!logs || logs.length === 0) {
-        body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">暂无日志数据</td></tr>';
+        body.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-5">暂无日志数据</td></tr>';
         return;
     }
     body.innerHTML = logs.map(log => `
@@ -135,7 +130,6 @@ function renderLogs(logs) {
             <td style="padding-left:15px;">${log.created_at}</td>
             <td>${escapeHtml(log.operator)}</td>
             <td><span class="badge bg-info">${escapeHtml(ACTION_MAP[log.action] || log.action)}</span></td>
-            <td>${escapeHtml(log.details)}</td>
             <td>${escapeHtml(log.ip_address)}</td>
         </tr>
     `).join('');

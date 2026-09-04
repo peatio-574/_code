@@ -15,8 +15,8 @@ import io
 
 def log_operation(action, target_type='', target_id=0, details=''):
     log = OperationLog(
-        user_id=current_user.id, action=action, target_type=target_type,
-        target_id=target_id, details=details, ip_address=request.remote_addr
+        user_id=current_user.id, action=action,
+        ip_address=request.remote_addr
     )
     db.session.add(log)
 
@@ -78,7 +78,7 @@ def campuses_list():
     if keyword:
         query = query.filter(Campus.name.contains(keyword))
     
-    pagination = query.order_by(Campus.updated_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    pagination = query.order_by(Campus.name.asc()).paginate(page=page, per_page=per_page, error_out=False)
     
     data = []
     for campus in pagination.items:
@@ -89,6 +89,7 @@ def campuses_list():
             'name': campus.name,
             'admin_count': admin_count,
             'student_count': student_count,
+            'is_active': campus.is_active,
             'created_at': campus.created_at.strftime('%Y-%m-%d %H:%M') if campus.created_at else '-',
             'updated_at': campus.updated_at.strftime('%Y-%m-%d %H:%M') if campus.updated_at else '-'
         })
@@ -125,14 +126,37 @@ def campus_add():
     return jsonify({'success': True, 'message': '校区添加成功'})
 
 
+@admin_bp.route('/campuses/toggle-status', methods=['POST'])
+@admin_required
+@super_admin_required
+def campus_toggle_status():
+    campus_id = request.form.get('campus_id')
+    campus = Campus.query.get_or_404(campus_id)
+    campus.is_active = not campus.is_active
+    status_text = '启用' if campus.is_active else '禁用'
+    log_operation('toggle_campus_status', 'campus', campus.id, f'校区{status_text}：{campus.name}')
+    db.session.commit()
+    return jsonify({'success': True, 'message': f'校区已{status_text}'})
+
+
 @admin_bp.route('/campuses/delete', methods=['POST'])
 @admin_required
 @super_admin_required
 def campus_delete():
-    campus_id = request.form.get('campus_id')
-    campus = Campus.query.get_or_404(campus_id)
-    campus.is_deleted = True
-    log_operation('delete_campus', 'campus', campus.id, f'删除校区：{campus.name}')
+    campus_ids = request.form.getlist('campus_ids')
+    if campus_ids:
+        # 批量删除
+        for cid in campus_ids:
+            campus = Campus.query.get(cid)
+            if campus:
+                campus.is_deleted = True
+                log_operation('delete_campus', 'campus', campus.id, f'删除校区：{campus.name}')
+    else:
+        # 单个删除（兼容旧逻辑）
+        campus_id = request.form.get('campus_id')
+        campus = Campus.query.get_or_404(campus_id)
+        campus.is_deleted = True
+        log_operation('delete_campus', 'campus', campus.id, f'删除校区：{campus.name}')
     db.session.commit()
     return jsonify({'success': True, 'message': '校区删除成功'})
 
@@ -727,11 +751,7 @@ def user_add():
         
         password = request.form.get('password', '')
         if not password:
-            msg = '请输入初始密码'
-            if ajax:
-                return jsonify({'success': False, 'message': msg})
-            flash(msg, 'danger')
-            return render_template('admin/user_form.html', **ctx)
+            password = phone[-6:] if len(phone) >= 6 else '123456'
         
         user = User(
             username=phone,
@@ -776,6 +796,14 @@ def user_edit(id):
     ctx['roles'] = Role.query.filter_by(is_active=True, is_deleted=False).all()
     
     if request.method == 'POST':
+        new_password = request.form.get('password', '')
+        if not new_password:
+            msg = '请输入密码'
+            if _is_ajax():
+                return jsonify({'success': False, 'message': msg})
+            flash(msg, 'danger')
+            return render_template('admin/user_form.html', **ctx)
+        
         user.real_name = request.form.get('real_name', '')
         user.phone = request.form.get('phone', '')
         user.campus_id = int(request.form.get('campus_id', 0)) or None
@@ -786,8 +814,7 @@ def user_edit(id):
         user.avatar = request.form.get('avatar', '')
         user.is_active = request.form.get('is_active') == '1'
         
-        new_password = request.form.get('password', '')
-        if new_password and new_password != user.password_plain:
+        if new_password != user.password_plain:
             user.set_password(new_password)
         
         log_operation('edit_user', 'user', user.id, f'编辑管理员：{user.real_name}')
@@ -909,6 +936,7 @@ def students_page():
     """学员管理页面（HTML骨架，数据由前端异步加载）"""
     ctx = get_template_context()
     ctx['campuses'] = Campus.query.filter_by(is_active=True, is_deleted=False).all()
+    ctx['admins'] = User.query.filter_by(user_type='admin', is_active=True, is_deleted=False).order_by(User.real_name.asc()).all()
     return render_template('admin/students_list.html', **ctx)
 
 
@@ -922,8 +950,11 @@ def students_list():
     campus = request.args.get('campus', '')
     education = request.args.get('education', '')
     status = request.args.get('status', '')
+    creator_id = request.args.get('creator_id', '', type=str)
     
-    if per_page not in [20, 50, 100]:
+    if per_page == 0:
+        per_page = 10000
+    elif per_page not in [20, 50, 100]:
         per_page = 20
     
     query = User.query.filter_by(user_type='student', is_deleted=False)
@@ -945,6 +976,8 @@ def students_list():
             query = query.filter(User.is_active == True)
         elif status == 'disabled':
             query = query.filter(User.is_active == False)
+    if creator_id:
+        query = query.filter(User.created_by == creator_id)
     pagination = query.order_by(User.updated_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     
     students = []
@@ -964,6 +997,7 @@ def students_list():
             'intention_city': stu.intention_city or '-',
             'graduation_date': stu.graduation_date.strftime('%Y-%m-%d') if stu.graduation_date else '-',
             'creator': stu.creator.username if stu.creator else '-',
+            'password': stu.password_plain or '-',
             'is_active': stu.is_active
         })
     
@@ -993,6 +1027,15 @@ def student_add():
         real_name = request.form.get('real_name', '').strip()
         phone = request.form.get('phone', '').strip()
         id_card = request.form.get('id_card', '').strip()
+        intention_city = request.form.get('intention_city', '').strip()
+        password = request.form.get('password', '').strip()
+        
+        if not phone:
+            msg = '请输入手机号'
+            if ajax:
+                return jsonify({'success': False, 'message': msg})
+            flash(msg, 'danger')
+            return render_template('admin/student_form.html', **ctx)
         
         if not id_card or len(id_card) != 18:
             msg = '请输入18位身份证号'
@@ -1001,18 +1044,19 @@ def student_add():
             flash(msg, 'danger')
             return render_template('admin/student_form.html', **ctx)
         
-        if User.query.filter_by(username=real_name, is_deleted=False).first():
-            msg = f'姓名"{real_name}"已存在'
+        if User.query.filter_by(username=phone, is_deleted=False).first():
+            msg = f'手机号"{phone}"已注册'
             if ajax:
                 return jsonify({'success': False, 'message': msg})
             flash(msg, 'danger')
             return render_template('admin/student_form.html', **ctx)
         
         gender, birth_date, age = User.parse_id_card(id_card)
-        password = id_card[-6:]
+        if not password:
+            password = id_card[-6:]
         
         user = User(
-            username=real_name,
+            username=phone,
             user_type='student',
             real_name=real_name,
             phone=phone,
@@ -1022,7 +1066,7 @@ def student_add():
             education=request.form.get('education', ''),
             major=request.form.get('major', ''),
             political_status=request.form.get('political_status', ''),
-            intention_city=request.form.get('intention_city', ''),
+            intention_city=intention_city,
             first_intention=request.form.get('first_intention', ''),
             second_intention=request.form.get('second_intention', ''),
             third_intention=request.form.get('third_intention', ''),
@@ -1060,12 +1104,14 @@ def student_edit(id):
         return redirect(url_for('admin.students_page'))
     
     if request.method == 'POST':
+        intention_city = request.form.get('intention_city', '').strip()
+        
         student.real_name = request.form.get('real_name', '')
         student.phone = request.form.get('phone', '')
         student.education = request.form.get('education', '')
         student.major = request.form.get('major', '')
         student.political_status = request.form.get('political_status', '')
-        student.intention_city = request.form.get('intention_city', '')
+        student.intention_city = intention_city
         student.first_intention = request.form.get('first_intention', '')
         student.second_intention = request.form.get('second_intention', '')
         student.third_intention = request.form.get('third_intention', '')
@@ -1076,8 +1122,13 @@ def student_edit(id):
         student.avatar = request.form.get('avatar', '')
         
         new_password = request.form.get('password', '')
-        if new_password:
-            student.set_password(new_password)
+        if not new_password:
+            msg = '请输入密码'
+            if _is_ajax():
+                return jsonify({'success': False, 'message': msg})
+            flash(msg, 'danger')
+            return render_template('admin/student_form.html', **ctx)
+        student.set_password(new_password)
         
         log_operation('edit_user', 'user', student.id, f'编辑学员：{student.real_name}')
         db.session.commit()
@@ -1214,9 +1265,13 @@ def push_do():
     job_ids = request.form.getlist('job_ids')
     student_ids = request.form.getlist('student_ids')
     if not job_ids:
+        if _is_ajax():
+            return jsonify({'success': False, 'message': '请选择岗位'})
         flash('请选择岗位', 'warning')
         return redirect(url_for('admin.push_page'))
     if not student_ids:
+        if _is_ajax():
+            return jsonify({'success': False, 'message': '请选择学员'})
         flash('请选择学员', 'warning')
         return redirect(url_for('admin.push_page'))
     
@@ -1230,6 +1285,8 @@ def push_do():
                 count += 1
     log_operation('push_jobs', 'push', 0, f'推送 {len(job_ids)} 个岗位给 {len(student_ids)} 个学员')
     db.session.commit()
+    if _is_ajax():
+        return jsonify({'success': True, 'message': f'成功推荐 {count} 条岗位', 'count': count})
     flash(f'成功推荐 {count} 条岗位', 'success')
     return redirect(url_for('admin.push_page'))
 
@@ -1268,7 +1325,6 @@ def logs_list():
             'created_at': log.created_at.strftime('%Y-%m-%d %H:%M:%S') if log.created_at else '-',
             'operator': log.user.real_name or log.user.username,
             'action': log.action,
-            'details': log.details,
             'ip_address': log.ip_address
         })
     
@@ -1319,13 +1375,19 @@ def import_admins():
                 if not row[0]:
                     continue
                 real_name = str(row[0] or '').strip()
-                password = str(row[1] or '123456').strip()
-                phone = str(row[2] or '').strip()
-                campus_name = str(row[3] or '').strip()
+                phone = str(row[1] or '').strip()
+                campus_name = str(row[2] or '').strip()
+                password = str(row[3] or '').strip()
                 role = str(row[4] or '').strip()
-                can_push = str(row[5] or '').lower() in ('是', 'yes', 'true', '1', '√')
-                can_view = str(row[6] or '').lower() in ('是', 'yes', 'true', '1', '√')
-                can_manage = str(row[7] or '').lower() in ('是', 'yes', 'true', '1', '√')
+                is_active_str = str(row[5] or '启用').strip()
+                is_active = is_active_str not in ('禁用', 'no', 'false', '0', '×')
+                can_push_str = str(row[6] or '').strip()
+                can_view_str = str(row[7] or '').strip()
+                can_manage_str = str(row[8] or '').strip()
+                
+                can_push = can_push_str.lower() in ('是', 'yes', 'true', '1', '√') if can_push_str else True
+                can_view = can_view_str.lower() in ('是', 'yes', 'true', '1', '√') if can_view_str else True
+                can_manage = can_manage_str.lower() in ('是', 'yes', 'true', '1', '√') if can_manage_str else True
                 
                 if not real_name:
                     errors.append(f'第{idx}行：姓名为空')
@@ -1333,15 +1395,20 @@ def import_admins():
                 if not phone:
                     errors.append(f'第{idx}行：手机号为空')
                     continue
+                if not campus_name:
+                    errors.append(f'第{idx}行：校区名称为空')
+                    continue
+                
+                if not password:
+                    password = phone[-6:] if len(phone) >= 6 else '123456'
                 
                 campus_id = None
-                if campus_name:
-                    campus = Campus.query.filter_by(name=campus_name, is_deleted=False).first()
-                    if not campus:
-                        campus = Campus(name=campus_name)
-                        db.session.add(campus)
-                        db.session.flush()
-                    campus_id = campus.id
+                campus = Campus.query.filter_by(name=campus_name, is_deleted=False).first()
+                if not campus:
+                    campus = Campus(name=campus_name)
+                    db.session.add(campus)
+                    db.session.flush()
+                campus_id = campus.id
                 
                 username = phone
                 if User.query.filter_by(username=username, is_deleted=False).first():
@@ -1355,6 +1422,7 @@ def import_admins():
                     phone=phone,
                     campus_id=campus_id,
                     role=role,
+                    is_active=is_active,
                     can_push_jobs=can_push,
                     can_view_jobs=can_view,
                     can_manage_students=can_manage,
@@ -1400,8 +1468,8 @@ def template_admins():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = '管理员导入模板'
-    ws.append(['姓名', '密码(默认123456)', '手机号', '校区名称', '角色(校长/老师等)', 
-               '岗位推送权限(是/否)', '岗位查看权限(是/否)', '学员管理权限(是/否)'])
+    ws.append(['姓名', '手机号', '校区名称', '密码(默认手机号后6位)', '角色(校长/老师等)', 
+               '状态(启用/禁用)', '岗位推送权限(是/否)', '岗位查看权限(是/否)', '学员管理权限(是/否)'])
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
@@ -1438,14 +1506,15 @@ def import_students():
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 if not row[0]:
                     continue
-                id_card = str(row[0] or '').strip()
-                real_name = str(row[1] or '').strip()
-                phone = str(row[2] or '').strip()
-                education = str(row[3] or '').strip()
-                major = str(row[4] or '').strip()
-                gender = str(row[5] or '').strip()
-                political_status = str(row[6] or '').strip()
-                origin_place = str(row[7] or '').strip()
+                real_name = str(row[0] or '').strip()
+                phone = str(row[1] or '').strip()
+                id_card = str(row[2] or '').strip()
+                password = str(row[3] or '').strip()
+                is_active_str = str(row[4] or '启用').strip()
+                is_active = is_active_str not in ('禁用', 'no', 'false', '0', '×')
+                campus_name = str(row[5] or '').strip()
+                education = str(row[6] or '').strip()
+                major = str(row[7] or '').strip()
                 intention_city = str(row[8] or '').strip()
                 first_intention = str(row[9] or '').strip()
                 second_intention = str(row[10] or '').strip()
@@ -1453,22 +1522,26 @@ def import_students():
                 certificate = str(row[12] or '').strip()
                 remark = str(row[13] or '').strip()
                 graduation_date_str = str(row[14] or '').strip()
-                password = str(row[15] or '123456').strip()
+                origin_place = str(row[15] or '').strip()
                 
-                if not id_card or len(id_card) != 18:
-                    errors.append(f'第{idx}行：身份证号格式错误')
-                    continue
                 if not real_name:
                     errors.append(f'第{idx}行：姓名为空')
                     continue
+                if not phone:
+                    errors.append(f'第{idx}行：手机号为空')
+                    continue
+                if not id_card or len(id_card) != 18:
+                    errors.append(f'第{idx}行：身份证号格式错误')
+                    continue
                 
-                if User.query.filter_by(username=real_name, is_deleted=False).first():
-                    errors.append(f'第{idx}行：姓名{real_name}已存在')
+                if User.query.filter_by(username=phone, is_deleted=False).first():
+                    errors.append(f'第{idx}行：手机号{phone}已注册')
                     continue
                 
                 auto_gender, birth_date, age = User.parse_id_card(id_card)
-                if not gender and auto_gender:
-                    gender = auto_gender
+                
+                if not password:
+                    password = id_card[-6:]
                 
                 graduation_date = None
                 if graduation_date_str:
@@ -1477,18 +1550,25 @@ def import_students():
                     except:
                         pass
                 
+                campus_id = None
+                if campus_name:
+                    campus = Campus.query.filter_by(name=campus_name, is_deleted=False).first()
+                    if not campus:
+                        campus = Campus(name=campus_name)
+                        db.session.add(campus)
+                        db.session.flush()
+                    campus_id = campus.id
+                
                 user = User(
-                    username=real_name,
+                    username=phone,
                     user_type='student',
                     real_name=real_name,
                     phone=phone,
                     id_card=id_card,
-                    gender=gender,
+                    gender=auto_gender,
                     birth_date=birth_date,
                     education=education,
                     major=major,
-                    political_status=political_status,
-                    origin_place=origin_place,
                     intention_city=intention_city,
                     first_intention=first_intention,
                     second_intention=second_intention,
@@ -1496,6 +1576,9 @@ def import_students():
                     certificate=certificate,
                     remark=remark,
                     graduation_date=graduation_date,
+                    origin_place=origin_place,
+                    campus_id=campus_id,
+                    is_active=is_active,
                     created_by=current_user.id
                 )
                 user.set_password(password)
@@ -1538,9 +1621,9 @@ def template_students():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = '学员导入模板'
-    ws.append(['身份证号(18位)', '姓名', '手机号', '学历(大专/本科/硕士/博士)', '专业', 
-               '性别(男/女)', '政治面貌', '生源地', '意向城市', '第一意向岗位', 
-               '第二意向岗位', '第三意向岗位', '证书', '备注', '毕业时间(YYYY-MM-DD)', '密码(默认123456)'])
+    ws.append(['姓名', '手机号', '身份证号(18位)', '密码(默认身份证后6位)', '状态(启用/禁用)', 
+               '校区名称', '学历(大专/本科/硕士/博士)', '专业', '意向城市', '第一意向岗位', 
+               '第二意向岗位', '第三意向岗位', '证书', '备注', '毕业时间(YYYY-MM-DD)', '生源地'])
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
