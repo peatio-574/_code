@@ -66,8 +66,9 @@ class GuoPin(object):
         all_data = _read_xlsx_rows(data_file)
         yesterday_data = []
         for row in all_data:
-            if str(row[0]) not in (str(yesterday), str(today)):
-                break
+            date_val = str(row[0]).split(' ')[0]
+            if date_val not in (yesterday, today):
+                continue
             yesterday_data.append(row[1:])
         return yesterday_data
 
@@ -152,21 +153,21 @@ class GuoPin(object):
                 city_name,
                 job_name,
                 company_name,
-                row['company_info']['nature_cn'],
-                row['company_info']['scale_cn'],
-                row['company_info'].get('industry_cn'),
-                row['recruitment_type_cn'],
-                row['nature_cn'],
-                row['category_cn'],
+                row['company_info']['nature_cn'] or '',
+                row['company_info']['scale_cn'] or '',
+                row['company_info'].get('industry_cn') or '',
+                row['recruitment_type_cn'] or '',
+                row['nature_cn'] or '',
+                row['category_cn'] or '',
                 f"{row['min_wage']}~{row['max_wage']} {row['wage_unit_cn']}",
                 str(row['amount']) if row['amount'] > 0 else '若干',
-                row['education_cn'],
-                row['experience_cn'],
-                ', '.join(row.get('major_cn', [])),
+                row['education_cn'] or '',
+                row['experience_cn'] or '',
+                ', '.join(row.get('major_cn', []) or []),
                 row['district_list'][0]['area_cn'] if row.get('district_list') else '',
-                row['district_list'][0].get('address', '') if row.get('district_list') else '',
-                row['end_time'],
-                row['contents']
+                row['district_list'][0].get('address') or '' if row.get('district_list') else '',
+                row['end_time'] or '',
+                row['contents'] or ''
             ]
             rows.append(row_info)
         return rows
