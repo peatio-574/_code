@@ -4,52 +4,72 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-lg-8">
+    <div class="col-lg-11">
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">
-                    <i class="bi bi-{{ 'pencil' if student else 'person-plus' }}"></i>
+                    <i class="bi bi-{{ 'pencil' if student else 'person-bounding-box' }}"></i>
                     {{ '编辑' if student else '新增' }}学员
                 </h5>
             </div>
             <div class="card-body">
-                <form method="POST">
+                <form method="POST" id="studentForm" action="{{ url_for('admin.student_edit', id=student.id) if student else url_for('admin.student_add') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+                    <h6 class="text-primary mb-3"><i class="bi bi-person"></i> 基本信息</h6>
                     <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">用户名 <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" name="username" 
-                                   value="{{ student.username if student else '' }}" 
-                                   {{ 'readonly' if student else 'required' }}>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">姓名 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="real_name" id="real_name"
+                                   value="{{ student.real_name if student else '' }}" required
+                                   onchange="autoFillByStudent()">
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">{{ '新' if student else '' }}密码 {{ '' if student else '<span class="text-danger">*</span>' }}</label>
-                            <input type="password" class="form-control" name="password" 
-                                   {{ '' if student else 'required' }} minlength="6"
-                                   placeholder="{{ '留空则不修改' if student else '默认123456' }}">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">手机号码 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="phone"
+                                   value="{{ student.phone if student else '' }}" required>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">密码</label>
+                            <input type="text" class="form-control" name="password" id="password"
+                                   value="" placeholder="{{ '留空则不修改' if student else '自动填入身份证后6位' }}">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">状态</label>
+                            <div class="form-check mt-2">
+                                <input type="checkbox" class="form-check-input" name="is_active" id="is_active"
+                                       {% if not student or student.is_active %}checked{% endif %}>
+                                <label class="form-check-label" for="is_active">正常</label>
+                            </div>
                         </div>
                     </div>
 
+                    <hr>
+                    <h6 class="text-success mb-3"><i class="bi bi-person-bounding-box"></i> 学员信息</h6>
                     <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">姓名</label>
-                            <input type="text" class="form-control" name="real_name" 
-                                   value="{{ student.real_name if student else '' }}">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">身份证号 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="id_card" id="id_card"
+                                   value="{{ student.id_card if student else '' }}"
+                                   maxlength="18" {{ 'readonly' if student else '' }}
+                                   onchange="autoFillByStudent()">
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">手机号</label>
-                            <input type="text" class="form-control" name="phone" 
-                                   value="{{ student.phone if student else '' }}">
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">性别</label>
+                            <input type="text" class="form-control" id="gender_display" readonly
+                                   value="{{ student.gender if student else '' }}">
+                            <input type="hidden" name="gender" id="gender" value="{{ student.gender if student else '' }}">
                         </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">邮箱</label>
-                            <input type="email" class="form-control" name="email" 
-                                   value="{{ student.email if student else '' }}">
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">出生日期</label>
+                            <input type="text" class="form-control" id="birth_display" readonly
+                                   value="{{ student.birth_date.strftime('%Y-%m-%d') if student and student.birth_date else '' }}">
                         </div>
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-1 mb-3">
+                            <label class="form-label">年龄</label>
+                            <input type="text" class="form-control" id="age_display" readonly value="">
+                        </div>
+                        <div class="col-md-2 mb-3">
                             <label class="form-label">学历</label>
                             <select class="form-select" name="education">
                                 <option value="">请选择</option>
@@ -59,43 +79,81 @@
                                 <option value="博士" {% if student and student.education == '博士' %}selected{% endif %}>博士</option>
                             </select>
                         </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-2 mb-3">
                             <label class="form-label">专业</label>
-                            <input type="text" class="form-control" name="major" 
+                            <input type="text" class="form-control" name="major"
                                    value="{{ student.major if student else '' }}">
                         </div>
-                        <div class="col-md-6 mb-3">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">政治面貌</label>
+                            <select class="form-select" name="political_status">
+                                <option value="">请选择</option>
+                                <option value="群众" {% if student and student.political_status == '群众' %}selected{% endif %}>群众</option>
+                                <option value="共青团员" {% if student and student.political_status == '共青团员' %}selected{% endif %}>共青团员</option>
+                                <option value="中共党员" {% if student and student.political_status == '中共党员' %}selected{% endif %}>中共党员</option>
+                                <option value="中共预备党员" {% if student and student.political_status == '中共预备党员' %}selected{% endif %}>中共预备党员</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">毕业时间</label>
+                            <input type="date" class="form-control" name="graduation_date"
+                                   value="{{ student.graduation_date.strftime('%Y-%m-%d') if student and student.graduation_date else '' }}">
+                        </div>
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">证书</label>
+                            <input type="text" class="form-control" name="certificate"
+                                   value="{{ student.certificate if student else '' }}">
+                        </div>
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">生源地</label>
+                            <input type="text" class="form-control" name="origin_place"
+                                   value="{{ student.origin_place if student else '' }}">
+                        </div>
+                        <div class="col-md-2 mb-3">
                             <label class="form-label">意向城市</label>
-                            <input type="text" class="form-control" name="intention_city" 
+                            <input type="text" class="form-control" name="intention_city"
                                    value="{{ student.intention_city if student else '' }}">
                         </div>
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">学员头像</label>
+                            <input type="text" class="form-control" name="avatar"
+                                   value="{{ student.avatar if student else '' }}" placeholder="头像URL">
+                        </div>
                     </div>
-
                     <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">证书</label>
-                            <input type="text" class="form-control" name="certificate" 
-                                   value="{{ student.certificate if student else '' }}"
-                                   placeholder="如：CET-6、CPA">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">第一意向岗位</label>
+                            <input type="text" class="form-control" name="first_intention"
+                                   value="{{ student.first_intention if student else '' }}">
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">&nbsp;</label>
-                            <div class="form-check mt-2">
-                                <input type="checkbox" class="form-check-input" name="is_party_member" 
-                                       id="is_party_member" {% if student and student.is_party_member %}checked{% endif %}>
-                                <label class="form-check-label" for="is_party_member">党员</label>
-                            </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">第二意向岗位</label>
+                            <input type="text" class="form-control" name="second_intention"
+                                   value="{{ student.second_intention if student else '' }}">
                         </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">第三意向岗位</label>
+                            <input type="text" class="form-control" name="third_intention"
+                                   value="{{ student.third_intention if student else '' }}">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label class="form-label">备注</label>
+                            <textarea class="form-control" name="remark" rows="2">{{ student.remark if student else '' }}</textarea>
+                        </div>
+                    </div>
+                    <div class="row" style="display:none;">
+                        <input type="hidden" name="username" id="username">
                     </div>
 
                     <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary">
+                        <button type="submit" class="btn btn-primary" id="studentSubmitBtn">
                             <i class="bi bi-check-lg"></i> {{ '更新' if student else '保存' }}
                         </button>
-                        <a href="{{ url_for('admin.students_list') }}" class="btn btn-secondary">
+                        <a href="{{ url_for('admin.students_page') }}" class="btn btn-secondary">
                             <i class="bi bi-arrow-left"></i> 返回
                         </a>
                     </div>
@@ -104,4 +162,75 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function autoFillByStudent() {
+    var realName = document.getElementById('real_name').value.trim();
+    var idCard = document.getElementById('id_card').value.trim();
+    var usernameInput = document.getElementById('username');
+    var passwordInput = document.getElementById('password');
+
+    if (usernameInput && realName) usernameInput.value = realName;
+
+    if (passwordInput && idCard.length >= 6 && !passwordInput.value) {
+        passwordInput.value = idCard.slice(-6);
+    }
+
+    if (idCard.length === 18) {
+        try {
+            var birthStr = idCard.substring(6, 14);
+            var year = birthStr.substring(0, 4);
+            var month = birthStr.substring(4, 6);
+            var day = birthStr.substring(6, 8);
+            var birthDate = new Date(year, month - 1, day);
+
+            document.getElementById('birth_display').value = year + '-' + month + '-' + day;
+
+            var genderCode = parseInt(idCard.charAt(16));
+            var gender = genderCode % 2 === 1 ? '男' : '女';
+            document.getElementById('gender').value = gender;
+            document.getElementById('gender_display').value = gender;
+
+            var today = new Date();
+            var age = today.getFullYear() - birthDate.getFullYear();
+            if (today.getMonth() < birthDate.getMonth() ||
+                (today.getMonth() === birthDate.getMonth() && today.getDate() < birthDate.getDate())) {
+                age--;
+            }
+            document.getElementById('age_display').value = age + '岁';
+        } catch(e) {}
+    }
+}
+
+var existingIdCard = document.getElementById('id_card');
+if (existingIdCard && existingIdCard.value) autoFillByStudent();
+
+document.getElementById('studentForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var btn = document.getElementById('studentSubmitBtn');
+    btn.disabled = true;
+    var formData = new FormData(this);
+    formData.append('csrf_token', '{{ csrf_token }}');
+    fetch(this.action, {
+        method: 'POST',
+        body: formData,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    }).then(function(res) { return res.json(); })
+      .then(function(data) {
+        btn.disabled = false;
+        if (data.success) {
+            showToast(data.message, 'success');
+            setTimeout(function() { window.location.href = '{{ url_for("admin.students_page") }}'; }, 800);
+        } else {
+            showToast(data.message || '提交失败', 'danger');
+        }
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        showToast('提交失败，请重试', 'danger');
+      });
+});
+</script>
 {% endblock %}

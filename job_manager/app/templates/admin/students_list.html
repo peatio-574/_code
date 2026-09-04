@@ -3,110 +3,449 @@
 {% block title %}学员管理 - 岗位管理系统{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="mb-0"><i class="bi bi-people"></i> 学员管理</h4>
-    <a href="{{ url_for('admin.student_add') }}" class="btn btn-primary">
-        <i class="bi bi-plus-lg"></i> 新增学员
-    </a>
+<div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-shrink-0">
+    <h4 class="mb-0"><i class="bi bi-person-lines-fill"></i> 学员管理</h4>
 </div>
 
-<!-- Search -->
-<div class="card mb-4">
+<!-- 搜索筛选 -->
+<div class="card mb-3 flex-shrink-0">
     <div class="card-body">
-        <form method="GET" class="row g-3">
-            <div class="col-md-4">
-                <input type="text" class="form-control" name="keyword" placeholder="搜索用户名/姓名/手机" value="{{ keyword }}">
+        <form id="studentsForm">
+            <div class="row g-3 mb-3">
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">关键词：</label>
+                    <input type="text" class="form-control" name="keyword" id="keywordInput" placeholder="搜索姓名/手机/账号">
+                </div>
+                <div class="col-md" style="position:relative;">
+                    <label class="form-label fw-bold">校区：</label>
+                    <input type="text" class="form-control" id="campusSearch" placeholder="请选择校区" 
+                           onfocus="showCampusDropdown()" oninput="filterCampusOptions()" autocomplete="off">
+                    <select class="form-select" name="campus" id="campusInput" style="display:none;">
+                        <option value="">全部</option>
+                        {% for campus in campuses %}
+                        <option value="{{ campus.name }}">{{ campus.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <div id="campusDropdown" class="bg-white border rounded shadow-sm w-100" style="position:absolute; left:0; right:0; max-height:240px; overflow-y:auto; z-index:1000; display:none; margin-top:4px;">
+                        <div class="dropdown-item py-2 px-3" onclick="selectCampus('')" style="cursor:pointer; font-size:14px;">全部</div>
+                        {% for campus in campuses %}
+                        <div class="dropdown-item py-2 px-3" onclick="selectCampus('{{ campus.name }}')" style="cursor:pointer; font-size:14px;">{{ campus.name }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">学历：</label>
+                    <select class="form-select filter-select" name="education" id="educationInput" onchange="applyFilters()">
+                        <option value="">全部</option>
+                        <option value="不限">不限</option>
+                        <option value="高中">高中</option>
+                        <option value="大专">大专</option>
+                        <option value="本科">本科</option>
+                        <option value="硕士">硕士</option>
+                        <option value="博士">博士</option>
+                    </select>
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">状态：</label>
+                    <select class="form-select filter-select" name="status" id="statusInput" onchange="applyFilters()">
+                        <option value="">全部</option>
+                        <option value="active">正常</option>
+                        <option value="disabled">禁用</option>
+                    </select>
+                </div>
             </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-primary">
+            <div class="d-flex align-items-center gap-2 pt-2">
+                <button type="submit" class="btn btn-primary fw-bold">
                     <i class="bi bi-search"></i> 搜索
                 </button>
-                <a href="{{ url_for('admin.students_list') }}" class="btn btn-secondary">重置</a>
+                <button type="button" class="btn btn-secondary btn-reset fw-bold" onclick="resetFilters()">
+                    <i class="bi bi-arrow-counterclockwise"></i> 重置
+                </button>
+                <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
+                <a href="{{ url_for('admin.import_students') }}" class="btn btn-primary fw-bold">
+                    <i class="bi bi-upload"></i> 导入学员
+                </a>
+                <a href="{{ url_for('admin.student_add') }}" class="btn btn-primary fw-bold">
+                    <i class="bi bi-plus-lg"></i> 新增学员
+                </a>
+                <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
+                <button type="button" class="btn btn-primary fw-bold" id="batchDeleteBtn">
+                    <i class="bi bi-trash"></i> 批量删除
+                </button>
+                <button type="button" class="btn btn-warning fw-bold" id="refreshBtn" title="刷新">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Students Table -->
-<div class="card">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover table-striped mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>用户名</th>
-                        <th>姓名</th>
-                        <th>学历</th>
-                        <th>专业</th>
-                        <th>意向城市</th>
-                        <th>状态</th>
-                        <th width="150">操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for student in students %}
-                    <tr>
-                        <td>{{ student.username }}</td>
-                        <td>{{ student.real_name }}</td>
-                        <td>{{ student.education }}</td>
-                        <td>{{ student.major }}</td>
-                        <td>{{ student.intention_city }}</td>
-                        <td>
-                            {% if student.is_active %}
-                            <span class="badge bg-success">正常</span>
-                            {% else %}
-                            <span class="badge bg-secondary">禁用</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <a href="{{ url_for('admin.student_edit', id=student.id) }}" class="btn btn-sm btn-outline-primary">
-                                <i class="bi bi-pencil"></i>
-                            </a>
-                            <form method="POST" action="{{ url_for('admin.student_toggle_status') }}" class="d-inline">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <input type="hidden" name="student_id" value="{{ student.id }}">
-                                <button type="submit" class="btn btn-sm btn-outline-{{ 'warning' if student.is_active else 'success' }}">
-                                    <i class="bi bi-{{ 'pause' if student.is_active else 'play' }}"></i>
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                    {% if not students %}
-                    <tr>
-                        <td colspan="7" class="text-center text-muted py-4">暂无学员数据</td>
-                    </tr>
-                    {% endif %}
-                </tbody>
-            </table>
+<!-- 学员列表 -->
+<div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
+    <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
+            <colgroup>
+                <col style="width:40px;">
+                <col style="width:120px;">
+                <col style="width:120px;">
+                <col style="width:110px;">
+                <col style="width:100px;">
+                <col style="width:70px;">
+                <col style="width:80px;">
+                <col style="width:100px;">
+                <col style="width:100px;">
+                <col style="width:80px;">
+                <col style="width:100px;">
+                <col style="width:110px;">
+            </colgroup>
+            <thead class="sticky-thead">
+                <tr>
+                    <th style="width:40px;"><input type="checkbox" id="selectAll"></th>
+                    <th style="padding-left:15px;">所属校区</th>
+                    <th>姓名</th>
+                    <th>手机号</th>
+                    <th>身份证后6位</th>
+                    <th>性别</th>
+                    <th>学历</th>
+                    <th>专业</th>
+                    <th>意向城市</th>
+                    <th>状态</th>
+                    <th>创建人</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="studentsBody"></tbody>
+        </table>
+    </div>
+    <div class="card-footer page-footer d-flex flex-wrap align-items-center gap-3 px-3 py-2" style="justify-content:flex-start;">
+        <div class="d-flex align-items-center gap-3">
+            <span class="page-total">共 <strong id="studentTotal">0</strong> 条</span>
+            <select class="form-select page-select" id="perPage" onchange="changePerPage()">
+                <option value="20" selected>20条/页</option>
+                <option value="50">50条/页</option>
+                <option value="100">100条/页</option>
+            </select>
+        </div>
+        <nav id="paginationNav"></nav>
+        <div class="d-flex align-items-center gap-1">
+            <span class="goto-text">前往</span>
+            <input type="number" class="form-control goto-input" id="gotoPage" min="1" onkeyup="if(event.key==='Enter')gotoPage()">
+            <span class="goto-text">页</span>
+            <button type="button" class="btn btn-primary btn-sm" onclick="gotoPage()">跳转</button>
         </div>
     </div>
 </div>
+</div>
 
-<!-- Pagination -->
-{% if pagination.pages > 1 %}
-<nav class="mt-3">
-    <ul class="pagination justify-content-center">
-        {% if pagination.has_prev %}
-        <li class="page-item">
-            <a class="page-link" href="?page={{ pagination.prev_num }}&keyword={{ keyword }}">上一页</a>
-        </li>
-        {% endif %}
-        {% for p in pagination.iter_pages() %}
-        {% if p %}
-        <li class="page-item {% if p == pagination.page %}active{% endif %}">
-            <a class="page-link" href="?page={{ p }}&keyword={{ keyword }}">{{ p }}</a>
-        </li>
-        {% else %}
-        <li class="page-item disabled"><span class="page-link">...</span></li>
-        {% endif %}
-        {% endfor %}
-        {% if pagination.has_next %}
-        <li class="page-item">
-            <a class="page-link" href="?page={{ pagination.next_num }}&keyword={{ keyword }}">下一页</a>
-        </li>
-        {% endif %}
-    </ul>
-</nav>
-{% endif %}
+<!-- Delete Verification Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-danger"></i> 确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <strong>警告：</strong>删除学员将同时删除该学员的所有关联数据，此操作不可恢复！
+                </div>
+                <p>请验证学员信息以确认删除：</p>
+                <p class="mb-3">学员：<strong id="delete_student_info"></strong></p>
+                <div class="mb-3">
+                    <label class="form-label">请输入学员姓名 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="verify_name" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">请输入学员电话 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="verify_phone" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" onclick="confirmDelete()">确认删除</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<style>
+#campusDropdown .dropdown-item { transition: background-color 0.15s; }
+#campusDropdown .dropdown-item:hover { background-color: #e9ecef; }
+#campusDropdown .dropdown-item:active { background-color: #dee2e6; }
+#campusDropdown { scrollbar-width: thin; scrollbar-color: #adb5deg #f8f9fa; }
+#campusDropdown::-webkit-scrollbar { width: 6px; }
+#campusDropdown::-webkit-scrollbar-track { background: #f8f9fa; border-radius: 3px; }
+#campusDropdown::-webkit-scrollbar-thumb { background: #adb5deg; border-radius: 3px; }
+#campusDropdown::-webkit-scrollbar-thumb:hover { background: #868e96; }
+</style>
+<script>
+const STUDENT_EDIT_URL = '{{ url_for("admin.student_edit", id=0) }}'.replace('0', '');
+let currentPage = 1;
+let currentPerPage = 20;
+let currentDeleteId = null;
+let filters = { keyword: '', campus: '', education: '', status: '' };
+
+function buildQuery() {
+    let params = new URLSearchParams();
+    params.set('page', currentPage);
+    params.set('per_page', currentPerPage);
+    if (filters.keyword) params.set('keyword', filters.keyword);
+    if (filters.campus) params.set('campus', filters.campus);
+    if (filters.education) params.set('education', filters.education);
+    if (filters.status) params.set('status', filters.status);
+    return params.toString();
+}
+
+function showCampusDropdown() {
+    document.getElementById('campusDropdown').style.display = 'block';
+}
+
+function filterCampusOptions() {
+    const input = document.getElementById('campusSearch');
+    const dropdown = document.getElementById('campusDropdown');
+    const filter = input.value.toLowerCase();
+    const items = dropdown.querySelectorAll('.dropdown-item');
+    dropdown.style.display = 'block';
+    items.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        item.style.display = text.includes(filter) ? 'block' : 'none';
+    });
+}
+
+function selectCampus(value) {
+    document.getElementById('campusSearch').value = value;
+    document.getElementById('campusInput').value = value;
+    document.getElementById('campusDropdown').style.display = 'none';
+    applyFilters();
+}
+
+function applyFilters() {
+    filters.keyword = document.getElementById('keywordInput').value || '';
+    filters.campus = document.getElementById('campusInput').value || '';
+    filters.education = document.getElementById('educationInput').value || '';
+    filters.status = document.getElementById('statusInput').value || '';
+    currentPage = 1;
+    loadStudents();
+}
+function resetFilters() {
+    document.getElementById('keywordInput').value = '';
+    document.getElementById('campusSearch').value = '';
+    document.getElementById('campusInput').value = '';
+    document.getElementById('educationInput').value = '';
+    document.getElementById('statusInput').value = '';
+    filters = { keyword: '', campus: '', education: '', status: '' };
+    currentPage = 1;
+    loadStudents();
+}
+
+// 点击外部关闭下拉
+document.addEventListener('click', function(e) {
+    const search = document.getElementById('campusSearch');
+    const dropdown = document.getElementById('campusDropdown');
+    if (search && dropdown && !search.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.style.display = 'none';
+    }
+});
+
+// 从URL读取campus参数
+const urlParams = new URLSearchParams(window.location.search);
+const campusParam = urlParams.get('campus');
+if (campusParam) {
+    document.getElementById('campusSearch').value = campusParam;
+    document.getElementById('campusInput').value = campusParam;
+    filters.campus = campusParam;
+}
+
+async function loadStudents() {
+    const body = document.getElementById('studentsBody');
+    body.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-5">加载中...</td></tr>';
+    try {
+        const res = await fetch('{{ url_for("admin.students_list") }}?' + buildQuery());
+        const data = await res.json();
+        renderStudents(data.students);
+        renderPagination(data.pagination);
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="10" class="text-center text-danger py-5">加载失败</td></tr>';
+    }
+}
+
+function renderStudents(students) {
+    const body = document.getElementById('studentsBody');
+    if (!students || students.length === 0) {
+        body.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-5">暂无学员数据</td></tr>';
+        return;
+    }
+    body.innerHTML = students.map(s => {
+        const statusSwitch = `<div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="status_${s.id}" ${s.is_active ? 'checked' : ''} onchange="toggleStudentStatus(${s.id}, this)">
+        </div>`;
+        let ops = `<a href="${STUDENT_EDIT_URL + s.id}" class="btn btn-sm btn-outline-primary me-1" title="编辑"><i class="bi bi-pencil"></i></a>`;
+        ops += `<button type="button" class="btn btn-sm btn-outline-danger" title="删除" onclick="showDeleteModal('${s.id}','${escapeAttr(s.real_name)}','${escapeAttr(s.phone)}')"><i class="bi bi-trash"></i></button>`;
+        return `<tr>
+            <td style="padding-left:15px;"><input type="checkbox" name="student_ids" value="${s.id}" class="student-checkbox"></td>
+            <td>${escapeHtml(s.campus)}</td>
+            <td>${escapeHtml(s.real_name)}</td>
+            <td>${escapeHtml(s.phone)}</td>
+            <td>${escapeHtml(s.id_card_last6)}</td>
+            <td>${escapeHtml(s.gender)}</td>
+            <td>${escapeHtml(s.education)}</td>
+            <td>${escapeHtml(s.major)}</td>
+            <td>${escapeHtml(s.intention_city)}</td>
+            <td>${statusSwitch}</td>
+            <td>${escapeHtml(s.creator)}</td>
+            <td>${ops}</td>
+        </tr>`;
+    }).join('');
+    // 全选联动
+    document.querySelectorAll('.student-checkbox').forEach(cb => {
+        cb.addEventListener('change', function() {
+            const all = document.querySelectorAll('.student-checkbox');
+            document.getElementById('selectAll').checked = Array.from(all).every(c => c.checked);
+        });
+    });
+}
+
+function renderPagination(p) {
+    document.getElementById('studentTotal').textContent = p.total;
+    document.getElementById('gotoPage').max = p.pages;
+    document.getElementById('gotoPage').value = p.page;
+    const nav = document.getElementById('paginationNav');
+    if (p.pages <= 1) { nav.innerHTML = ''; return; }
+    let html = '<ul class="pagination pagination-sm mb-0">';
+    html += `<li class="page-item ${p.has_prev ? '' : 'disabled'}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.prev_num})">&lt;</a></li>`;
+    const left = Math.max(1, p.page - 3), right = Math.min(p.pages, p.page + 3);
+    if (left > 1) {
+        html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(1)">1</a></li>`;
+        if (left > 2) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+    }
+    for (let i = left; i <= right; i++) {
+        html += `<li class="page-item ${i === p.page ? 'active' : ''}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${i})">${i}</a></li>`;
+    }
+    if (right < p.pages) {
+        if (right < p.pages - 1) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+        html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.pages})">${p.pages}</a></li>`;
+    }
+    html += `<li class="page-item ${p.has_next ? '' : 'disabled'}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.next_num})">&gt;</a></li>`;
+    html += '</ul>';
+    nav.innerHTML = html;
+}
+
+function goPage(page) { currentPage = page; loadStudents(); }
+function changePerPage() { currentPerPage = parseInt(document.getElementById('perPage').value, 10); currentPage = 1; loadStudents(); }
+function gotoPage() {
+    var input = document.getElementById('gotoPage');
+    var page = parseInt(input.value, 10);
+    if (isNaN(page)) return;
+    var max = parseInt(input.max, 10) || 1;
+    if (page < 1) page = 1;
+    if (page > max) page = max;
+    if (page !== currentPage) { currentPage = page; loadStudents(); }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+function escapeAttr(str) {
+    if (!str) return '';
+    return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+document.getElementById('studentsForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    filters.keyword = document.getElementById('keywordInput').value || '';
+    filters.campus = document.getElementById('campusInput').value || '';
+    filters.education = document.getElementById('educationInput').value || '';
+    filters.status = document.getElementById('statusInput').value || '';
+    currentPage = 1;
+    loadStudents();
+});
+
+document.getElementById('selectAll').addEventListener('change', function() {
+    document.querySelectorAll('.student-checkbox').forEach(cb => cb.checked = this.checked);
+});
+
+document.getElementById('refreshBtn').addEventListener('click', function() { loadStudents(); });
+
+async function toggleStudentStatus(studentId, checkbox) {
+    const formData = new FormData();
+    formData.append('student_id', studentId);
+    formData.append('csrf_token', '{{ csrf_token }}');
+    try {
+        const res = await fetch('{{ url_for("admin.student_toggle_status") }}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadStudents();
+        } else {
+            checkbox.checked = !checkbox.checked;
+            showToast(data.message, 'danger');
+        }
+    } catch (e) {
+        checkbox.checked = !checkbox.checked;
+        showToast('操作失败', 'danger');
+    }
+}
+
+document.getElementById('batchDeleteBtn').addEventListener('click', async function() {
+    var checked = document.querySelectorAll('.student-checkbox:checked');
+    if (checked.length === 0) { showToast('请选择要删除的学员', 'warning'); return; }
+    if (!confirm('确定删除选中的' + checked.length + ' 个学员吗？')) return;
+    const formData = new FormData();
+    formData.append('csrf_token', '{{ csrf_token }}');
+    checked.forEach(cb => formData.append('student_ids', cb.value));
+    try {
+        const res = await fetch('{{ url_for("admin.student_batch_delete") }}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'danger');
+        if (data.success) loadStudents();
+    } catch (e) { showToast('删除失败', 'danger'); }
+});
+
+function showDeleteModal(userId, realName, phone) {
+    currentDeleteId = userId;
+    document.getElementById('delete_student_info').textContent = realName + '（' + phone + '）';
+    document.getElementById('verify_name').value = '';
+    document.getElementById('verify_phone').value = '';
+    new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+
+async function confirmDelete() {
+    const name = document.getElementById('verify_name').value.trim();
+    const phone = document.getElementById('verify_phone').value.trim();
+    const formData = new FormData();
+    formData.append('user_id', currentDeleteId);
+    formData.append('verify_name', name);
+    formData.append('verify_phone', phone);
+    formData.append('csrf_token', '{{ csrf_token }}');
+    try {
+        const res = await fetch('{{ url_for("admin.student_delete") }}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'danger');
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+            loadStudents();
+        }
+    } catch (e) { showToast('删除失败', 'danger'); }
+}
+
+loadStudents();
+</script>
 {% endblock %}

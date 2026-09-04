@@ -3,117 +3,215 @@
 {% block title %}操作日志 - 岗位管理系统{% endblock %}
 
 {% block content %}
-<h4 class="mb-4"><i class="bi bi-journal-text"></i> 操作日志</h4>
+<div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-shrink-0">
+    <h4 class="mb-0"><i class="bi bi-journal-text"></i> 操作日志</h4>
+</div>
 
-<!-- Filter -->
-<div class="card mb-4">
+<!-- 筛选 -->
+<div class="card mb-3 flex-shrink-0">
     <div class="card-body">
-        <form method="GET" class="row g-3">
+        <form method="GET" class="row g-3" id="filterForm">
             <div class="col-md-3">
-                <select class="form-select" name="action">
+                <label class="form-label fw-bold">操作类型：</label>
+                <select class="form-select" name="action" id="actionFilter" onchange="applyFilters()">
                     <option value="">全部操作</option>
-                    <option value="login" {% if action == 'login' %}selected{% endif %}>登录</option>
-                    <option value="logout" {% if action == 'logout' %}selected{% endif %}>登出</option>
-                    <option value="add_job" {% if action == 'add_job' %}selected{% endif %}>新增岗位</option>
-                    <option value="edit_job" {% if action == 'edit_job' %}selected{% endif %}>编辑岗位</option>
-                    <option value="delete_job" {% if action == 'delete_job' %}selected{% endif %}>删除岗位</option>
-                    <option value="import_jobs" {% if action == 'import_jobs' %}selected{% endif %}>导入岗位</option>
-                    <option value="push_jobs" {% if action == 'push_jobs' %}selected{% endif %}>推送岗位</option>
-                    <option value="add_student" {% if action == 'add_student' %}selected{% endif %}>新增学员</option>
-                    <option value="edit_student" {% if action == 'edit_student' %}selected{% endif %}>编辑学员</option>
-                    <option value="add_account" {% if action == 'add_account' %}selected{% endif %}>新增账号</option>
-                    <option value="edit_account" {% if action == 'edit_account' %}selected{% endif %}>编辑账号</option>
-                    <option value="change_password" {% if action == 'change_password' %}selected{% endif %}>修改密码</option>
+                    <option value="login">登录</option>
+                    <option value="logout">登出</option>
+                    <option value="add_job">新增岗位</option>
+                    <option value="edit_job">编辑岗位</option>
+                    <option value="delete_job">删除岗位</option>
+                    <option value="import_jobs">导入岗位</option>
+                    <option value="import_admins">导入管理员</option>
+                    <option value="import_students">导入学员</option>
+                    <option value="push_jobs">推送岗位</option>
+                    <option value="add_campus">新增校区</option>
+                    <option value="add_role">新增角色</option>
+                    <option value="change_password">修改密码</option>
                 </select>
             </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-primary">
+            <div class="col-auto" style="display:flex; align-items:flex-end;">
+                <button type="submit" class="btn btn-primary fw-bold">
                     <i class="bi bi-search"></i> 筛选
                 </button>
-                <a href="{{ url_for('admin.logs_list') }}" class="btn btn-secondary">重置</a>
+                <a href="{{ url_for('admin.logs_page') }}" class="btn btn-secondary btn-reset fw-bold">重置</a>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Logs Table -->
-<div class="card">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover table-striped mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>时间</th>
-                        <th>操作人</th>
-                        <th>操作类型</th>
-                        <th>详情</th>
-                        <th>IP地址</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for log in logs %}
-                    <tr>
-                        <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                        <td>{{ log.user.real_name or log.user.username }}</td>
-                        <td>
-                            {% set action_map = {
-                                'login': '登录',
-                                'logout': '登出',
-                                'add_job': '新增岗位',
-                                'edit_job': '编辑岗位',
-                                'delete_job': '删除岗位',
-                                'toggle_job_status': '上下架岗位',
-                                'import_jobs': '导入岗位',
-                                'push_jobs': '推送岗位',
-                                'add_student': '新增学员',
-                                'edit_student': '编辑学员',
-                                'toggle_student_status': '启用禁用学员',
-                                'add_account': '新增账号',
-                                'edit_account': '编辑账号',
-                                'toggle_account_status': '启用禁用账号',
-                                'change_password': '修改密码'
-                            } %}
-                            <span class="badge bg-info">{{ action_map.get(log.action, log.action) }}</span>
-                        </td>
-                        <td>{{ log.details }}</td>
-                        <td>{{ log.ip_address }}</td>
-                    </tr>
-                    {% endfor %}
-                    {% if not logs %}
-                    <tr>
-                        <td colspan="5" class="text-center text-muted py-4">暂无日志数据</td>
-                    </tr>
-                    {% endif %}
-                </tbody>
-            </table>
+<!-- 日志列表 -->
+<div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
+    <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
+            <colgroup>
+                <col style="width:160px;">
+                <col style="width:120px;">
+                <col style="width:120px;">
+                <col style="width:340px;">
+                <col style="width:130px;">
+            </colgroup>
+            <thead class="sticky-thead">
+                <tr>
+                    <th style="padding-left:15px;">时间</th>
+                    <th>操作人</th>
+                    <th>操作类型</th>
+                    <th>详情</th>
+                    <th>IP地址</th>
+                </tr>
+            </thead>
+            <tbody id="logsBody"></tbody>
+        </table>
+    </div>
+    <div class="card-footer page-footer d-flex flex-wrap align-items-center gap-3 px-3 py-2" style="justify-content:flex-start;">
+        <div class="d-flex align-items-center gap-3">
+            <span class="page-total">共 <strong id="logTotal">0</strong> 条</span>
+            <select class="form-select page-select" id="perPage" onchange="changePerPage()">
+                <option value="20" selected>20条/页</option>
+                <option value="50">50条/页</option>
+                <option value="100">100条/页</option>
+            </select>
+        </div>
+        <nav id="paginationNav"></nav>
+        <div class="d-flex align-items-center gap-1">
+            <span class="goto-text">前往</span>
+            <input type="number" class="form-control goto-input" id="gotoPage" min="1" onkeyup="if(event.key==='Enter')gotoPage()">
+            <span class="goto-text">页</span>
+            <button type="button" class="btn btn-primary btn-sm" onclick="gotoPage()">跳转</button>
         </div>
     </div>
 </div>
+</div>
+{% endblock %}
 
-<!-- Pagination -->
-{% if pagination.pages > 1 %}
-<nav class="mt-3">
-    <ul class="pagination justify-content-center">
-        {% if pagination.has_prev %}
-        <li class="page-item">
-            <a class="page-link" href="?page={{ pagination.prev_num }}&action={{ action }}">上一页</a>
-        </li>
-        {% endif %}
-        {% for p in pagination.iter_pages() %}
-        {% if p %}
-        <li class="page-item {% if p == pagination.page %}active{% endif %}">
-            <a class="page-link" href="?page={{ p }}&action={{ action }}">{{ p }}</a>
-        </li>
-        {% else %}
-        <li class="page-item disabled"><span class="page-link">...</span></li>
-        {% endif %}
-        {% endfor %}
-        {% if pagination.has_next %}
-        <li class="page-item">
-            <a class="page-link" href="?page={{ pagination.next_num }}&action={{ action }}">下一页</a>
-        </li>
-        {% endif %}
-    </ul>
-</nav>
-{% endif %}
+{% block extra_js %}
+<script>
+// 操作类型映射
+const ACTION_MAP = {
+    login: '登录', logout: '登出',
+    add_job: '新增岗位', edit_job: '编辑岗位', delete_job: '删除岗位',
+    toggle_job_status: '上下架岗位', import_jobs: '导入岗位',
+    push_jobs: '推送岗位',
+    add_student: '新增学员', edit_student: '编辑学员', toggle_student_status: '启用禁用学员',
+    add_account: '新增账号', edit_account: '编辑账号', toggle_account_status: '启用禁用账号',
+    add_campus: '新增校区', add_role: '新增角色',
+    import_admins: '导入管理员', import_students: '导入学员',
+    change_password: '修改密码'
+};
+
+let currentPage = 1;
+let currentPerPage = 20;
+let currentAction = '';
+
+function buildQuery() {
+    let params = new URLSearchParams();
+    params.set('page', currentPage);
+    params.set('per_page', currentPerPage);
+    if (currentAction) params.set('action', currentAction);
+    return params.toString();
+}
+
+async function loadLogs() {
+    const body = document.getElementById('logsBody');
+    body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">加载中...</td></tr>';
+    try {
+        const res = await fetch('{{ url_for("admin.logs_list") }}?' + buildQuery());
+        const data = await res.json();
+        renderLogs(data.logs);
+        renderPagination(data.pagination);
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-5">加载失败</td></tr>';
+    }
+}
+
+function renderLogs(logs) {
+    const body = document.getElementById('logsBody');
+    if (!logs || logs.length === 0) {
+        body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">暂无日志数据</td></tr>';
+        return;
+    }
+    body.innerHTML = logs.map(log => `
+        <tr>
+            <td style="padding-left:15px;">${log.created_at}</td>
+            <td>${escapeHtml(log.operator)}</td>
+            <td><span class="badge bg-info">${escapeHtml(ACTION_MAP[log.action] || log.action)}</span></td>
+            <td>${escapeHtml(log.details)}</td>
+            <td>${escapeHtml(log.ip_address)}</td>
+        </tr>
+    `).join('');
+}
+
+function renderPagination(p) {
+    document.getElementById('logTotal').textContent = p.total;
+    document.getElementById('gotoPage').max = p.pages;
+    document.getElementById('gotoPage').value = p.page;
+    const nav = document.getElementById('paginationNav');
+    if (p.pages <= 1) {
+        nav.innerHTML = '';
+        return;
+    }
+    let html = '<ul class="pagination pagination-sm mb-0">';
+    html += `<li class="page-item ${p.has_prev ? '' : 'disabled'}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.prev_num})">&lt;</a></li>`;
+    const left = Math.max(1, p.page - 3);
+    const right = Math.min(p.pages, p.page + 3);
+    if (left > 1) {
+        html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(1)">1</a></li>`;
+        if (left > 2) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+    }
+    for (let i = left; i <= right; i++) {
+        html += `<li class="page-item ${i === p.page ? 'active' : ''}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${i})">${i}</a></li>`;
+    }
+    if (right < p.pages) {
+        if (right < p.pages - 1) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+        html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.pages})">${p.pages}</a></li>`;
+    }
+    html += `<li class="page-item ${p.has_next ? '' : 'disabled'}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.next_num})">&gt;</a></li>`;
+    html += '</ul>';
+    nav.innerHTML = html;
+}
+
+function goPage(page) {
+    currentPage = page;
+    loadLogs();
+}
+
+function changePerPage() {
+    currentPerPage = parseInt(document.getElementById('perPage').value, 10);
+    currentPage = 1;
+    loadLogs();
+}
+
+function gotoPage() {
+    var input = document.getElementById('gotoPage');
+    var page = parseInt(input.value, 10);
+    if (isNaN(page)) return;
+    var max = parseInt(input.max, 10) || 1;
+    if (page < 1) page = 1;
+    if (page > max) page = max;
+    if (page !== currentPage) {
+        currentPage = page;
+        loadLogs();
+    }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+document.getElementById('filterForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    applyFilters();
+});
+
+function applyFilters() {
+    currentAction = document.getElementById('actionFilter').value;
+    currentPage = 1;
+    loadLogs();
+}
+
+loadLogs();
+</script>
 {% endblock %}

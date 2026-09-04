@@ -1,7 +1,7 @@
 from flask import Flask
 from flask_login import LoginManager
 from .config import config
-from .models import db, User
+from .models import db, User, Campus
 
 login_manager = LoginManager()
 login_manager.login_view = 'auth.login'
@@ -20,7 +20,6 @@ def create_app(config_name='default'):
     db.init_app(app)
     login_manager.init_app(app)
 
-    # 注册蓝图
     from .auth import auth_bp
     from .admin import admin_bp
     from .student import student_bp
@@ -29,28 +28,29 @@ def create_app(config_name='default'):
     app.register_blueprint(admin_bp, url_prefix='/admin')
     app.register_blueprint(student_bp, url_prefix='/student')
 
-    # 创建数据库表
     with app.app_context():
         db.create_all()
-        # 创建默认管理员账号
-        _create_default_admin()
+        _create_defaults()
 
     return app
 
 
-def _create_default_admin():
-    from .models import User
-    admin = User.query.filter_by(username='admin').first()
-    if not admin:
-        admin = User(
-            username='admin',
-            user_type='admin',
-            real_name='超级管理员',
-            can_manage_jobs=True,
-            can_manage_students=True,
-            can_manage_accounts=True,
-            can_push_jobs=True
-        )
+def _create_defaults():
+    # 创建默认校区
+    default_campuses = ['总校区', '东区分校', '西区分校']
+    for name in default_campuses:
+        if not Campus.query.filter_by(name=name).first():
+            db.session.add(Campus(name=name))
+
+    # 创建2个超管账号
+    if not User.query.filter_by(username='admin').first():
+        admin = User(username='admin', user_type='super_admin', real_name='超级管理员1')
         admin.set_password('admin123')
         db.session.add(admin)
-        db.session.commit()
+
+    if not User.query.filter_by(username='superadmin').first():
+        admin2 = User(username='superadmin', user_type='super_admin', real_name='超级管理员2')
+        admin2.set_password('admin123')
+        db.session.add(admin2)
+
+    db.session.commit()

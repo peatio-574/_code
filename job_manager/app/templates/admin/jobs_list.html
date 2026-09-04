@@ -3,271 +3,494 @@
 {% block title %}岗位管理 - 岗位管理系统{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-shrink-0">
     <h4 class="mb-0"><i class="bi bi-briefcase"></i> 岗位管理</h4>
-    <div class="d-flex gap-2">
-        <a href="{{ url_for('admin.job_add') }}" class="btn btn-primary">
-            <i class="bi bi-plus-lg"></i> 新增岗位
-        </a>
-        <a href="{{ url_for('admin.job_import') }}" class="btn btn-success">
-            <i class="bi bi-upload"></i> 批量导入
-        </a>
-    </div>
 </div>
 
-<!-- Filter Form -->
-<div class="card mb-4">
+<!-- 搜索筛选 -->
+<div class="card mb-3 flex-shrink-0">
     <div class="card-body">
-        <form method="GET" class="row g-3">
-            <div class="col-md-2">
-                <input type="text" class="form-control" name="keyword" placeholder="单位/岗位名称" value="{{ keyword }}">
-            </div>
-            <div class="col-md-2">
-                <select class="form-select" name="education">
-                    <option value="">学历要求</option>
-                    <option value="大专" {% if education == '大专' %}selected{% endif %}>大专</option>
-                    <option value="本科" {% if education == '本科' %}selected{% endif %}>本科</option>
-                    <option value="硕士" {% if education == '硕士' %}selected{% endif %}>硕士</option>
-                    <option value="博士" {% if education == '博士' %}selected{% endif %}>博士</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <input type="text" class="form-control" name="major" placeholder="专业要求" value="{{ major }}">
-            </div>
-            <div class="col-md-1">
-                <select class="form-select" name="party_member">
-                    <option value="">党员</option>
-                    <option value="1" {% if party_member == '1' %}selected{% endif %}>是</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <input type="text" class="form-control" name="location" placeholder="工作地点" value="{{ location }}">
-            </div>
-            <div class="col-md-2">
-                <input type="text" class="form-control" name="company_type" placeholder="企业类型" value="{{ company_type }}">
-            </div>
-            <div class="col-md-1">
-                <select class="form-select" name="status">
-                    <option value="">状态</option>
-                    <option value="active" {% if status == 'active' %}selected{% endif %}>在架</option>
-                    <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>下架</option>
-                </select>
-            </div>
-            <div class="col-12">
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-search"></i> 筛选
-                </button>
-                <a href="{{ url_for('admin.jobs_list') }}" class="btn btn-secondary">
-                    <i class="bi bi-x-lg"></i> 重置
-                </a>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Jobs Table -->
-<div class="card">
-    <div class="card-body p-0">
-        <form id="batchForm" method="POST">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <div class="table-responsive">
-                <table class="table table-hover table-striped mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th width="40"><input type="checkbox" id="selectAll"></th>
-                            <th>单位名称</th>
-                            <th>岗位名称</th>
-                            <th>学历</th>
-                            <th>地点</th>
-                            <th>截止时间</th>
-                            <th>状态</th>
-                            <th width="120">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for job in jobs %}
-                        <tr>
-                            <td><input type="checkbox" name="job_ids" value="{{ job.id }}" class="job-checkbox"></td>
-                            <td>{{ job.company_name }}</td>
-                            <td>{{ job.job_name }}</td>
-                            <td>{{ job.education_req }}</td>
-                            <td>{{ job.work_location }}</td>
-                            <td>{{ job.deadline.strftime('%Y-%m-%d') if job.deadline else '-' }}</td>
-                            <td>
-                                {% if job.status == 'active' %}
-                                <span class="badge bg-success">在架</span>
-                                {% else %}
-                                <span class="badge bg-secondary">下架</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <a href="{{ url_for('admin.job_edit', id=job.id) }}" class="btn btn-sm btn-outline-primary">
-                                    <i class="bi bi-pencil"></i>
-                                </a>
-                            </td>
-                        </tr>
+        <form id="searchForm">
+            <div class="row g-3 mb-3">
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">关键字：</label>
+                    <input type="text" class="form-control" name="keyword" placeholder="公司/职位名称">
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">省份：</label>
+                    <select class="form-select filter-select" name="province" id="jobProvince" onchange="applyFilters()">
+                        <option value="">全部省份</option>
+                    </select>
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">城市：</label>
+                    <select class="form-select filter-select" name="city" id="jobCity" onchange="applyFilters()">
+                        <option value="">全部城市</option>
+                    </select>
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">公司性质：</label>
+                    <select class="form-select filter-select" name="company_type" onchange="applyFilters()">
+                        <option value="">全部</option>
+                        {% for ct in ['国企','民企','外企','合资','事业单位','政府机关','上市公司'] %}
+                        <option value="{{ ct }}">{{ ct }}</option>
                         {% endfor %}
-                        {% if not jobs %}
-                        <tr>
-                            <td colspan="8" class="text-center text-muted py-4">暂无岗位数据</td>
-                        </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
+                    </select>
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">招聘类型：</label>
+                    <select class="form-select filter-select" name="recruit_type" onchange="applyFilters()">
+                        <option value="">全部</option>
+                        {% for rt in ['校园招聘','社会招聘','实习'] %}
+                        <option value="{{ rt }}">{{ rt }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">学历要求：</label>
+                    <select class="form-select filter-select" name="education" onchange="applyFilters()">
+                        <option value="">全部</option>
+                        <option value="不限">不限</option>
+                        {% for e in ['大专','本科','硕士','博士'] %}
+                        <option value="{{ e }}">{{ e }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">状态：</label>
+                    <select class="form-select filter-select" name="status_filter" onchange="applyFilters()">
+                        <option value="active">未过期</option>
+                        <option value="expired">已过期</option>
+                        <option value="all">全部</option>
+                    </select>
+                </div>
             </div>
-
-            <!-- Batch Actions -->
-            <div class="card-footer bg-white d-flex gap-2">
-                <button type="button" class="btn btn-sm btn-outline-danger" onclick="batchAction('delete')">
+            <div class="d-flex align-items-center gap-2 pt-2">
+                <button type="submit" class="btn btn-primary fw-bold">
+                    <i class="bi bi-search"></i> 搜索
+                </button>
+                <a href="{{ url_for('admin.jobs_page') }}" class="btn btn-secondary btn-reset fw-bold">重置</a>
+                <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
+                <a href="{{ url_for('admin.job_add') }}{% if request.query_string %}?{{ request.query_string.decode() }}{% endif %}" class="btn btn-primary fw-bold">
+                    <i class="bi bi-plus-lg"></i> 新增岗位
+                </a>
+                <a href="{{ url_for('admin.job_import') }}" class="btn btn-primary fw-bold">
+                    <i class="bi bi-upload"></i> 批量导入
+                </a>
+                <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
+                <button type="button" class="btn btn-primary fw-bold" id="batchDeleteBtn">
                     <i class="bi bi-trash"></i> 批量删除
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-warning" onclick="batchAction('deactivate')">
-                    <i class="bi bi-eye-slash"></i> 批量下架
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-success" onclick="batchAction('activate')">
-                    <i class="bi bi-eye"></i> 批量上架
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-primary" onclick="batchAction('push')">
-                    <i class="bi bi-send"></i> 推送给学员
+                <button type="button" class="btn btn-warning fw-bold" id="refreshBtn" title="刷新">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
                 </button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Pagination -->
-{% if pagination.pages > 1 %}
-<nav class="mt-3">
-    <ul class="pagination justify-content-center">
-        {% if pagination.has_prev %}
-        <li class="page-item">
-            <a class="page-link" href="?page={{ pagination.prev_num }}&keyword={{ keyword }}&education={{ education }}&major={{ major }}&party_member={{ party_member }}&location={{ location }}&company_type={{ company_type }}&status={{ status }}">上一页</a>
-        </li>
-        {% endif %}
-        {% for p in pagination.iter_pages() %}
-        {% if p %}
-        <li class="page-item {% if p == pagination.page %}active{% endif %}">
-            <a class="page-link" href="?page={{ p }}&keyword={{ keyword }}&education={{ education }}&major={{ major }}&party_member={{ party_member }}&location={{ location }}&company_type={{ company_type }}&status={{ status }}">{{ p }}</a>
-        </li>
-        {% else %}
-        <li class="page-item disabled"><span class="page-link">...</span></li>
-        {% endif %}
-        {% endfor %}
-        {% if pagination.has_next %}
-        <li class="page-item">
-            <a class="page-link" href="?page={{ pagination.next_num }}&keyword={{ keyword }}&education={{ education }}&major={{ major }}&party_member={{ party_member }}&location={{ location }}&company_type={{ company_type }}&status={{ status }}">下一页</a>
-        </li>
-        {% endif %}
-    </ul>
-</nav>
-{% endif %}
+<!-- 岗位列表 -->
+<div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
+    <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
+                <colgroup>
+                    <col style="width:4%;">
+                    <col style="width:15%;">
+                    <col style="width:17%;">
+                    <col style="width:6%;">
+                    <col style="width:7%;">
+                    <col style="width:11%;">
+                    <col style="width:6%;">
+                    <col style="width:11%;">
+                    <col style="width:4%;">
+                    <col style="width:10%;">
+                    <col style="width:9%;">
+                </colgroup>
+                <thead class="sticky-thead">
+                    <tr>
+                        <th><input type="checkbox" id="selectAll"></th>
+                        <th>职位名称</th>
+                        <th>公司名称</th>
+                        <th>公司性质</th>
+                        <th>招聘类型</th>
+                        <th>薪资范围</th>
+                        <th>学历</th>
+                        <th>工作地点</th>
+                        <th style="text-align:center;">人数</th>
+                        <th>截止时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="jobsBody"></tbody>
+        </table>
+    </div>
+    <div class="card-footer page-footer d-flex flex-wrap align-items-center gap-3 px-3 py-2" style="justify-content:flex-start;">
+        <div class="d-flex align-items-center gap-3">
+            <span class="page-total">共 <strong id="jobTotal">0</strong> 条</span>
+            <select class="form-select page-select" id="perPage" onchange="changePerPage()">
+                <option value="20" selected>20条/页</option>
+                <option value="50">50条/页</option>
+                <option value="100">100条/页</option>
+            </select>
+        </div>
+        <nav id="paginationNav"></nav>
+        <div class="d-flex align-items-center gap-1">
+            <span class="goto-text">前往</span>
+            <input type="number" class="form-control goto-input" id="gotoPage" min="1" onkeyup="if(event.key==='Enter')gotoPage()">
+            <span class="goto-text">页</span>
+            <button type="button" class="btn btn-primary btn-sm" onclick="gotoPage()">跳转</button>
+        </div>
+    </div>
+</div>
+</div>
 
-<!-- Push Modal -->
-<div class="modal fade" id="pushModal" tabindex="-1">
+<!-- 删除确认弹窗 -->
+<div class="modal fade" id="deleteJobModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">推送给学员</h5>
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-danger"></i> 确认删除</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>请选择要推送的学员：</p>
-                <div id="studentList" class="mb-3" style="max-height: 300px; overflow-y: auto;">
-                    <!-- 学员列表通过AJAX加载 -->
+                <div class="alert alert-warning">
+                    <strong>警告：</strong>删除岗位后将无法恢复，此操作不可撤销！
                 </div>
+                <p>确定要删除岗位 <strong id="delete_job_info"></strong> 吗？</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" onclick="confirmPush()">确认推送</button>
+                <button type="button" class="btn btn-danger" onclick="confirmJobDelete()">确认删除</button>
             </div>
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block extra_js %}
 <script>
+const JOB_EDIT_URL = '{{ url_for("admin.job_edit", id=0) }}'.replace('0', '');
+
+let currentPage = 1;
+let currentPerPage = 20;
+let filters = { keyword: '', province: '', city: '', company_type: '', recruit_type: '', education: '', status_filter: 'active' };
+
+function applyFiltersFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('keyword')) filters.keyword = params.get('keyword');
+    if (params.has('province')) filters.province = params.get('province');
+    if (params.has('city')) filters.city = params.get('city');
+    if (params.has('company_type')) filters.company_type = params.get('company_type');
+    if (params.has('recruit_type')) filters.recruit_type = params.get('recruit_type');
+    if (params.has('education')) filters.education = params.get('education');
+    if (params.has('status_filter')) filters.status_filter = params.get('status_filter');
+    if (params.has('page')) currentPage = parseInt(params.get('page'), 10) || 1;
+    if (params.has('per_page')) { const pp = parseInt(params.get('per_page'), 10); if ([20,50,100].includes(pp)) currentPerPage = pp; }
+}
+
+function syncFormToFilters() {
+    const kw = document.querySelector('#searchForm [name="keyword"]');
+    if (kw) kw.value = filters.keyword || '';
+    const ct = document.querySelector('#searchForm [name="company_type"]');
+    if (ct) ct.value = filters.company_type || '';
+    const rt = document.querySelector('#searchForm [name="recruit_type"]');
+    if (rt) rt.value = filters.recruit_type || '';
+    const ed = document.querySelector('#searchForm [name="education"]');
+    if (ed) ed.value = filters.education || '';
+    const st = document.querySelector('#searchForm [name="status_filter"]');
+    if (st) st.value = filters.status_filter || 'active';
+    const per = document.getElementById('perPage');
+    if (per) per.value = String(currentPerPage);
+}
+
+function buildQuery() {
+    let params = new URLSearchParams();
+    params.set('page', currentPage);
+    params.set('per_page', currentPerPage);
+    Object.keys(filters).forEach(k => { if (filters[k]) params.set(k, filters[k]); });
+    return params.toString();
+}
+
+function updateUrl() {}
+
+async function loadJobs() {
+    const body = document.getElementById('jobsBody');
+    body.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-5">加载中...</td></tr>';
+    try {
+        const res = await fetch('{{ url_for("admin.jobs_list") }}?' + buildQuery());
+        const data = await res.json();
+        renderJobs(data.jobs);
+        renderPagination(data.pagination);
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-5">加载失败</td></tr>';
+    }
+}
+
+function renderJobs(jobs) {
+    const body = document.getElementById('jobsBody');
+    if (!jobs || jobs.length === 0) {
+        body.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-5">暂无岗位数据</td></tr>';
+        document.getElementById('selectAll').checked = false;
+        return;
+    }
+    body.innerHTML = jobs.map(job => {
+        let deadlineHtml;
+        if (job.deadline) {
+            deadlineHtml = escapeHtml(job.deadline);
+        } else {
+            deadlineHtml = '<span class="text-info">长期有效</span>';
+        }
+        const recruitColorMap = {'校园招聘': 'success', '社会招聘': 'primary', '实习': 'warning'};
+        const rc = recruitColorMap[job.recruit_type] || 'secondary';
+        const editUrl = JOB_EDIT_URL + job.id + (window.location.search || '');
+        return `<tr style="height:50px;" class="${job.is_expired ? 'table-danger' : ''}">
+            <td style="padding-left:15px;"><input type="checkbox" name="job_ids" value="${job.id}" class="job-checkbox"></td>
+            <td><span class="text-primary fw-normal">${escapeHtml(job.job_name)}</span></td>
+            <td>${escapeHtml(job.company_name)}</td>
+            <td>${escapeHtml(job.company_type) || '-'}</td>
+            <td><span class="badge bg-${rc}">${escapeHtml(job.recruit_type) || '-'}</span></td>
+            <td class="text-danger fw-normal">${escapeHtml(formatSalary(job.salary_range))}</td>
+            <td>${escapeHtml(job.education_req) || '不限'}</td>
+            <td>${escapeHtml(job.location)}</td>
+            <td style="text-align:center;">${job.recruit_count}</td>
+            <td>${deadlineHtml}</td>
+            <td>
+                <a href="${editUrl}" class="btn btn-sm btn-outline-primary" title="编辑"><i class="bi bi-pencil"></i></a>
+                <button type="button" class="btn btn-sm btn-outline-danger" title="删除" onclick="showJobDeleteModal('${job.id}','${escapeAttr(job.job_name)}')"><i class="bi bi-trash"></i></button>
+            </td>
+        </tr>`;
+    }).join('');
+    // 全选联动
+    document.querySelectorAll('.job-checkbox').forEach(cb => {
+        cb.addEventListener('change', function() {
+            const all = document.querySelectorAll('.job-checkbox');
+            document.getElementById('selectAll').checked = Array.from(all).every(c => c.checked);
+        });
+    });
+}
+
+function renderPagination(p) {
+    document.getElementById('jobTotal').textContent = p.total;
+    document.getElementById('gotoPage').max = p.pages;
+    document.getElementById('gotoPage').value = p.page;
+    const nav = document.getElementById('paginationNav');
+    if (p.pages <= 1) {
+        nav.innerHTML = '';
+        return;
+    }
+    let html = '<ul class="pagination pagination-sm mb-0">';
+    html += `<li class="page-item ${p.has_prev ? '' : 'disabled'}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.prev_num})">&lt;</a></li>`;
+    const left = Math.max(1, p.page - 3);
+    const right = Math.min(p.pages, p.page + 3);
+    if (left > 1) {
+        html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(1)">1</a></li>`;
+        if (left > 2) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+    }
+    for (let i = left; i <= right; i++) {
+        html += `<li class="page-item ${i === p.page ? 'active' : ''}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${i})">${i}</a></li>`;
+    }
+    if (right < p.pages) {
+        if (right < p.pages - 1) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+        html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.pages})">${p.pages}</a></li>`;
+    }
+    html += `<li class="page-item ${p.has_next ? '' : 'disabled'}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.next_num})">&gt;</a></li>`;
+    html += '</ul>';
+    nav.innerHTML = html;
+}
+
+function goPage(page) { currentPage = page; updateUrl(); loadJobs(); }
+function changePerPage() { currentPerPage = parseInt(document.getElementById('perPage').value, 10); currentPage = 1; updateUrl(); loadJobs(); }
+
+function gotoPage() {
+    var input = document.getElementById('gotoPage');
+    var page = parseInt(input.value, 10);
+    if (isNaN(page)) return;
+    var max = parseInt(input.max, 10) || 1;
+    if (page < 1) page = 1;
+    if (page > max) page = max;
+    if (page !== currentPage) { currentPage = page; updateUrl(); loadJobs(); }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function escapeAttr(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function formatSalary(v) {
+    if (!v) return '-';
+    var t = String(v).trim();
+    if (/^0\s*[~\-—–]\s*0/.test(t) || /^0\s*0/.test(t)) return '-';
+    return v;
+}
+
+document.getElementById('searchForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    applyFilters();
+});
+
+function applyFilters() {
+    const fd = new FormData(document.getElementById('searchForm'));
+    filters.keyword = fd.get('keyword') || '';
+    filters.province = fd.get('province') || '';
+    filters.city = fd.get('city') || '';
+    filters.company_type = fd.get('company_type') || '';
+    filters.recruit_type = fd.get('recruit_type') || '';
+    filters.education = fd.get('education') || '';
+    filters.status_filter = fd.get('status_filter') || 'active';
+    currentPage = 1;
+    loadJobs();
+}
+
+document.getElementById('refreshBtn').addEventListener('click', function() { loadJobs(); });
+
 document.getElementById('selectAll').addEventListener('change', function() {
     document.querySelectorAll('.job-checkbox').forEach(cb => cb.checked = this.checked);
 });
 
-let currentAction = '';
+document.getElementById('batchDeleteBtn').addEventListener('click', async function() {
+    var checked = document.querySelectorAll('.job-checkbox:checked');
+    if (checked.length === 0) { showToast('请选择要删除的岗位', 'warning'); return; }
+    if (!confirm('确定删除选中的' + checked.length + ' 个岗位吗？')) return;
+    const formData = new FormData();
+    formData.append('csrf_token', '{{ csrf_token }}');
+    checked.forEach(cb => formData.append('job_ids', cb.value));
+    try {
+        const res = await fetch('{{ url_for("admin.job_delete") }}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'danger');
+        if (data.success) loadJobs();
+    } catch (e) { showToast('删除失败', 'danger'); }
+});
 
-function batchAction(action) {
-    const checked = document.querySelectorAll('.job-checkbox:checked');
-    if (checked.length === 0) {
-        alert('请先选择岗位');
-        return;
-    }
+/* ---- 工作地点 省市联动（全国全量，来自网络） ---- */
+const REGION_FALLBACK = {
+  '北京': ['北京'], '天津': ['天津'], '上海': ['上海'], '重庆': ['重庆'],
+  '河北': ['石家庄','唐山','保定','廊坊','邯郸','秦皇岛','邢台','沧州'],
+  '山西': ['太原','大同','临汾','运城','晋中','长治'],
+  '内蒙古': ['呼和浩特','包头','鄂尔多斯','赤峰','通辽'],
+  '辽宁': ['沈阳','大连','鞍山','锦州','本溪','丹东'],
+  '吉林': ['长春','吉林','延吉','四平'],
+  '黑龙江': ['哈尔滨','大庆','齐齐哈尔','牡丹江'],
+  '江苏': ['南京','苏州','无锡','常州','南通','扬州','徐州','镇江','泰州','盐城'],
+  '浙江': ['杭州','宁波','温州','嘉兴','绍兴','金华','台州','湖州','义乌'],
+  '安徽': ['合肥','芜湖','蚌埠','马鞍山','安庆','阜阳'],
+  '福建': ['福州','厦门','泉州','漳州','莆田','龙岩'],
+  '江西': ['南昌','赣州','九江','上饶','宜春'],
+  '山东': ['济南','青岛','烟台','潍坊','临沂','济宁','淄博','威海'],
+  '河南': ['郑州','洛阳','开封','南阳','新乡','许昌','安阳'],
+  '湖北': ['武汉','宜昌','襄阳','荆州','黄石','十堰'],
+  '湖南': ['长沙','株洲','湘潭','衡阳','岳阳','常德'],
+  '广东': ['广州','深圳','珠海','佛山','东莞','中山','惠州','汕头','江门','湛江','肇庆'],
+  '广西': ['南宁','桂林','柳州','北海','玉林'],
+  '海南': ['海口','三亚'],
+  '四川': ['成都','绵阳','德阳','宜宾','乐山','南充','泸州','达州'],
+  '贵州': ['贵阳','遵义','六盘水','毕节'],
+  '云南': ['昆明','大理','曲靖','丽江','玉溪'],
+  '西藏': ['拉萨','日喀则'],
+  '陕西': ['西安','咸阳','宝鸡','榆林','渭南'],
+  '甘肃': ['兰州','天水','酒泉','庆阳'],
+  '青海': ['西宁'],
+  '宁夏': ['银川','吴忠'],
+  '新疆': ['乌鲁木齐','喀什','克拉玛依','伊犁']
+};
+let REGION_DATA = {};
 
-    currentAction = action;
-
-    if (action === 'delete') {
-        if (!confirm('确定删除选中的岗位？')) return;
-        const form = document.getElementById('batchForm');
-        form.action = '{{ url_for("admin.job_delete") }}';
-        form.submit();
-    } else if (action === 'push') {
-        // 加载学员列表
-        fetch('/admin/students/list_json')
-            .then(r => r.json())
-            .then(data => {
-                let html = '';
-                data.forEach(s => {
-                    html += `<div class="form-check">
-                        <input class="form-check-input student-checkbox" type="checkbox" value="${s.id}" id="s${s.id}">
-                        <label class="form-check-label" for="s${s.id}">${s.real_name || s.username} (${s.username})</label>
-                    </div>`;
-                });
-                document.getElementById('studentList').innerHTML = html;
-                new bootstrap.Modal(document.getElementById('pushModal')).show();
-            });
-    } else {
-        const form = document.getElementById('batchForm');
-        if (action === 'activate') {
-            form.action = '{{ url_for("admin.job_toggle_status") }}';
-            let input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = 'action';
-            input.value = 'activate';
-            form.appendChild(input);
-        } else {
-            form.action = '{{ url_for("admin.job_toggle_status") }}';
-            let input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = 'action';
-            input.value = 'deactivate';
-            form.appendChild(input);
-        }
-        form.submit();
-    }
+function shortName(name) {
+  return (name || '').replace(/(维吾尔自治区|壮族自治区|回族自治区|特别行政区|自治区|省|市)$/, '');
 }
 
-function confirmPush() {
-    const checked = document.querySelectorAll('.job-checkbox:checked');
-    const students = document.querySelectorAll('.student-checkbox:checked');
+function normalizeLevel(json) {
+  const map = {};
+  const MUNICIPALITIES = ['北京市', '上海市', '天津市', '重庆市'];
+  (json || []).forEach(p => {
+    const pn = shortName(p.name || '');
+    if (!pn) return;
+    if (MUNICIPALITIES.indexOf(p.name) !== -1) { map[pn] = [pn]; return; }
+    map[pn] = (p.children || [])
+      .map(c => c.name && shortName(c.name))
+      .filter(n => n && n !== '市辖区');
+  });
+  return map;
+}
 
-    if (students.length === 0) {
-        alert('请选择至少一个学员');
-        return;
-    }
+function fillProvince(selected) {
+  const sel = document.getElementById('jobProvince');
+  let html = '<option value="">全部省份</option>';
+  Object.keys(REGION_DATA).forEach(p => {
+    html += `<option value="${p}" ${p === selected ? 'selected' : ''}>${p}</option>`;
+  });
+  sel.innerHTML = html;
+  if (selected) fillCity(selected, '');
+}
 
-    const form = document.getElementById('batchForm');
-    form.action = '{{ url_for("admin.push_do") }}';
+function fillCity(province, selected) {
+  const sel = document.getElementById('jobCity');
+  const cities = province ? (REGION_DATA[province] || []) : [];
+  let html = '<option value="">全部城市</option>';
+  cities.forEach(c => {
+    html += `<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`;
+  });
+  sel.innerHTML = html;
+}
 
-    // 移除旧的student_ids
-    form.querySelectorAll('input[name="student_ids"]').forEach(i => i.remove());
+document.getElementById('jobProvince').addEventListener('change', function() {
+  fillCity(this.value, '');
+});
 
-    students.forEach(s => {
-        let input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'student_ids';
-        input.value = s.value;
-        form.appendChild(input);
+function loadRegions() {
+  return fetch('https://unpkg.com/province-city-china@8/dist/level.json')
+    .then(r => r.json())
+    .then(json => { REGION_DATA = normalizeLevel(json); })
+    .catch(() => { REGION_DATA = REGION_FALLBACK; })
+    .then(function() {
+      fillProvince(filters.province);
+      if (!filters.province) fillCity('', '');
+      else fillCity(filters.province, filters.city);
     });
+}
 
-    form.submit();
+syncFormToFilters();
+loadRegions();
+loadJobs();
+</script>
+
+<script>
+let currentDeleteJobId = null;
+
+function showJobDeleteModal(id, jobName) {
+    currentDeleteJobId = id;
+    document.getElementById('delete_job_info').textContent = jobName;
+    new bootstrap.Modal(document.getElementById('deleteJobModal')).show();
+}
+
+async function confirmJobDelete() {
+    if (!currentDeleteJobId) return;
+    const formData = new FormData();
+    formData.append('csrf_token', '{{ csrf_token }}');
+    formData.append('job_ids', currentDeleteJobId);
+    try {
+        const res = await fetch('{{ url_for("admin.job_delete") }}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        bootstrap.Modal.getInstance(document.getElementById('deleteJobModal')).hide();
+        showToast(data.message, data.success ? 'success' : 'danger');
+        if (data.success) loadJobs();
+    } catch (e) { showToast('删除失败', 'danger'); }
 }
 </script>
 {% endblock %}

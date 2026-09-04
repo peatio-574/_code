@@ -3,153 +3,440 @@
 {% block title %}用户管理 - 岗位管理系统{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-shrink-0">
     <h4 class="mb-0"><i class="bi bi-people"></i> 用户管理</h4>
-    <a href="{{ url_for('admin.user_add') }}" class="btn btn-primary">
-        <i class="bi bi-plus-lg"></i> 新增用户
-    </a>
 </div>
 
-<!-- Search -->
-<div class="card mb-4">
+<!-- 搜索筛选 -->
+<div class="card mb-3 flex-shrink-0">
     <div class="card-body">
-        <form method="GET" class="row g-3">
-            <div class="col-md-3">
-                <select class="form-select" name="user_type">
-                    <option value="">全部类型</option>
-                    <option value="student" {% if user_type == 'student' %}selected{% endif %}>学员</option>
-                    <option value="admin" {% if user_type == 'admin' %}selected{% endif %}>管理员</option>
-                </select>
+        <form id="usersForm">
+            <div class="row g-3 mb-3">
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">关键字：</label>
+                    <input type="text" class="form-control" name="keyword" id="keywordInput" placeholder="请输入姓名/手机号">
+                </div>
+                <div class="col-md" style="position:relative;">
+                    <label class="form-label fw-bold">校区：</label>
+                    <input type="text" class="form-control" id="campusSearch" placeholder="请选择校区" 
+                           onfocus="showCampusDropdown()" oninput="filterCampusOptions()" autocomplete="off">
+                    <select class="form-select filter-select" name="campus" id="campusFilter" style="display:none;">
+                        <option value="">全部</option>
+                        {% for campus in campuses %}
+                        <option value="{{ campus.name }}">{{ campus.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <div id="campusDropdown" class="bg-white border rounded shadow-sm w-100" style="position:absolute; left:0; right:0; max-height:240px; overflow-y:auto; z-index:1000; display:none; margin-top:4px;">
+                        <div class="dropdown-item py-2 px-3" onclick="selectCampus('')" style="cursor:pointer; font-size:14px;">全部</div>
+                        {% for campus in campuses %}
+                        <div class="dropdown-item py-2 px-3" onclick="selectCampus('{{ campus.name }}')" style="cursor:pointer; font-size:14px;">{{ campus.name }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">角色：</label>
+                    <select class="form-select filter-select" name="role" id="roleFilter" onchange="applyFilters()">
+                        <option value="">全部</option>
+                        {% for role in roles %}
+                        <option value="{{ role.name }}">{{ role.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">状态：</label>
+                    <select class="form-select filter-select" name="status" id="statusFilter" onchange="applyFilters()">
+                        <option value="">全部</option>
+                        <option value="1">启用</option>
+                        <option value="0">禁用</option>
+                    </select>
+                </div>
             </div>
-            <div class="col-md-4">
-                <input type="text" class="form-control" name="keyword" placeholder="搜索用户名/姓名/手机" value="{{ keyword }}">
-            </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-primary">
+            <div class="d-flex gap-2 flex-wrap">
+                <button type="submit" class="btn btn-primary fw-bold">
                     <i class="bi bi-search"></i> 搜索
                 </button>
-                <a href="{{ url_for('admin.users_list') }}" class="btn btn-secondary">重置</a>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Users Table -->
-<div class="card">
-    <div class="card-body p-0">
-        <form id="deleteForm" method="POST" action="{{ url_for('admin.user_delete') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <div class="table-responsive">
-                <table class="table table-hover table-striped mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th width="40"><input type="checkbox" id="selectAll"></th>
-                            <th>用户名</th>
-                            <th>姓名</th>
-                            <th>类型</th>
-                            <th>学历</th>
-                            <th>手机</th>
-                            <th>状态</th>
-                            <th width="150">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for user in users %}
-                        <tr>
-                            <td><input type="checkbox" name="user_ids" value="{{ user.id }}" class="user-checkbox"></td>
-                            <td>{{ user.username }}</td>
-                            <td>{{ user.real_name }}</td>
-                            <td>
-                                {% if user.user_type == 'admin' %}
-                                <span class="badge bg-primary">管理员</span>
-                                {% else %}
-                                <span class="badge bg-info">学员</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ user.education }}</td>
-                            <td>{{ user.phone }}</td>
-                            <td>
-                                {% if user.is_active %}
-                                <span class="badge bg-success">正常</span>
-                                {% else %}
-                                <span class="badge bg-secondary">禁用</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <a href="{{ url_for('admin.user_edit', id=user.id) }}" class="btn btn-sm btn-outline-primary" title="编辑">
-                                    <i class="bi bi-pencil"></i>
-                                </a>
-                                <form method="POST" action="{{ url_for('admin.user_toggle_status') }}" class="d-inline">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                    <input type="hidden" name="user_id" value="{{ user.id }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-{{ 'warning' if user.is_active else 'success' }}" title="{{ '禁用' if user.is_active else '启用' }}">
-                                        <i class="bi bi-{{ 'pause' if user.is_active else 'play' }}"></i>
-                                    </button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        {% if not users %}
-                        <tr>
-                            <td colspan="8" class="text-center text-muted py-4">暂无用户数据</td>
-                        </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Batch Actions -->
-            <div class="card-footer bg-white d-flex gap-2">
-                <button type="button" class="btn btn-sm btn-outline-danger" onclick="batchDelete()">
+                <a href="{{ url_for('admin.users_page') }}" class="btn btn-reset fw-bold">
+                    <i class="bi bi-arrow-counterclockwise"></i> 重置
+                </a>
+                <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
+                <a href="{{ url_for('admin.user_add') }}" class="btn btn-primary fw-bold">
+                    <i class="bi bi-plus-lg"></i> 新增管理员
+                </a>
+                <a href="{{ url_for('admin.import_admins') }}" class="btn btn-primary fw-bold">
+                    <i class="bi bi-upload"></i> 导入管理员
+                </a>
+                <button type="button" class="btn btn-primary fw-bold" id="batchDeleteBtn">
                     <i class="bi bi-trash"></i> 批量删除
+                </button>
+                <button type="button" class="btn btn-warning fw-bold" id="refreshBtn" title="刷新">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
                 </button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Pagination -->
-{% if pagination.pages > 1 %}
-<nav class="mt-3">
-    <ul class="pagination justify-content-center">
-        {% if pagination.has_prev %}
-        <li class="page-item">
-            <a class="page-link" href="?page={{ pagination.prev_num }}&keyword={{ keyword }}&user_type={{ user_type }}">上一页</a>
-        </li>
-        {% endif %}
-        {% for p in pagination.iter_pages() %}
-        {% if p %}
-        <li class="page-item {% if p == pagination.page %}active{% endif %}">
-            <a class="page-link" href="?page={{ p }}&keyword={{ keyword }}&user_type={{ user_type }}">{{ p }}</a>
-        </li>
-        {% else %}
-        <li class="page-item disabled"><span class="page-link">...</span></li>
-        {% endif %}
-        {% endfor %}
-        {% if pagination.has_next %}
-        <li class="page-item">
-            <a class="page-link" href="?page={{ pagination.next_num }}&keyword={{ keyword }}&user_type={{ user_type }}">下一页</a>
-        </li>
-        {% endif %}
-    </ul>
-</nav>
-{% endif %}
+<!-- 管理员列表 -->
+<div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
+    <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
+            <colgroup>
+                <col style="width:40px;">
+                <col style="width:8%;">
+                <col style="width:10%;">
+                <col style="width:10%;">
+                <col style="width:10%;">
+                <col style="width:8%;">
+                <col style="width:14%;">
+                <col style="width:8%;">
+                <col style="width:6%;">
+                <col style="width:12%;">
+                <col style="width:12%;">
+                <col style="width:8%;">
+            </colgroup>
+            <thead class="sticky-thead">
+                <tr>
+                    <th style="width:40px;"><input type="checkbox" id="selectAll"></th>
+                    <th style="padding-left:15px;">姓名</th>
+                    <th>手机号</th>
+                    <th>密码</th>
+                    <th>校区</th>
+                    <th>角色</th>
+                    <th>权限</th>
+                    <th>创建人</th>
+                    <th>状态</th>
+                    <th>创建时间</th>
+                    <th>修改时间</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="usersBody"></tbody>
+        </table>
+    </div>
+    <div class="card-footer page-footer d-flex flex-wrap align-items-center gap-3 px-3 py-2" style="justify-content:flex-start;">
+        <div class="d-flex align-items-center gap-3">
+            <span class="page-total">共 <strong id="userTotal">0</strong> 条</span>
+            <select class="form-select page-select" id="perPage" onchange="changePerPage()">
+                <option value="20" selected>20条/页</option>
+                <option value="50">50条/页</option>
+                <option value="100">100条/页</option>
+            </select>
+        </div>
+        <nav id="paginationNav"></nav>
+        <div class="d-flex align-items-center gap-1">
+            <span class="goto-text">前往</span>
+            <input type="number" class="form-control goto-input" id="gotoPage" min="1" onkeyup="if(event.key==='Enter')gotoPage()">
+            <span class="goto-text">页</span>
+            <button type="button" class="btn btn-primary btn-sm" onclick="gotoPage()">跳转</button>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- Delete Verification Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-danger"></i> 确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <strong>警告：</strong>删除管理员将取消其所有权限，此操作不可恢复！
+                </div>
+                <p>请验证用户信息以确认删除：</p>
+                <p class="mb-3">用户：<strong id="delete_user_info"></strong></p>
+                <div class="mb-3">
+                    <label class="form-label">请输入用户姓名 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="verify_name" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">请输入用户电话 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="verify_phone" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" onclick="confirmDelete()">确认删除</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
+<style>
+#campusDropdown .dropdown-item { transition: background-color 0.15s; }
+#campusDropdown .dropdown-item:hover { background-color: #e9ecef; }
+#campusDropdown .dropdown-item:active { background-color: #dee2e6; }
+#campusDropdown { scrollbar-width: thin; scrollbar-color: #adb5deg #f8f9fa; }
+#campusDropdown::-webkit-scrollbar { width: 6px; }
+#campusDropdown::-webkit-scrollbar-track { background: #f8f9fa; border-radius: 3px; }
+#campusDropdown::-webkit-scrollbar-thumb { background: #adb5deg; border-radius: 3px; }
+#campusDropdown::-webkit-scrollbar-thumb:hover { background: #868e96; }
+</style>
 <script>
+const USER_EDIT_URL = '{{ url_for("admin.user_edit", id=0) }}'.replace('0', '');
+let currentPage = 1;
+let currentPerPage = 20;
+let currentDeleteId = null;
+let filters = { keyword: '', campus: '', role: '', status: '' };
+
+function buildQuery() {
+    let params = new URLSearchParams();
+    params.set('page', currentPage);
+    params.set('per_page', currentPerPage);
+    if (filters.keyword) params.set('keyword', filters.keyword);
+    if (filters.campus) params.set('campus', filters.campus);
+    if (filters.role) params.set('role', filters.role);
+    if (filters.status) params.set('status', filters.status);
+    return params.toString();
+}
+
+function updateUrl() {}
+
+async function loadUsers() {
+    const body = document.getElementById('usersBody');
+    body.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-5">加载中...</td></tr>';
+    try {
+        const res = await fetch('{{ url_for("admin.users_list") }}?' + buildQuery());
+        const data = await res.json();
+        renderUsers(data.users);
+        renderPagination(data.pagination);
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-5">加载失败</td></tr>';
+    }
+}
+
+function renderUsers(users) {
+    const body = document.getElementById('usersBody');
+    if (!users || users.length === 0) {
+        body.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-5">暂无管理员数据</td></tr>';
+        return;
+    }
+    body.innerHTML = users.map(u => {
+        let perm = '<small>' +
+            (u.can_view_jobs ? '<span class="badge bg-success me-1">查看</span>' : '') +
+            (u.can_push_jobs ? '<span class="badge bg-success me-1">推送</span>' : '') +
+            (u.can_manage_students ? '<span class="badge bg-success">管理</span>' : '') +
+            '</small>';
+        const statusSwitch = `<div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="status_${u.id}" ${u.is_active ? 'checked' : ''} onchange="toggleUserStatus(${u.id}, this)">
+        </div>`;
+        let ops = `<a href="${USER_EDIT_URL + u.id}" class="btn btn-sm btn-outline-primary me-1" title="编辑"><i class="bi bi-pencil"></i></a>`;
+        ops += `<button type="button" class="btn btn-sm btn-outline-danger" title="删除" onclick="showDeleteModal('${u.id}','${escapeAttr(u.real_name)}','${escapeAttr(u.phone)}')"><i class="bi bi-trash"></i></button>`;
+        return `<tr>
+            <td style="padding-left:15px;"><input type="checkbox" name="user_ids" value="${u.id}" class="user-checkbox"></td>
+            <td>${escapeHtml(u.real_name)}</td>
+            <td>${escapeHtml(u.phone)}</td>
+            <td>${u.password ? escapeHtml(u.password) : '-'}</td>
+            <td>${escapeHtml(u.campus)}</td>
+            <td>${escapeHtml(u.role)}</td>
+            <td>${perm}</td>
+            <td>${escapeHtml(u.creator)}</td>
+            <td>${statusSwitch}</td>
+            <td>${escapeHtml(u.created_at)}</td>
+            <td>${escapeHtml(u.updated_at)}</td>
+            <td>${ops}</td>
+        </tr>`;
+    }).join('');
+    // 全选联动
+    document.querySelectorAll('.user-checkbox').forEach(cb => {
+        cb.addEventListener('change', function() {
+            const all = document.querySelectorAll('.user-checkbox');
+            document.getElementById('selectAll').checked = Array.from(all).every(c => c.checked);
+        });
+    });
+}
+
+function renderPagination(p) {
+    document.getElementById('userTotal').textContent = p.total;
+    document.getElementById('gotoPage').max = p.pages;
+    document.getElementById('gotoPage').value = p.page;
+    const nav = document.getElementById('paginationNav');
+    if (p.pages <= 1) { nav.innerHTML = ''; return; }
+    let html = '<ul class="pagination pagination-sm mb-0">';
+    html += `<li class="page-item ${p.has_prev ? '' : 'disabled'}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.prev_num})">&lt;</a></li>`;
+    const left = Math.max(1, p.page - 3), right = Math.min(p.pages, p.page + 3);
+    if (left > 1) {
+        html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(1)">1</a></li>`;
+        if (left > 2) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+    }
+    for (let i = left; i <= right; i++) {
+        html += `<li class="page-item ${i === p.page ? 'active' : ''}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${i})">${i}</a></li>`;
+    }
+    if (right < p.pages) {
+        if (right < p.pages - 1) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+        html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.pages})">${p.pages}</a></li>`;
+    }
+    html += `<li class="page-item ${p.has_next ? '' : 'disabled'}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.next_num})">&gt;</a></li>`;
+    html += '</ul>';
+    nav.innerHTML = html;
+}
+
+function goPage(page) { currentPage = page; updateUrl(); loadUsers(); }
+function changePerPage() { currentPerPage = parseInt(document.getElementById('perPage').value, 10); currentPage = 1; updateUrl(); loadUsers(); }
+function gotoPage() {
+    var input = document.getElementById('gotoPage');
+    var page = parseInt(input.value, 10);
+    if (isNaN(page)) return;
+    var max = parseInt(input.max, 10) || 1;
+    if (page < 1) page = 1;
+    if (page > max) page = max;
+    if (page !== currentPage) { currentPage = page; updateUrl(); loadUsers(); }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+function escapeAttr(str) {
+    if (!str) return '';
+    return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function filterCampusOptions() {
+    const input = document.getElementById('campusSearch');
+    const dropdown = document.getElementById('campusDropdown');
+    const filter = input.value.toLowerCase();
+    const items = dropdown.querySelectorAll('.dropdown-item');
+    dropdown.style.display = 'block';
+    items.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        item.style.display = text.includes(filter) ? 'block' : 'none';
+    });
+}
+
+function showCampusDropdown() {
+    const dropdown = document.getElementById('campusDropdown');
+    dropdown.style.display = 'block';
+}
+
+function selectCampus(value) {
+    const input = document.getElementById('campusSearch');
+    const dropdown = document.getElementById('campusDropdown');
+    const select = document.getElementById('campusFilter');
+    input.value = value;
+    select.value = value;
+    dropdown.style.display = 'none';
+    applyFilters();
+}
+
+document.addEventListener('click', function(e) {
+    const search = document.getElementById('campusSearch');
+    const dropdown = document.getElementById('campusDropdown');
+    if (!search.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.style.display = 'none';
+    }
+});
+
+async function toggleUserStatus(userId, checkbox) {
+    const formData = new FormData();
+    formData.append('user_id', userId);
+    formData.append('csrf_token', '{{ csrf_token }}');
+    try {
+        const res = await fetch('{{ url_for("admin.user_toggle_status") }}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadUsers();
+        } else {
+            checkbox.checked = !checkbox.checked;
+            showToast(data.message, 'danger');
+        }
+    } catch (e) {
+        checkbox.checked = !checkbox.checked;
+        showToast('操作失败', 'danger');
+    }
+}
+
+document.getElementById('usersForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    applyFilters();
+});
+
+function applyFilters() {
+    filters.keyword = document.getElementById('keywordInput').value || '';
+    filters.campus = document.getElementById('campusFilter').value || '';
+    filters.role = document.getElementById('roleFilter').value || '';
+    filters.status = document.getElementById('statusFilter').value || '';
+    currentPage = 1;
+    loadUsers();
+}
+
+document.getElementById('refreshBtn').addEventListener('click', function() { loadUsers(); });
+
 document.getElementById('selectAll').addEventListener('change', function() {
     document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = this.checked);
 });
 
-function batchDelete() {
-    const checked = document.querySelectorAll('.user-checkbox:checked');
-    if (checked.length === 0) {
-        alert('请先选择用户');
-        return;
-    }
-    if (!confirm('确定删除选中的用户？此操作不可恢复！')) return;
-    document.getElementById('deleteForm').submit();
+document.getElementById('batchDeleteBtn').addEventListener('click', async function() {
+    var checked = document.querySelectorAll('.user-checkbox:checked');
+    if (checked.length === 0) { showToast('请选择要删除的管理员', 'warning'); return; }
+    if (!confirm('确定删除选中的' + checked.length + ' 个管理员吗？')) return;
+    const formData = new FormData();
+    formData.append('csrf_token', '{{ csrf_token }}');
+    checked.forEach(cb => formData.append('user_ids', cb.value));
+    try {
+        const res = await fetch('{{ url_for("admin.user_batch_delete") }}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'danger');
+        if (data.success) loadUsers();
+    } catch (e) { showToast('删除失败', 'danger'); }
+});
+
+function showDeleteModal(userId, realName, phone) {
+    currentDeleteId = userId;
+    document.getElementById('delete_user_info').textContent = realName + '（' + phone + '）';
+    document.getElementById('verify_name').value = '';
+    document.getElementById('verify_phone').value = '';
+    new bootstrap.Modal(document.getElementById('deleteModal')).show();
 }
+
+async function confirmDelete() {
+    const name = document.getElementById('verify_name').value.trim();
+    const phone = document.getElementById('verify_phone').value.trim();
+    const formData = new FormData();
+    formData.append('user_id', currentDeleteId);
+    formData.append('verify_name', name);
+    formData.append('verify_phone', phone);
+    formData.append('csrf_token', '{{ csrf_token }}');
+    try {
+        const res = await fetch('{{ url_for("admin.user_delete") }}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'danger');
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+            loadUsers();
+        }
+    } catch (e) { showToast('删除失败', 'danger'); }
+}
+
+// 从URL读取campus参数
+const urlParams = new URLSearchParams(window.location.search);
+const campusParam = urlParams.get('campus');
+if (campusParam) {
+    document.getElementById('campusSearch').value = campusParam;
+    document.getElementById('campusFilter').value = campusParam;
+    filters.campus = campusParam;
+}
+
+loadUsers();
 </script>
 {% endblock %}

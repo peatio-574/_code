@@ -1,27 +1,29 @@
 {% extends "base.html" %}
 
-{% block title %}批量导入 - 岗位管理系统{% endblock %}
+{% block title %}导入学员 - 岗位管理系统{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-lg-8">
+    <div class="col-lg-10">
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-upload"></i> 批量导入岗位</h5>
+                <h5 class="mb-0"><i class="bi bi-upload"></i> 批量导入学员</h5>
             </div>
             <div class="card-body">
                 <div class="alert alert-info">
                     <h6><i class="bi bi-info-circle"></i> 导入说明</h6>
-                    <ol class="mb-0">
-                        <li>请下载导入模板并按要求填写，模板中含一行示例数据，导入前请删除示例行</li>
-                        <li>必填字段：公司名称、职位名称</li>
-                        <li>截止时间格式：YYYY-MM-DD HH:MM:SS（精确到秒，如 2024-06-30 23:59:59）</li>
-                        <li>薪资范围、招聘人数等字段请按示例格式填写</li>
-                    </ol>
+                    <ul class="mb-0">
+                        <li>请下载模板填写数据后上传</li>
+                        <li><strong>必填：</strong>身份证号（18位）、姓名</li>
+                        <li><strong>选填：</strong>手机号、学历、专业、性别、政治面貌、生源地、意向城市、意向岗位、证书、备注、毕业时间、密码</li>
+                        <li>身份证号作为登录账号，不可重复</li>
+                        <li>系统会自动从身份证号识别性别和出生日期</li>
+                        <li>默认密码为123456</li>
+                    </ul>
                 </div>
 
-                <div class="mb-4">
-                    <a href="{{ url_for('admin.job_template') }}" class="btn btn-outline-primary">
+                <div class="mb-3">
+                    <a href="{{ url_for('admin.template_students') }}" class="btn btn-outline-success">
                         <i class="bi bi-download"></i> 下载导入模板
                     </a>
                 </div>
@@ -29,18 +31,14 @@
                 <form method="POST" enctype="multipart/form-data" id="importForm">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <div class="mb-3">
-                        <label class="form-label">选择Excel文件</label>
+                        <label class="form-label">选择Excel文件 <span class="text-danger">*</span></label>
                         <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required id="importFile">
                     </div>
                     <div id="importStatus" class="text-muted small mb-2"></div>
-                    <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-success" id="importSubmitBtn">
-                            <i class="bi bi-upload"></i> 开始导入
-                        </button>
-                        <a href="{{ url_for('admin.jobs_page') }}" class="btn btn-secondary">
-                            <i class="bi bi-arrow-left"></i> 返回
-                        </a>
-                    </div>
+                    <button type="submit" class="btn btn-primary" id="importSubmitBtn">
+                        <i class="bi bi-upload"></i> 开始导入
+                    </button>
+                    <a href="{{ url_for('admin.students_page') }}" class="btn btn-secondary">返回</a>
                 </form>
             </div>
         </div>
@@ -70,7 +68,7 @@ document.getElementById('importForm').addEventListener('submit', function(e) {
         status.textContent = '';
         if (data.success) {
             showToast(data.message, 'success');
-            setTimeout(function() { window.location.href = '{{ url_for("admin.jobs_page") }}'; }, 1200);
+            setTimeout(function() { window.location.href = '{{ url_for("admin.students_page") }}'; }, 1200);
         } else {
             showToast(data.message || '导入失败', 'danger');
         }

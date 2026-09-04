@@ -56,9 +56,30 @@
             color: white;
         }
         .header-user {
+            flex: 1;
             display: flex;
             align-items: center;
+            justify-content: flex-end;
             gap: 12px;
+        }
+        .header-user .header-welcome-wrap {
+            flex: 1 1 auto;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+        .header-user .header-welcome {
+            display: inline-block;
+            white-space: nowrap;
+            color: rgba(255,255,255,0.92);
+            font-size: 14px;
+            padding-left: 100%;
+            animation: welcome-rtl 16s linear infinite;
+        }
+        @keyframes welcome-rtl {
+            from { transform: translateX(0); }
+            to   { transform: translateX(-100%); }
         }
         .header-user .user-avatar {
             width: 32px;
@@ -141,7 +162,7 @@
             right: 0;
             bottom: 0;
             pointer-events: none;
-            z-index: 0;
+            z-index: 500;
             overflow: hidden;
         }
         .watermark::before {
@@ -171,19 +192,249 @@
         .table th { font-weight: 500; color: #666; font-size: 13px; }
         .table td { vertical-align: middle; }
         
+        /* Sticky table header */
+        .table thead.sticky-thead { position: sticky; top: 0; z-index: 10; }
+        .table thead.sticky-thead th {
+            background: #e6e8eb;
+            color: #333;
+            font-weight: 700;
+            font-size: 13px;
+            padding: 12px 14px;
+            white-space: nowrap;
+            border-bottom: 1px solid #d9dce1;
+        }
+        .table thead.sticky-thead th:first-child { padding-left: 15px; }
+        .table tbody td { padding: 10px 14px; color: #333; }
+        .table tbody td:first-child { padding-left: 15px; }
+        
         /* Forms */
         .form-label { font-size: 14px; font-weight: 500; color: #555; margin-bottom: 6px; }
         .form-control, .form-select { font-size: 14px; }
+
+        /* 搜索筛选下拉框 */
+        .form-select.filter-select {
+            height: 38px;
+            border-radius: 6px;
+            background-color: #fff;
+            color: #444;
+            font-size: 13px;
+            padding: 8px 34px 8px 12px;
+            border: 1px solid #dde1e7;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23666' class='bi bi-chevron-down' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            background-size: 14px 14px;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-select.filter-select:hover { border-color: #b9cdfb; }
+        .form-select.filter-select:focus {
+            border-color: #4a7cf7;
+            box-shadow: 0 0 0 3px rgba(74,124,247,0.12);
+        }
+
+        /* 截止日期（时间组件） */
+        .form-control.deadline-input {
+            height: 38px;
+            border-radius: 6px;
+            border: 1px solid #dde1e7;
+            color: #444;
+            font-size: 13px;
+            padding: 8px 34px 8px 12px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%234a7cf7' class='bi bi-calendar3' viewBox='0 0 16 16'%3E%3Cpath d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zM1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857V3.857z'/%3E%3Cpath d='M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 11px center;
+            background-size: 15px 15px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-control.deadline-input:hover { border-color: #b9cdfb; }
+        .form-control.deadline-input:focus {
+            border-color: #4a7cf7;
+            box-shadow: 0 0 0 3px rgba(74,124,247,0.12);
+        }
+        .form-control.deadline-input::-webkit-calendar-picker-indicator {
+            position: absolute;
+            right: 0;
+            width: 34px;
+            height: 100%;
+            background: transparent;
+            opacity: 0;
+            cursor: pointer;
+        }
         
         /* Buttons */
-        .btn { border-radius: 6px; font-size: 14px; }
+        .btn {
+            border-radius: 6px;
+            font-size: 14px;
+            padding: 8px 16px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+        .btn i { font-size: 15px; }
+        .btn:focus { box-shadow: none; }
+        .btn-primary {
+            background: #4a7cf7;
+            border-color: #4a7cf7;
+            color: #fff !important;
+            font-weight: 700;
+        }
+        .btn-primary:hover {
+            background: #3b6cd8;
+            border-color: #3b6cd8;
+            color: #fff !important;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(74,124,247,0.25);
+        }
+        .btn-warning {
+            background: #faad14;
+            border-color: #faad14;
+            color: #fff !important;
+            font-weight: 700;
+        }
+        .btn-warning:hover {
+            background: #e69f0f;
+            border-color: #e69f0f;
+            color: #fff !important;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(250,173,20,0.25);
+        }
+        .btn-success {
+            background: #52c41a;
+            border-color: #52c41a;
+        }
+        .btn-success:hover {
+            background: #45ad16;
+            border-color: #45ad16;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(82,196,26,0.25);
+        }
+        .btn-secondary {
+            background: #f0f2f5;
+            border-color: #e6e8eb;
+            color: #555;
+        }
+        .btn-secondary:hover {
+            background: #e6e8eb;
+            border-color: #d9dce1;
+            color: #333;
+        }
+        .btn-reset {
+            background: #8a919b;
+            border-color: #8a919b;
+            color: #fff !important;
+        }
+        .btn-reset:hover {
+            background: #757d87;
+            border-color: #757d87;
+            color: #fff !important;
+        }
+        .btn-outline-danger:hover {
+            background: #ff4d4f;
+            border-color: #ff4d4f;
+        }
         .btn-sm { padding: 4px 12px; font-size: 13px; }
+        .btn-sm i { font-size: 13px; }
         
         /* Badges */
         .badge { font-size: 12px; font-weight: 500; }
         
         /* Alerts */
         .alert { font-size: 14px; }
+        
+        /* Pagination */
+        .page-footer {
+            background: #fff;
+            border-top: 1px solid #eef0f3;
+        }
+        .page-total {
+            color: #666;
+            font-size: 13px;
+        }
+        .page-total strong { color: #333; font-weight: 600; }
+        .page-select {
+            width: auto;
+            min-width: 96px;
+            height: 30px;
+            font-size: 13px;
+            color: #555;
+            border-color: #e6e8eb;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .page-select:focus { border-color: #4a7cf7; box-shadow: none; }
+        
+        /* Toggle Switch - Larger Size */
+        .form-check.form-switch .form-check-input {
+            width: 3em;
+            height: 1.5em;
+            cursor: pointer;
+        }
+        .form-check.form-switch .form-check-input:checked {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+        }
+        .form-check.form-switch .form-check-input:focus {
+            box-shadow: none;
+            border-color: #86b7fe;
+        }
+        
+        .pagination-sm .page-link {
+            min-width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 8px;
+            font-size: 13px;
+            color: #555;
+            background: #fff;
+            border: 1px solid #e6e8eb;
+            border-radius: 6px !important;
+            margin: 0 2px;
+            transition: all 0.2s;
+        }
+        .pagination-sm .page-link:hover {
+            color: #4a7cf7;
+            border-color: #4a7cf7;
+            background: #f0f7ff;
+        }
+        .pagination-sm .page-item.active .page-link {
+            background: #4a7cf7;
+            border-color: #4a7cf7;
+            color: #fff;
+            font-weight: 600;
+        }
+        .pagination-sm .page-item.disabled .page-link {
+            color: #ccc;
+            background: #fafafa;
+            cursor: not-allowed;
+        }
+        .pagination-sm .page-item.ellipsis .page-link {
+            color: #555;
+            background: #fff;
+            cursor: default;
+        }
+        .goto-text { color: #666; font-size: 13px; }
+        .goto-input {
+            width: 52px !important;
+            height: 30px;
+            text-align: center;
+            font-size: 13px;
+            color: #333;
+            border-color: #e6e8eb !important;
+            border-radius: 6px;
+            padding: 0 !important;
+            display: inline-block;
+        }
+        .goto-input:focus { border-color: #4a7cf7 !important; box-shadow: none; }
+        .goto-input::-webkit-outer-spin-button,
+        .goto-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .goto-input[type=number] { -moz-appearance: textfield; appearance: textfield; }
         
         /* Pagination */
         .page-link { font-size: 14px; }
@@ -204,6 +455,64 @@
             .header-nav { display: none; }
         }
         .mobile-menu { display: none; }
+
+        /* Toast Notifications */
+        .toast-container-fixed {
+            position: fixed;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1080;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 360px;
+            max-width: calc(100vw - 40px);
+        }
+        .app-toast {
+            pointer-events: auto;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-left: 4px solid;
+            animation: toastIn 0.3s ease;
+            opacity: 0;
+            transform: translateY(-12px);
+            transition: all 0.35s ease;
+        }
+        .app-toast.show { opacity: 1; transform: translateY(0); }
+        .app-toast.hide { opacity: 0; transform: translateY(-12px); }
+        .app-toast .toast-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            flex-shrink: 0;
+            font-size: 16px;
+        }
+        .app-toast .toast-msg { flex: 1; font-size: 14px; color: #333; line-height: 1.4; word-break: break-word; }
+        .app-toast .toast-close { color: #999; font-size: 16px; cursor: pointer; flex-shrink: 0; line-height: 1; }
+        .app-toast .toast-close:hover { color: #333; }
+        .app-toast.toast-success { border-left-color: #52c41a; }
+        .app-toast.toast-success .toast-icon { background: #52c41a; }
+        .app-toast.toast-danger { border-left-color: #ff4d4f; }
+        .app-toast.toast-danger .toast-icon { background: #ff4d4f; }
+        .app-toast.toast-warning { border-left-color: #fa8c16; }
+        .app-toast.toast-warning .toast-icon { background: #fa8c16; }
+        .app-toast.toast-info { border-left-color: #1890ff; }
+        .app-toast.toast-info .toast-icon { background: #1890ff; }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(-12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -214,26 +523,8 @@
             <i class="bi bi-building"></i>
             岗位管理系统
         </div>
-        <div class="header-nav">
-            {% if current_user.is_admin() %}
-            <a href="{{ url_for('admin.dashboard') }}" class="{% if request.endpoint == 'admin.dashboard' %}active{% endif %}">首页</a>
-            {% if can_access_menu('jobs') %}
-            <a href="{{ url_for('admin.jobs_list') }}" class="{% if 'job' in request.endpoint %}active{% endif %}">岗位管理</a>
-            {% endif %}
-            {% if can_access_menu('students') %}
-            <a href="{{ url_for('admin.users_list') }}" class="{% if 'user' in request.endpoint %}active{% endif %}">用户管理</a>
-            {% endif %}
-            {% if can_access_menu('push') %}
-            <a href="{{ url_for('admin.push_list') }}" class="{% if request.endpoint == 'admin.push_list' %}active{% endif %}">推送管理</a>
-            {% endif %}
-            {% if can_access_menu('accounts') %}
-            <a href="{{ url_for('admin.logs_list') }}" class="{% if request.endpoint == 'admin.logs_list' %}active{% endif %}">操作日志</a>
-            {% endif %}
-            {% else %}
-            <a href="{{ url_for('student.my_pushes') }}" class="{% if request.endpoint == 'student.my_pushes' %}active{% endif %}">我的推送</a>
-            {% endif %}
-        </div>
         <div class="header-user dropdown">
+            <div class="header-welcome-wrap"><span class="header-welcome">你好，{% if current_user.is_super_admin() %}超级管理员{% elif current_user.is_admin() %}{{ current_user.real_name or current_user.username }}{{ current_user.role }}{% else %}{{ current_user.real_name or current_user.username }}{% endif %}！</span></div>
             <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle" data-bs-toggle="dropdown">
                 <div class="user-avatar">
                     <i class="bi bi-person-fill"></i>
@@ -242,7 +533,10 @@
             </a>
             <ul class="dropdown-menu dropdown-menu-end">
                 <li><span class="dropdown-item-text text-muted small">
-                    {% if current_user.username == 'admin' %}超级管理员{% elif current_user.is_admin() %}管理员{% else %}学员{% endif %}
+                    {% if current_user.is_super_admin() %}超级管理员
+                    {% elif current_user.is_admin() and current_user.role %}{{ current_user.role }}
+                    {% elif current_user.is_admin() %}管理员
+                    {% else %}学员{% endif %}
                 </span></li>
                 <li><hr class="dropdown-divider"></li>
                 <li><a class="dropdown-item" href="{{ url_for('auth.change_password') }}"><i class="bi bi-key me-2"></i>修改密码</a></li>
@@ -253,7 +547,7 @@
 
     <!-- Sidebar -->
     <div class="sidebar d-none d-md-block">
-        {% if current_user.is_admin() %}
+        {% if current_user.is_super_admin() %}
         <div class="menu-group">
             <div class="menu-title">主菜单</div>
             <a href="{{ url_for('admin.dashboard') }}" class="menu-item {% if request.endpoint == 'admin.dashboard' %}active{% endif %}">
@@ -262,30 +556,47 @@
         </div>
         <div class="menu-group">
             <div class="menu-title">业务管理</div>
-            {% if can_access_menu('jobs') %}
-            <a href="{{ url_for('admin.jobs_list') }}" class="menu-item {% if 'job' in request.endpoint %}active{% endif %}">
+            <a href="{{ url_for('admin.jobs_page') }}" class="menu-item {% if 'job' in request.endpoint %}active{% endif %}">
                 <i class="bi bi-briefcase"></i> 岗位管理
             </a>
-            {% endif %}
-            {% if can_access_menu('students') %}
-            <a href="{{ url_for('admin.users_list') }}" class="menu-item {% if 'user' in request.endpoint %}active{% endif %}">
+            <a href="{{ url_for('admin.users_page') }}" class="menu-item {% if 'user' in request.endpoint or 'import_admin' in request.endpoint %}active{% endif %}">
                 <i class="bi bi-people"></i> 用户管理
             </a>
-            {% endif %}
-            {% if can_access_menu('push') %}
-            <a href="{{ url_for('admin.push_list') }}" class="menu-item {% if request.endpoint == 'admin.push_list' %}active{% endif %}">
-                <i class="bi bi-send"></i> 推送管理
+            <a href="{{ url_for('admin.students_page') }}" class="menu-item {% if 'student' in request.endpoint %}active{% endif %}">
+                <i class="bi bi-person-lines-fill"></i> 学员管理
             </a>
-            {% endif %}
+            <a href="{{ url_for('admin.push_page') }}" class="menu-item {% if request.endpoint == 'admin.push_page' %}active{% endif %}">
+                <i class="bi bi-send"></i> 推荐记录
+            </a>
         </div>
-        {% if can_access_menu('accounts') %}
         <div class="menu-group">
             <div class="menu-title">系统管理</div>
-            <a href="{{ url_for('admin.logs_list') }}" class="menu-item {% if request.endpoint == 'admin.logs_list' %}active{% endif %}">
+            <a href="{{ url_for('admin.campuses_page') }}" class="menu-item {% if 'campus' in request.endpoint %}active{% endif %}">
+                <i class="bi bi-building"></i> 校区管理
+            </a>
+            <a href="{{ url_for('admin.roles_page') }}" class="menu-item {% if 'role' in request.endpoint %}active{% endif %}">
+                <i class="bi bi-person-badge"></i> 角色管理
+            </a>
+            <a href="{{ url_for('admin.logs_page') }}" class="menu-item {% if request.endpoint == 'admin.logs_page' %}active{% endif %}">
                 <i class="bi bi-journal-text"></i> 操作日志
             </a>
         </div>
-        {% endif %}
+        {% elif current_user.is_admin() %}
+        <div class="menu-group">
+            <div class="menu-title">主菜单</div>
+            <a href="{{ url_for('admin.dashboard') }}" class="menu-item {% if request.endpoint == 'admin.dashboard' %}active{% endif %}">
+                <i class="bi bi-house-door"></i> 首页
+            </a>
+        </div>
+        <div class="menu-group">
+            <div class="menu-title">业务管理</div>
+            <a href="{{ url_for('admin.students_page') }}" class="menu-item {% if 'student' in request.endpoint %}active{% endif %}">
+                <i class="bi bi-people"></i> 学员管理
+            </a>
+            <a href="{{ url_for('admin.push_page') }}" class="menu-item {% if request.endpoint == 'admin.push_page' %}active{% endif %}">
+                <i class="bi bi-send"></i> 岗位推荐
+            </a>
+        </div>
         {% else %}
         <div class="menu-group">
             <div class="menu-title">我的</div>
@@ -301,21 +612,62 @@
 
     <!-- Main Content -->
     <div class="main-content">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        {% for category, message in messages %}
-        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-        {% endfor %}
-        {% endif %}
-        {% endwith %}
-
         {% block content %}{% endblock %}
     </div>
 
+    <!-- Toast 提示 -->
+    <div class="toast-container-fixed" id="toastContainer"></div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    const TOAST_ICONS = {
+        success: 'bi-check-lg',
+        danger: 'bi-x-lg',
+        warning: 'bi-exclamation-lg',
+        info: 'bi-info-lg'
+    };
+    function showToast(message, category) {
+        var container = document.getElementById('toastContainer');
+        if (!container) return;
+        var type = ['success','danger','warning','info'].includes(category) ? category : 'info';
+        var toast = document.createElement('div');
+        toast.className = 'app-toast toast-' + type;
+        toast.innerHTML =
+            '<div class="toast-icon"><i class="bi ' + TOAST_ICONS[type] + '"></i></div>' +
+            '<div class="toast-msg">' + message + '</div>' +
+            '<div class="toast-close" onclick="this.closest(\'.app-toast\').remove()">&times;</div>';
+        container.appendChild(toast);
+        requestAnimationFrame(function(){ toast.classList.add('show'); });
+        setTimeout(function() {
+            toast.classList.remove('show');
+            toast.classList.add('hide');
+            setTimeout(function(){ toast.remove(); }, 350);
+        }, 3500);
+    }
+    // 渲染后端 flash 消息
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    showToast({{ message|tojson }}, '{{ category }}');
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    // 顶部欢迎跑马灯：记录动画进行位置，切换页面不重置
+    (function(){
+        var el = document.querySelector('.header-welcome');
+        if (!el) return;
+        var DUR = 16000; // 与 CSS welcome-rtl 的 16s 一致
+        var now = Date.now();
+        var start = parseInt(sessionStorage.getItem('welcomeAnimStart') || '0', 10);
+        if (!start) {
+            start = now;
+            sessionStorage.setItem('welcomeAnimStart', String(start));
+        }
+        var elapsed = (now - start) % DUR;
+        el.style.animationDelay = '-' + (elapsed / 1000) + 's';
+    })();
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

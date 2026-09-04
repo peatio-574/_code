@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+
+{% block title %}角色管理 - 岗位管理系统{% endblock %}
+
+{% block content %}
+<div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-shrink-0">
+    <h4 class="mb-0"><i class="bi bi-person-badge"></i> 角色管理</h4>
+</div>
+
+<!-- 搜索筛选 -->
+<div class="card mb-3 flex-shrink-0">
+    <div class="card-body">
+        <form id="searchForm">
+            <div class="d-flex align-items-end gap-3">
+                <div style="flex:0 0 200px;">
+                    <label class="form-label fw-bold">关键字：</label>
+                    <input type="text" class="form-control form-control-sm" name="keyword" placeholder="角色名称" style="height:38px;">
+                </div>
+                <div class="d-flex gap-2 pb-0">
+                    <button type="submit" class="btn btn-primary fw-bold">
+                        <i class="bi bi-search"></i> 搜索
+                    </button>
+                    <a href="{{ url_for('admin.roles_page') }}" class="btn btn-secondary btn-reset fw-bold">重置</a>
+                    <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
+                    <button type="button" class="btn btn-primary fw-bold" onclick="showAddModal()">
+                        <i class="bi bi-plus-lg"></i> 新增角色
+                    </button>
+                    <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
+                    <button type="button" class="btn btn-warning fw-bold" id="refreshBtn" title="刷新">
+                        <i class="bi bi-arrow-clockwise"></i> 刷新
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 角色列表 -->
+<div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
+    <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
+            <colgroup>
+                <col style="width:180px;">
+                <col style="width:100px;">
+                <col style="width:80px;">
+                <col style="width:140px;">
+                <col style="width:140px;">
+                <col style="width:100px;">
+            </colgroup>
+            <thead class="sticky-thead">
+                <tr>
+                    <th style="padding-left:15px;">角色名称</th>
+                    <th>关联人数</th>
+                    <th>状态</th>
+                    <th>创建时间</th>
+                    <th>更新时间</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="rolesBody"></tbody>
+        </table>
+    </div>
+    <div class="card-footer page-footer d-flex flex-wrap align-items-center gap-3 px-3 py-2" style="justify-content:flex-start;">
+        <div class="d-flex align-items-center gap-3">
+            <span class="page-total">共 <strong id="roleTotal">0</strong> 条</span>
+            <select class="form-select page-select" id="perPage" onchange="changePerPage()">
+                <option value="20" selected>20条/页</option>
+                <option value="50">50条/页</option>
+                <option value="100">100条/页</option>
+            </select>
+        </div>
+        <nav id="paginationNav"></nav>
+        <div class="d-flex align-items-center gap-1">
+            <span class="goto-text">前往</span>
+            <input type="number" class="form-control goto-input" id="gotoPage" min="1" onkeyup="if(event.key==='Enter')gotoPage()">
+            <span class="goto-text">页</span>
+            <button type="button" class="btn btn-primary btn-sm" onclick="gotoPage()">跳转</button>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- 新增/编辑弹窗 -->
+<div class="modal fade" id="roleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="roleModalTitle"><i class="bi bi-person-badge"></i> 新增角色</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="roleForm">
+                <input type="hidden" name="role_id" id="role_id">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">角色名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" id="role_name" 
+                               placeholder="如：校长、副校长、班主任" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">状态 <span class="text-danger">*</span></label>
+                        <select class="form-select" name="is_active" id="role_is_active" required>
+                            <option value="1">启用</option>
+                            <option value="0">禁用</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentAction = '{{ url_for("admin.role_add") }}';
+let modalInstance = null;
+let currentPage = 1;
+let currentPerPage = 20;
+let keyword = '';
+
+function buildQuery() {
+    let params = new URLSearchParams();
+    params.set('page', currentPage);
+    params.set('per_page', currentPerPage);
+    if (keyword) params.set('keyword', keyword);
+    return params.toString();
+}
+
+async function loadRoles() {
+    const body = document.getElementById('rolesBody');
+    body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">加载中...</td></tr>';
+    try {
+        const res = await fetch('{{ url_for("admin.roles_list") }}?' + buildQuery());
+        const data = await res.json();
+        renderRoles(data.roles);
+        renderPagination(data.pagination);
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-5">加载失败</td></tr>';
+    }
+}
+
+function renderRoles(roles) {
+    const body = document.getElementById('rolesBody');
+    if (!roles || roles.length === 0) {
+        body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">暂无角色数据</td></tr>';
+        return;
+    }
+    body.innerHTML = roles.map(function(r) {
+        const statusSwitch = `<div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="status_${r.id}" ${r.is_active ? 'checked' : ''} onchange="toggleRoleStatus(${r.id}, this)">
+        </div>`;
+        return '<tr>' +
+            '<td style="padding-left:15px;">' + escapeHtml(r.name) + '</td>' +
+            '<td>' + r.user_count + '</td>' +
+            '<td>' + statusSwitch + '</td>' +
+            '<td>' + escapeHtml(r.created_at) + '</td>' +
+            '<td>' + escapeHtml(r.updated_at) + '</td>' +
+            '<td>' +
+                '<a href="javascript:void(0)" class="btn btn-sm btn-outline-primary me-1 btn-edit" data-id="' + r.id + '" data-name="' + escapeAttr(r.name) + '" data-active="' + r.is_active + '" title="编辑"><i class="bi bi-pencil"></i></a>' +
+                '<button type="button" class="btn btn-sm btn-outline-danger btn-del" data-id="' + r.id + '" data-name="' + escapeAttr(r.name) + '" title="删除"><i class="bi bi-trash"></i></button>' +
+            '</td>' +
+        '</tr>';
+    }).join('');
+    bindRoleClicks();
+}
+
+function bindRoleClicks() {
+    document.querySelectorAll('#rolesBody .btn-edit').forEach(btn => {
+        btn.addEventListener('click', function() { showEditModal(this.dataset.id, this.dataset.name, this.dataset.active); });
+    });
+    document.querySelectorAll('#rolesBody .btn-del').forEach(btn => {
+        btn.addEventListener('click', function() { deleteRole(this.dataset.id, this.dataset.name); });
+    });
+}
+
+function renderPagination(p) {
+    document.getElementById('roleTotal').textContent = p.total;
+    document.getElementById('gotoPage').max = p.pages;
+    document.getElementById('gotoPage').value = p.page;
+    const nav = document.getElementById('paginationNav');
+    if (p.pages <= 1) { nav.innerHTML = ''; return; }
+    let html = '<ul class="pagination pagination-sm mb-0">';
+    html += '<li class="page-item ' + (p.has_prev ? '' : 'disabled') + '"><a class="page-link" href="javascript:void(0)" onclick="goPage(' + p.prev_num + ')">&lt;</a></li>';
+    const left = Math.max(1, p.page - 3), right = Math.min(p.pages, p.page + 3);
+    if (left > 1) {
+        html += '<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(1)">1</a></li>';
+        if (left > 2) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+    }
+    for (let i = left; i <= right; i++) {
+        html += '<li class="page-item ' + (i === p.page ? 'active' : '') + '"><a class="page-link" href="javascript:void(0)" onclick="goPage(' + i + ')">' + i + '</a></li>';
+    }
+    if (right < p.pages) {
+        if (right < p.pages - 1) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+        html += '<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(' + p.pages + ')">' + p.pages + '</a></li>';
+    }
+    html += '<li class="page-item ' + (p.has_next ? '' : 'disabled') + '"><a class="page-link" href="javascript:void(0)" onclick="goPage(' + p.next_num + ')">&gt;</a></li>';
+    html += '</ul>';
+    nav.innerHTML = html;
+}
+
+function goPage(page) { currentPage = page; loadRoles(); }
+function changePerPage() { currentPerPage = parseInt(document.getElementById('perPage').value, 10); currentPage = 1; loadRoles(); }
+function gotoPage() {
+    var input = document.getElementById('gotoPage');
+    var page = parseInt(input.value, 10);
+    if (isNaN(page)) return;
+    var max = parseInt(input.max, 10) || 1;
+    if (page < 1) page = 1;
+    if (page > max) page = max;
+    if (page !== currentPage) { currentPage = page; loadRoles(); }
+}
+
+function showAddModal() {
+    currentAction = '{{ url_for("admin.role_add") }}';
+    document.getElementById('roleModalTitle').innerHTML = '<i class="bi bi-person-badge"></i> 新增角色';
+    document.getElementById('role_id').value = '';
+    document.getElementById('role_name').value = '';
+    document.getElementById('role_is_active').value = '1';
+    modalInstance = new bootstrap.Modal(document.getElementById('roleModal'));
+    modalInstance.show();
+}
+
+function showEditModal(id, name, isActive) {
+    currentAction = '{{ url_for("admin.role_edit") }}';
+    document.getElementById('roleModalTitle').innerHTML = '<i class="bi bi-pencil"></i> 编辑角色';
+    document.getElementById('role_id').value = id;
+    document.getElementById('role_name').value = name;
+    document.getElementById('role_is_active').value = isActive === 'true' || isActive === true ? '1' : '0';
+    modalInstance = new bootstrap.Modal(document.getElementById('roleModal'));
+    modalInstance.show();
+}
+
+async function toggleRoleStatus(roleId, checkbox) {
+    const formData = new FormData();
+    formData.append('role_id', roleId);
+    formData.append('csrf_token', '{{ csrf_token }}');
+    try {
+        const res = await fetch('{{ url_for("admin.role_toggle_status") }}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadRoles();
+        } else {
+            checkbox.checked = !checkbox.checked;
+            showToast(data.message, 'danger');
+        }
+    } catch (e) {
+        checkbox.checked = !checkbox.checked;
+        showToast('操作失败', 'danger');
+    }
+}
+
+async function deleteRole(id, name) {
+    if (!confirm('确定删除角色【' + name + '】吗？')) return;
+    const formData = new FormData();
+    formData.append('role_id', id);
+    formData.append('csrf_token', '{{ csrf_token }}');
+    try {
+        const res = await fetch('{{ url_for("admin.role_delete") }}', { method: 'POST', body: formData });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'danger');
+        if (data.success) loadRoles();
+    } catch (e) { showToast('删除失败', 'danger'); }
+}
+
+document.getElementById('roleForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    formData.append('csrf_token', '{{ csrf_token }}');
+    try {
+        const res = await fetch(currentAction, { method: 'POST', body: formData });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'danger');
+        if (data.success) {
+            modalInstance.hide();
+            loadRoles();
+        }
+    } catch (e) { showToast('保存失败', 'danger'); }
+});
+
+document.getElementById('searchForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    keyword = (new FormData(this).get('keyword') || '').trim();
+    currentPage = 1;
+    loadRoles();
+});
+
+document.getElementById('refreshBtn').addEventListener('click', function() { loadRoles(); });
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+function escapeAttr(str) {
+    if (!str) return '';
+    return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+loadRoles();
+</script>
+{% endblock %}

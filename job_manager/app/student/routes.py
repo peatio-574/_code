@@ -1,8 +1,7 @@
-from flask import render_template, redirect, url_for, flash, request, abort
+from flask import render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
-from functools import wraps
 from datetime import datetime, timedelta
-from ..models import db, Job, PushRecord, OperationLog
+from ..models import db, Job, PushRecord
 from ..permissions import student_required
 from . import student_bp
 
@@ -16,20 +15,23 @@ def index():
 @student_bp.route('/my_pushes')
 @student_required
 def my_pushes():
-    """学员只能查看推送给自己的岗位"""
+    """学员只能查看推送给自己的、未过期的岗位"""
     page = request.args.get('page', 1, type=int)
     deadline_filter = request.args.get('deadline_before', '')
     job_id = request.args.get('job_id', '', type=str)
 
-    # 只查询推送给当前学员的岗位
-    query = PushRecord.query.filter_by(student_id=current_user.id)
+    query = PushRecord.query.filter_by(student_id=current_user.id, is_deleted=False)
+    query = query.join(Job).filter(
+        Job.is_deleted == False,
+        Job.status == 'active',
+        db.or_(Job.deadline == None, Job.deadline >= datetime.now())
+    )
 
-    # 截止时间筛选
     if deadline_filter:
         try:
             days = int(deadline_filter)
             deadline_date = datetime.now() + timedelta(days=days)
-            query = query.join(Job).filter(Job.deadline <= deadline_date, Job.deadline >= datetime.now())
+            query = query.filter(Job.deadline <= deadline_date, Job.deadline >= datetime.now())
         except (ValueError, TypeError):
             pass
 
@@ -37,28 +39,25 @@ def my_pushes():
         page=page, per_page=20, error_out=False
     )
 
-    # 标记为已读
     for push in pagination.items:
         if not push.is_read:
             push.is_read = True
     db.session.commit()
 
-    # 选中的岗位详情
     selected_job = None
     if job_id:
         try:
             job_id_int = int(job_id)
-            # 验证权限：只能查看被推送的岗位
             has_push = PushRecord.query.filter_by(
-                job_id=job_id_int,
-                student_id=current_user.id
+                job_id=job_id_int, student_id=current_user.id, is_deleted=False
             ).first()
             if has_push:
-                selected_job = Job.query.get(job_id_int)
+                job = Job.query.filter_by(id=job_id_int, is_deleted=False).first()
+                if job and not job.is_expired():
+                    selected_job = job
         except (ValueError, TypeError):
             pass
 
-    # 默认选中第一个
     if not selected_job and pagination.items:
         selected_job = pagination.items[0].job
 
@@ -73,20 +72,18 @@ def my_pushes():
 @student_bp.route('/job/<int:id>')
 @student_required
 def job_detail(id):
-    """学员只能查看推送给自己的岗位详情"""
-    job = Job.query.get_or_404(id)
-
-    # 严格验证权限：只能查看被推送的岗位
+    job = Job.query.filter_by(id=id, is_deleted=False).first_or_404()
+    if job.is_expired():
+        flash('该岗位已过期', 'danger')
+        return redirect(url_for('student.my_pushes'))
+    
     push = PushRecord.query.filter_by(
-        job_id=id,
-        student_id=current_user.id
+        job_id=id, student_id=current_user.id, is_deleted=False
     ).first()
-
     if not push:
         flash('无权查看该岗位', 'danger')
         return redirect(url_for('student.my_pushes'))
-
-    # 标记为已读
+    
     if not push.is_read:
         push.is_read = True
         db.session.commit()

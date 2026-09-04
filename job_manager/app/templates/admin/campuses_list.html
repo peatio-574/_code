@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+
+{% block title %}校区管理 - 岗位管理系统{% endblock %}
+
+{% block content %}
+<div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-shrink-0">
+    <h4 class="mb-0"><i class="bi bi-building"></i> 校区管理</h4>
+</div>
+
+<!-- 搜索筛选 -->
+<div class="card mb-3 flex-shrink-0">
+    <div class="card-body">
+        <form id="searchForm">
+            <div class="d-flex align-items-end gap-3">
+                <div style="flex:0 0 200px;">
+                    <label class="form-label fw-bold">校区名称：</label>
+                    <input type="text" class="form-control form-control-sm" name="keyword" placeholder="搜索校区名称" style="height:38px;">
+                </div>
+                <div class="d-flex gap-2 pb-0">
+                    <button type="submit" class="btn btn-primary fw-bold">
+                        <i class="bi bi-search"></i> 搜索
+                    </button>
+                    <a href="{{ url_for('admin.campuses_page') }}" class="btn btn-secondary btn-reset fw-bold">重置</a>
+                    <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
+                    <button type="button" class="btn btn-primary fw-bold" onclick="showAddModal()">
+                        <i class="bi bi-plus-lg"></i> 新增校区
+                    </button>
+                    <span style="border-left:1px solid #e6e8eb; align-self:stretch;"></span>
+                    <button type="button" class="btn btn-warning fw-bold" id="refreshBtn" title="刷新">
+                        <i class="bi bi-arrow-clockwise"></i> 刷新
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 校区列表 -->
+<div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
+    <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
+            <colgroup>
+                <col style="width:200px;">
+                <col style="width:100px;">
+                <col style="width:100px;">
+                <col style="width:140px;">
+                <col style="width:140px;">
+                <col style="width:100px;">
+            </colgroup>
+            <thead class="sticky-thead">
+                <tr>
+                    <th style="padding-left:15px;">校区名称</th>
+                    <th>管理员数量</th>
+                    <th>学生数量</th>
+                    <th>创建时间</th>
+                    <th>更新时间</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="campusesBody"></tbody>
+        </table>
+    </div>
+    <div class="card-footer page-footer d-flex flex-wrap align-items-center gap-3 px-3 py-2" style="justify-content:flex-start;">
+        <div class="d-flex align-items-center gap-3">
+            <span class="page-total">共 <strong id="campusTotal">0</strong> 条</span>
+            <select class="form-select page-select" id="perPage" onchange="changePerPage()">
+                <option value="20" selected>20条/页</option>
+                <option value="50">50条/页</option>
+                <option value="100">100条/页</option>
+            </select>
+        </div>
+        <nav id="paginationNav"></nav>
+        <div class="d-flex align-items-center gap-1">
+            <span class="goto-text">前往</span>
+            <input type="number" class="form-control goto-input" id="gotoPage" min="1" onkeyup="if(event.key==='Enter')gotoPage()">
+            <span class="goto-text">页</span>
+            <button type="button" class="btn btn-primary btn-sm" onclick="gotoPage()">跳转</button>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- 新增/编辑弹窗 -->
+<div class="modal fade" id="campusModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="campusModalTitle"><i class="bi bi-building"></i> 新增校区</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="campusForm">
+                <input type="hidden" name="campus_id" id="campus_id">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">校区名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" id="campus_name" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentAction = '{{ url_for("admin.campus_add") }}';
+let modalInstance = null;
+let currentPage = 1;
+let currentPerPage = 20;
+let keyword = '';
+
+function buildQuery() {
+    let params = new URLSearchParams();
+    params.set('page', currentPage);
+    params.set('per_page', currentPerPage);
+    if (keyword) params.set('keyword', keyword);
+    return params.toString();
+}
+
+async function loadCampuses() {
+    const body = document.getElementById('campusesBody');
+    body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">加载中...</td></tr>';
+    try {
+        const res = await fetch('{{ url_for("admin.campuses_list") }}?' + buildQuery());
+        const data = await res.json();
+        renderCampuses(data.campuses);
+        renderPagination(data.pagination);
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-5">加载失败</td></tr>';
+    }
+}
+
+function renderCampuses(campuses) {
+    const body = document.getElementById('campusesBody');
+    if (!campuses || campuses.length === 0) {
+        body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">暂无校区数据</td></tr>';
+        return;
+    }
+    body.innerHTML = campuses.map(function(c) {
+        const adminLink = `<a href="{{ url_for("admin.users_page") }}?campus=${encodeURIComponent(c.name)}" class="text-primary fw-bold" title="查看管理员">${c.admin_count || 0}</a>`;
+        const studentLink = `<a href="{{ url_for("admin.students_page") }}?campus=${encodeURIComponent(c.name)}" class="text-success fw-bold" title="查看学员">${c.student_count || 0}</a>`;
+        return '<tr>' +
+            '<td style="padding-left:15px;">' + escapeHtml(c.name) + '</td>' +
+            '<td>' + adminLink + '</td>' +
+            '<td>' + studentLink + '</td>' +
+            '<td>' + escapeHtml(c.created_at) + '</td>' +
+            '<td>' + escapeHtml(c.updated_at) + '</td>' +
+            '<td>' +
+                '<a href="javascript:void(0)" class="btn btn-sm btn-outline-primary me-1 btn-edit" data-id="' + c.id + '" data-name="' + escapeAttr(c.name) + '" title="编辑"><i class="bi bi-pencil"></i></a>' +
+                '<button type="button" class="btn btn-sm btn-outline-danger btn-del" data-id="' + c.id + '" data-name="' + escapeAttr(c.name) + '" title="删除"><i class="bi bi-trash"></i></button>' +
+            '</td>' +
+        '</tr>';
+    }).join('');
+    bindCampusClicks();
+}
+
+function bindCampusClicks() {
+    document.querySelectorAll('#campusesBody .btn-edit').forEach(btn => {
+        btn.addEventListener('click', function() { showEditModal(this.dataset.id, this.dataset.name); });
+    });
+    document.querySelectorAll('#campusesBody .btn-del').forEach(btn => {
+        btn.addEventListener('click', function() { deleteCampus(this.dataset.id, this.dataset.name); });
+    });
+}
+
+function renderPagination(p) {
+    document.getElementById('campusTotal').textContent = p.total;
+    document.getElementById('gotoPage').max = p.pages;
+    document.getElementById('gotoPage').value = p.page;
+    const nav = document.getElementById('paginationNav');
+    if (p.pages <= 1) { nav.innerHTML = ''; return; }
+    let html = '<ul class="pagination pagination-sm mb-0">';
+    html += '<li class="page-item ' + (p.has_prev ? '' : 'disabled') + '"><a class="page-link" href="javascript:void(0)" onclick="goPage(' + p.prev_num + ')">&lt;</a></li>';
+    const left = Math.max(1, p.page - 3), right = Math.min(p.pages, p.page + 3);
+    if (left > 1) {
+        html += '<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(1)">1</a></li>';
+        if (left > 2) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+    }
+    for (let i = left; i <= right; i++) {
+        html += '<li class="page-item ' + (i === p.page ? 'active' : '') + '"><a class="page-link" href="javascript:void(0)" onclick="goPage(' + i + ')">' + i + '</a></li>';
+    }
+    if (right < p.pages) {
+        if (right < p.pages - 1) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+        html += '<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(' + p.pages + ')">' + p.pages + '</a></li>';
+    }
+    html += '<li class="page-item ' + (p.has_next ? '' : 'disabled') + '"><a class="page-link" href="javascript:void(0)" onclick="goPage(' + p.next_num + ')">&gt;</a></li>';
+    html += '</ul>';
+    nav.innerHTML = html;
+}
+
+function goPage(page) { currentPage = page; loadCampuses(); }
+function changePerPage() { currentPerPage = parseInt(document.getElementById('perPage').value, 10); currentPage = 1; loadCampuses(); }
+function gotoPage() {
+    var input = document.getElementById('gotoPage');
+    var page = parseInt(input.value, 10);
+    if (isNaN(page)) return;
+    var max = parseInt(input.max, 10) || 1;
+    if (page < 1) page = 1;
+    if (page > max) page = max;
+    if (page !== currentPage) { currentPage = page; loadCampuses(); }
+}
+
+function showAddModal() {
+    currentAction = '{{ url_for("admin.campus_add") }}';
+    document.getElementById('campusModalTitle').innerHTML = '<i class="bi bi-building"></i> 新增校区';
+    document.getElementById('campus_id').value = '';
+    document.getElementById('campus_name').value = '';
+    modalInstance = new bootstrap.Modal(document.getElementById('campusModal'));
+    modalInstance.show();
+}
+
+function showEditModal(id, name) {
+    currentAction = '{{ url_for("admin.campus_edit") }}';
+    document.getElementById('campusModalTitle').innerHTML = '<i class="bi bi-pencil"></i> 编辑校区';
+    document.getElementById('campus_id').value = id;
+    document.getElementById('campus_name').value = name;
+    modalInstance = new bootstrap.Modal(document.getElementById('campusModal'));
+    modalInstance.show();
+}
+
+async function deleteCampus(id, name) {
+    if (!confirm('确定删除校区【' + name + '】吗？')) return;
+    const formData = new FormData();
+    formData.append('campus_id', id);
+    formData.append('csrf_token', '{{ csrf_token }}');
+    try {
+        const res = await fetch('{{ url_for("admin.campus_delete") }}', { method: 'POST', body: formData });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'danger');
+        if (data.success) loadCampuses();
+    } catch (e) { showToast('删除失败', 'danger'); }
+}
+
+document.getElementById('campusForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    formData.append('csrf_token', '{{ csrf_token }}');
+    try {
+        const res = await fetch(currentAction, { method: 'POST', body: formData });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'danger');
+        if (data.success) {
+            modalInstance.hide();
+            loadCampuses();
+        }
+    } catch (e) { showToast('保存失败', 'danger'); }
+});
+
+document.getElementById('searchForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    keyword = (new FormData(this).get('keyword') || '').trim();
+    currentPage = 1;
+    loadCampuses();
+});
+
+document.getElementById('refreshBtn').addEventListener('click', function() { loadCampuses(); });
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+function escapeAttr(str) {
+    if (!str) return '';
+    return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+loadCampuses();
+</script>
+{% endblock %}

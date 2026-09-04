@@ -94,7 +94,7 @@
             right: 0;
             bottom: 0;
             pointer-events: none;
-            z-index: 0;
+            z-index: 1030;
             overflow: hidden;
         }
         .watermark::before {
@@ -348,6 +348,64 @@
         ::-webkit-scrollbar-track { background: #f1f1f1; }
         ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #999; }
+
+        /* Toast Notifications */
+        .toast-container-fixed {
+            position: fixed;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1080;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 360px;
+            max-width: calc(100vw - 40px);
+        }
+        .app-toast {
+            pointer-events: auto;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-left: 4px solid;
+            animation: toastIn 0.3s ease;
+            opacity: 0;
+            transform: translateY(-12px);
+            transition: all 0.35s ease;
+        }
+        .app-toast.show { opacity: 1; transform: translateY(0); }
+        .app-toast.hide { opacity: 0; transform: translateY(-12px); }
+        .app-toast .toast-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            flex-shrink: 0;
+            font-size: 16px;
+        }
+        .app-toast .toast-msg { flex: 1; font-size: 14px; color: #333; line-height: 1.4; word-break: break-word; }
+        .app-toast .toast-close { color: #999; font-size: 16px; cursor: pointer; flex-shrink: 0; line-height: 1; }
+        .app-toast .toast-close:hover { color: #333; }
+        .app-toast.toast-success { border-left-color: #52c41a; }
+        .app-toast.toast-success .toast-icon { background: #52c41a; }
+        .app-toast.toast-danger { border-left-color: #ff4d4f; }
+        .app-toast.toast-danger .toast-icon { background: #ff4d4f; }
+        .app-toast.toast-warning { border-left-color: #fa8c16; }
+        .app-toast.toast-warning .toast-icon { background: #fa8c16; }
+        .app-toast.toast-info { border-left-color: #1890ff; }
+        .app-toast.toast-info .toast-icon { background: #1890ff; }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(-12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -385,30 +443,42 @@
         {% block content %}{% endblock %}
     </div>
 
-    <!-- Flash Messages -->
-    <div class="position-fixed top-0 end-0 p-3" style="z-index: 9999;">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        {% for category, message in messages %}
-        <div class="toast show align-items-center text-bg-{{ category }} border-0" role="alert">
-            <div class="d-flex">
-                <div class="toast-body">{{ message }}</div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-            </div>
-        </div>
-        {% endfor %}
-        {% endif %}
-        {% endwith %}
-    </div>
+    <!-- Toast 提示 -->
+    <div class="toast-container-fixed" id="toastContainer"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        setTimeout(() => {
-            document.querySelectorAll('.toast').forEach(t => {
-                t.classList.remove('show');
-                setTimeout(() => t.remove(), 300);
-            });
-        }, 3000);
+    const TOAST_ICONS = {
+        success: 'bi-check-lg',
+        danger: 'bi-x-lg',
+        warning: 'bi-exclamation-lg',
+        info: 'bi-info-lg'
+    };
+    function showToast(message, category) {
+        var container = document.getElementById('toastContainer');
+        if (!container) return;
+        var type = ['success','danger','warning','info'].includes(category) ? category : 'info';
+        var toast = document.createElement('div');
+        toast.className = 'app-toast toast-' + type;
+        toast.innerHTML =
+            '<div class="toast-icon"><i class="bi ' + TOAST_ICONS[type] + '"></i></div>' +
+            '<div class="toast-msg">' + message + '</div>' +
+            '<div class="toast-close" onclick="this.closest(\'.app-toast\').remove()">&times;</div>';
+        container.appendChild(toast);
+        requestAnimationFrame(function(){ toast.classList.add('show'); });
+        setTimeout(function() {
+            toast.classList.remove('show');
+            toast.classList.add('hide');
+            setTimeout(function(){ toast.remove(); }, 350);
+        }, 3500);
+    }
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    showToast({{ message|tojson }}, '{{ category }}');
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
     </script>
     {% block extra_js %}{% endblock %}
 </body>
