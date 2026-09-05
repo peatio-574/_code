@@ -15,19 +15,46 @@
                     <option value="">全部操作</option>
                     <option value="login">登录</option>
                     <option value="logout">登出</option>
-                    <option value="add_job">新增岗位</option>
-                    <option value="edit_job">编辑岗位</option>
-                    <option value="delete_job">删除岗位</option>
-                    <option value="import_jobs">导入岗位</option>
-                    <option value="import_admins">导入管理员</option>
-                    <option value="import_students">导入学员</option>
-                    <option value="push_jobs">推送岗位</option>
-                    <option value="add_campus">新增校区</option>
-                    <option value="add_role">新增角色</option>
                     <option value="change_password">修改密码</option>
+                    <optgroup label="校区管理">
+                        <option value="add_campus">新增校区</option>
+                        <option value="edit_campus">编辑校区</option>
+                        <option value="toggle_campus_status">启用/禁用校区</option>
+                        <option value="delete_campus">删除校区</option>
+                    </optgroup>
+                    <optgroup label="角色管理">
+                        <option value="add_role">新增角色</option>
+                        <option value="edit_role">编辑角色</option>
+                        <option value="toggle_role_status">启用/禁用角色</option>
+                        <option value="delete_role">删除角色</option>
+                    </optgroup>
+                    <optgroup label="管理员管理">
+                        <option value="add_user">新增管理员</option>
+                        <option value="edit_user">编辑管理员</option>
+                        <option value="toggle_status">启用/禁用管理员</option>
+                        <option value="delete_user">删除管理员</option>
+                        <option value="import_admins">导入管理员</option>
+                    </optgroup>
+                    <optgroup label="学员管理">
+                        <option value="toggle_student_status">启用/禁用学员</option>
+                        <option value="import_students">导入学员</option>
+                    </optgroup>
+                    <optgroup label="岗位管理">
+                        <option value="add_job">新增岗位</option>
+                        <option value="edit_job">编辑岗位</option>
+                        <option value="delete_job">删除岗位</option>
+                        <option value="import_jobs">导入岗位</option>
+                    </optgroup>
+                    <optgroup label="岗位推送">
+                        <option value="push_jobs">推送岗位</option>
+                    </optgroup>
                 </select>
             </div>
-            <div class="col-auto" style="display:flex; align-items:flex-end;">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">操作人：</label>
+                <input type="text" class="form-control" name="operator" id="operatorFilter" placeholder="搜索操作人" onkeyup="if(event.key==='Enter')applyFilters()">
+            </div>
+            <div class="d-flex align-items-center gap-2 pt-2">
                 <button type="submit" class="btn btn-primary fw-bold">
                     <i class="bi bi-search"></i> 筛选
                 </button>
@@ -40,18 +67,25 @@
 <!-- 日志列表 -->
 <div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
     <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <style>
+        .table.no-data { border: none !important; }
+        .table.no-data thead th { border-bottom: none !important; }
+        .table.no-data td { border: none !important; }
+        </style>
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
             <colgroup>
                 <col style="width:180px;">
+                <col style="width:120px;">
+                <col style="width:120px;">
+                <col style="width:300px;">
                 <col style="width:140px;">
-                <col style="width:160px;">
-                <col style="width:150px;">
             </colgroup>
             <thead class="sticky-thead">
                 <tr>
                     <th style="padding-left:15px;">时间</th>
                     <th>操作人</th>
                     <th>操作类型</th>
+                    <th>操作详情</th>
                     <th>IP地址</th>
                 </tr>
             </thead>
@@ -83,26 +117,30 @@
 <script>
 // 操作类型映射
 const ACTION_MAP = {
-    login: '登录', logout: '登出',
+    login: '登录', logout: '登出', change_password: '修改密码',
+    add_campus: '新增校区', edit_campus: '编辑校区',
+    toggle_campus_status: '启用/禁用校区', delete_campus: '删除校区',
+    add_role: '新增角色', edit_role: '编辑角色',
+    toggle_role_status: '启用/禁用角色', delete_role: '删除角色',
+    add_user: '新增管理员', edit_user: '编辑管理员',
+    toggle_status: '启用/禁用管理员', delete_user: '删除管理员',
+    import_admins: '导入管理员',
+    toggle_student_status: '启用/禁用学员', import_students: '导入学员',
     add_job: '新增岗位', edit_job: '编辑岗位', delete_job: '删除岗位',
-    toggle_job_status: '上下架岗位', import_jobs: '导入岗位',
-    push_jobs: '推送岗位',
-    add_student: '新增学员', edit_student: '编辑学员', toggle_student_status: '启用禁用学员',
-    add_account: '新增账号', edit_account: '编辑账号', toggle_account_status: '启用禁用账号',
-    add_campus: '新增校区', add_role: '新增角色',
-    import_admins: '导入管理员', import_students: '导入学员',
-    change_password: '修改密码'
+    import_jobs: '导入岗位', push_jobs: '推送岗位'
 };
 
 let currentPage = 1;
 let currentPerPage = 20;
 let currentAction = '';
+let currentOperator = '';
 
 function buildQuery() {
     let params = new URLSearchParams();
     params.set('page', currentPage);
     params.set('per_page', currentPerPage);
     if (currentAction) params.set('action', currentAction);
+    if (currentOperator) params.set('operator', currentOperator);
     return params.toString();
 }
 
@@ -121,15 +159,19 @@ async function loadLogs() {
 
 function renderLogs(logs) {
     const body = document.getElementById('logsBody');
+    const table = document.querySelector('table');
     if (!logs || logs.length === 0) {
-        body.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-5">暂无日志数据</td></tr>';
+        table.classList.add('no-data');
+        body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">暂无日志数据</td></tr>';
         return;
     }
+    table.classList.remove('no-data');
     body.innerHTML = logs.map(log => `
         <tr>
             <td style="padding-left:15px;">${log.created_at}</td>
             <td>${escapeHtml(log.operator)}</td>
             <td><span class="badge bg-info">${escapeHtml(ACTION_MAP[log.action] || log.action)}</span></td>
+            <td>${escapeHtml(log.details)}</td>
             <td>${escapeHtml(log.ip_address)}</td>
         </tr>
     `).join('');
@@ -202,6 +244,7 @@ document.getElementById('filterForm').addEventListener('submit', function(e) {
 
 function applyFilters() {
     currentAction = document.getElementById('actionFilter').value;
+    currentOperator = document.getElementById('operatorFilter').value;
     currentPage = 1;
     loadLogs();
 }

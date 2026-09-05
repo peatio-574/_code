@@ -1,110 +1,90 @@
 ﻿{% extends "student/base_student.html" %}
 
-{% block title %}我的推送 - 岗位系统{% endblock %}
+{% block title %}岗位推荐 - 聘安途岗推系统{% endblock %}
 
 {% block content %}
 <!-- Left Panel - Job List -->
 <div class="job-list-panel">
+    <!-- Search Bar -->
+    <div class="search-bar">
+        <form method="GET" class="search-input-wrap">
+            <input type="text" name="keyword" value="{{ keyword }}" placeholder="搜索职位、公司">
+            <button type="submit" class="search-btn"><i class="bi bi-search"></i> 搜索</button>
+        </form>
+    </div>
+
+    <!-- Filter Tabs -->
     <div class="list-header">
         <div class="tab-group">
-            <button class="tab-btn active">全部</button>
-            <button class="tab-btn">最新</button>
+            <button class="tab-btn {% if sort != 'newest' %}active{% endif %}" onclick="changeSort('')">全部</button>
+            <button class="tab-btn {% if sort == 'newest' %}active{% endif %}" onclick="changeSort('newest')">最新</button>
         </div>
         <a href="{{ url_for('student.my_pushes') }}" class="clear-filter">
             <i class="bi bi-x-circle"></i> 清空筛选
         </a>
     </div>
 
-    <!-- Filter Bar -->
-    <div style="padding: 12px 16px; border-bottom: 1px solid #f0f0f0;">
-        <form method="GET" class="d-flex gap-2">
-            <select class="form-select form-select-sm" name="deadline_before" style="width: auto; font-size: 13px;">
-                <option value="">截止时间</option>
-                <option value="7" {% if deadline_before == '7' %}selected{% endif %}>7天内</option>
-                <option value="30" {% if deadline_before == '30' %}selected{% endif %}>30天内</option>
-                <option value="90" {% if deadline_before == '90' %}selected{% endif %}>90天内</option>
-            </select>
-            <button type="submit" class="btn btn-sm btn-primary" style="font-size: 13px;">筛选</button>
-        </form>
-    </div>
-
-    <div class="job-list">
-        {% for push in pushes %}
-        <div class="job-card {% if selected_job and selected_job.id == push.job.id %}active{% endif %}" 
-             onclick="selectJob({{ push.job.id }})">
-            <div class="job-card-header">
-                <div class="job-title">
-                    <a href="{{ url_for('student.job_detail', id=push.job.id) }}">
-                        {{ push.job.job_name }}
-                    </a>
-                </div>
-            </div>
-            <div class="job-tags">
-                {% if push.job.tags %}
-                <span class="job-tag type-tag">{{ push.job.tags.split(',')[0] if push.job.tags else '' }}</span>
-                {% endif %}
-                {% if push.job.education_req %}
-                <span class="job-tag">{{ push.job.education_req }}</span>
-                {% endif %}
-                {% if push.job.party_member_req %}
-                <span class="job-tag" style="background: #fff7e6; color: #fa8c16;">党员</span>
-                {% endif %}
-            </div>
-            <div class="job-meta">
-                {% if push.job.work_location %}
-                <span><i class="bi bi-geo-alt"></i> {{ push.job.work_location }}</span>
-                {% endif %}
-                <span><i class="bi bi-people"></i> {{ push.job.recruit_count }}人</span>
-                {% if push.job.deadline %}
-                <span><i class="bi bi-clock"></i> {{ push.job.deadline.strftime('%m-%d') }}截止</span>
-                {% endif %}
-            </div>
-            <div class="job-company">
-                <div class="company-logo">{{ push.job.company_name[0] if push.job.company_name else '企' }}</div>
-                <div class="company-info">
-                    <div class="company-name">{{ push.job.company_name }}</div>
-                    <div class="company-location">{{ push.job.work_location }}</div>
-                </div>
+    <!-- Filter Chips -->
+    <div class="filter-chips">
+        <!-- 城市：支持搜索的下拉 -->
+        <div class="city-filter filter-item">
+            <input type="text" class="form-control form-control-sm" id="cityInput" placeholder="城市" value="{{ city }}" autocomplete="off"
+                   onfocus="showCityOptions()" oninput="filterCityOptions()">
+            <input type="hidden" id="cityValue" value="{{ city }}">
+            <div class="city-dropdown" id="cityDropdown">
+                <div class="city-option {% if not city %}selected{% endif %}" data-city="" onclick="selectCity('')">全部城市</div>
+                {% for c in cities %}
+                <div class="city-option {% if city == c %}selected{% endif %}" data-city="{{ c }}" onclick="selectCity('{{ c }}')">{{ c }}</div>
+                {% endfor %}
             </div>
         </div>
+        <select class="form-select form-select-sm filter-item" name="salary" onchange="applyFilter('salary', this.value)">
+            <option value="">薪资</option>
+            <option value="0-5000" {% if salary == '0-5000' %}selected{% endif %}>5000以下</option>
+            <option value="5000-8000" {% if salary == '5000-8000' %}selected{% endif %}>5000-8000</option>
+            <option value="8000-12000" {% if salary == '8000-12000' %}selected{% endif %}>8000-12000</option>
+            <option value="12000-20000" {% if salary == '12000-20000' %}selected{% endif %}>12000-20000</option>
+            <option value="20000+" {% if salary == '20000+' %}selected{% endif %}>20000以上</option>
+        </select>
+        <select class="form-select form-select-sm filter-item" name="education" onchange="applyFilter('education', this.value)">
+            <option value="">学历</option>
+            <option value="不限" {% if education == '不限' %}selected{% endif %}>不限</option>
+            <option value="大专" {% if education == '大专' %}selected{% endif %}>大专</option>
+            <option value="本科" {% if education == '本科' %}selected{% endif %}>本科</option>
+            <option value="硕士" {% if education == '硕士' %}selected{% endif %}>硕士</option>
+            <option value="博士" {% if education == '博士' %}selected{% endif %}>博士</option>
+        </select>
+        <select class="form-select form-select-sm filter-item" name="company_size" onchange="applyFilter('company_size', this.value)">
+            <option value="">公司规模</option>
+            <option value="0-50" {% if company_size == '0-50' %}selected{% endif %}>50人以下</option>
+            <option value="50-200" {% if company_size == '50-200' %}selected{% endif %}>50-200人</option>
+            <option value="200-1000" {% if company_size == '200-1000' %}selected{% endif %}>200-1000人</option>
+            <option value="1000-5000" {% if company_size == '1000-5000' %}selected{% endif %}>1000-5000人</option>
+            <option value="5000+" {% if company_size == '5000+' %}selected{% endif %}>5000人以上</option>
+        </select>
+
+    </div>
+
+    <!-- Job List -->
+    <div class="job-list" id="jobList">
+        {% for push in pushes %}
+        {% include "student/_job_card.html" %}
         {% endfor %}
 
         {% if not pushes %}
-        <div class="empty-state">
+        <div class="empty-state" id="emptyState">
             <i class="bi bi-inbox"></i>
             <p>暂无推送岗位</p>
         </div>
         {% endif %}
     </div>
 
-    <!-- Pagination -->
-    {% if pagination.pages > 1 %}
-    <div style="padding: 12px; border-top: 1px solid #f0f0f0; background: white;">
-        <nav>
-            <ul class="pagination pagination-sm justify-content-center mb-0">
-                {% if pagination.has_prev %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ pagination.prev_num }}&deadline_before={{ deadline_before }}">上一页</a>
-                </li>
-                {% endif %}
-                {% for p in pagination.iter_pages() %}
-                {% if p %}
-                <li class="page-item {% if p == pagination.page %}active{% endif %}">
-                    <a class="page-link" href="?page={{ p }}&deadline_before={{ deadline_before }}">{{ p }}</a>
-                </li>
-                {% else %}
-                <li class="page-item disabled ellipsis"><span class="page-link">...</span></li>
-                {% endif %}
-                {% endfor %}
-                {% if pagination.has_next %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ pagination.next_num }}&deadline_before={{ deadline_before }}">下一页</a>
-                </li>
-                {% endif %}
-            </ul>
-        </nav>
+    <!-- Loading More -->
+    <div id="loadMoreWrap" style="display:none; text-align:center; padding: 14px; border-top: 1px solid #f0f0f0; background: white;">
+        <span class="spinner-border spinner-border-sm text-primary"></span>
+        <span style="margin-left: 8px; color: #9ca3af; font-size: 13px;">加载中...</span>
     </div>
-    {% endif %}
+    <div id="noMoreText" style="display:none; text-align:center; padding: 14px; color: #9ca3af; font-size: 13px; border-top: 1px solid #f0f0f0; background: white;">已加载全部</div>
 </div>
 
 <!-- Right Panel - Job Detail -->
@@ -112,73 +92,96 @@
     {% if selected_job %}
     <div class="detail-card">
         <div class="detail-header">
-            <div class="d-flex align-items-center">
-                <h1 class="detail-title mb-0">{{ selected_job.job_name }}</h1>
-                {% if selected_job.deadline %}
-                {% set days_left = (selected_job.deadline - now).days if selected_job.deadline > now else 0 %}
-                {% if days_left <= 7 and days_left > 0 %}
-                <span class="deadline-badge urgent ms-3">
-                    <i class="bi bi-clock"></i> 剩余{{ days_left }}天
-                </span>
-                {% elif days_left > 7 %}
-                <span class="deadline-badge normal ms-3">
-                    <i class="bi bi-clock"></i> 剩余{{ days_left }}天
-                </span>
+            <div class="detail-title-row">
+                <div>
+                    <h1 class="detail-title">{{ selected_job.job_name }}</h1>
+                    <div class="detail-subtitle">
+                        {{ selected_job.city or selected_job.work_location or '不限' }} · {{ selected_job.experience_req or '经验不限' }} · {{ selected_job.education_req or '学历不限' }}
+                    </div>
+                </div>
+                {% if selected_job.salary_range %}
+                <div class="detail-salary">{{ selected_job.salary_display }}</div>
                 {% else %}
-                <span class="deadline-badge urgent ms-3">
-                    <i class="bi bi-clock"></i> 已截止
-                </span>
-                {% endif %}
+                <div class="detail-salary">面议</div>
                 {% endif %}
             </div>
             <div class="detail-tags">
-                <span class="detail-tag"><i class="bi bi-geo-alt"></i> {{ selected_job.work_location or '不限' }}</span>
-                <span class="detail-tag"><i class="bi bi-mortarboard"></i> {{ selected_job.education_req or '不限' }}</span>
-                <span class="detail-tag"><i class="bi bi-book"></i> {{ selected_job.major_req or '不限' }}</span>
-                {% if selected_job.party_member_req %}
-                <span class="detail-tag" style="background: #fff7e6; color: #fa8c16;"><i class="bi bi-patch-check"></i> 党员</span>
+                {% if selected_job.recruit_type %}
+                <span class="detail-tag"><i class="bi bi-briefcase"></i> {{ selected_job.recruit_type }}</span>
                 {% endif %}
-                <span class="detail-tag"><i class="bi bi-people"></i> {{ selected_job.recruit_count }}人</span>
+                {% if selected_job.job_nature %}
+                <span class="detail-tag"><i class="bi bi-kanban"></i> {{ selected_job.job_nature }}</span>
+                {% endif %}
+                {% if selected_job.deadline %}
+                {% set days_left = (selected_job.deadline - now).days if selected_job.deadline > now else 0 %}
+                {% if days_left > 0 %}
+                <span class="detail-tag"><i class="bi bi-clock"></i> {{ selected_job.deadline.strftime('%Y-%m-%d') }}截止</span>
+                {% else %}
+                <span class="detail-tag" style="background: #fef2f2; color: #dc2626; border-color: #fecaca;"><i class="bi bi-clock"></i> 已截止</span>
+                {% endif %}
+                {% endif %}
             </div>
         </div>
 
         <div class="detail-company">
-            <div class="detail-company-logo">{{ selected_job.company_name[0] if selected_job.company_name else '企' }}</div>
+            <div class="detail-company-logo"><i class="bi bi-building"></i></div>
             <div class="detail-company-info">
                 <div class="detail-company-name">{{ selected_job.company_name }}</div>
+                <div class="detail-company-meta">
+                    {% if selected_job.company_size %}{{ selected_job.company_size }}{% endif %}
+                    {% if selected_job.company_industry %} · {{ selected_job.company_industry }}{% endif %}
+                    {% if selected_job.company_type %} · {{ selected_job.company_type }}{% endif %}
+                </div>
             </div>
         </div>
 
         <div class="detail-body">
-            {% if selected_job.certificate_req %}
             <div class="detail-section">
-                <h3 class="detail-section-title">证书要求</h3>
-                <div class="detail-content">{{ selected_job.certificate_req }}</div>
+                <h3 class="detail-section-title">职位信息</h3>
+                <div class="info-grid">
+                    <div class="info-item"><span class="info-label">招聘类型</span><span class="info-value">{{ selected_job.recruit_type or '-' }}</span></div>
+                    <div class="info-item"><span class="info-label">职位性质</span><span class="info-value">{{ selected_job.job_nature or '-' }}</span></div>
+                    <div class="info-item"><span class="info-label">职位类别</span><span class="info-value">{{ selected_job.job_category or '-' }}</span></div>
+                    <div class="info-item"><span class="info-label">招聘人数</span><span class="info-value">{{ selected_job.recruit_count or '-' }}人</span></div>
+                    <div class="info-item"><span class="info-label">学历要求</span><span class="info-value">{{ selected_job.education_req or '不限' }}</span></div>
+                    <div class="info-item"><span class="info-label">经验要求</span><span class="info-value">{{ selected_job.experience_req or '不限' }}</span></div>
+                    <div class="info-item"><span class="info-label">专业要求</span><span class="info-value">{{ selected_job.major_req or '不限' }}</span></div>
+                    <div class="info-item"><span class="info-label">工作地点</span><span class="info-value">{{ selected_job.work_location or '-' }}</span></div>
+                    <div class="info-item"><span class="info-label">公司性质</span><span class="info-value">{{ selected_job.company_type or '-' }}</span></div>
+                    <div class="info-item"><span class="info-label">公司规模</span><span class="info-value">{{ selected_job.company_size or '-' }}</span></div>
+                    <div class="info-item"><span class="info-label">公司行业</span><span class="info-value">{{ selected_job.company_industry or '-' }}</span></div>
+                    <div class="info-item"><span class="info-label">报名截止</span><span class="info-value">{{ selected_job.deadline.strftime('%Y-%m-%d') if selected_job.deadline else '-' }}</span></div>
+                </div>
             </div>
-            {% endif %}
 
-            {% if selected_job.tags %}
+            {% if selected_job.job_category or selected_job.major_req %}
             <div class="detail-section">
                 <h3 class="detail-section-title">岗位标签</h3>
-                <div class="d-flex flex-wrap gap-2">
-                    {% for tag in selected_job.tags.split(',') %}
-                    <span class="badge bg-primary">{{ tag.strip() }}</span>
+                <div class="skill-tags">
+                    {% if selected_job.job_category %}
+                    {% for tag in selected_job.job_category.split(',') %}
+                    <span class="skill-tag">{{ tag.strip() }}</span>
                     {% endfor %}
+                    {% endif %}
+                    {% if selected_job.major_req %}
+                    {% for tag in selected_job.major_req.split(',') %}
+                    <span class="skill-tag">{{ tag.strip() }}</span>
+                    {% endfor %}
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
 
             <div class="detail-section">
-                <h3 class="detail-section-title">岗位详情</h3>
+                <h3 class="detail-section-title">职位描述</h3>
                 <div class="detail-content">{{ selected_job.job_detail or '暂无详情' }}</div>
             </div>
 
-            {% if selected_job.deadline %}
+            {% if selected_job.address %}
             <div class="detail-section">
-                <h3 class="detail-section-title">截止时间</h3>
-                <div class="detail-content">
-                    <i class="bi bi-calendar-event text-primary"></i>
-                    {{ selected_job.deadline.strftime('%Y年%m月%d日') }}
+                <h3 class="detail-section-title">工作地点</h3>
+                <div class="detail-address">
+                    <i class="bi bi-geo-alt text-primary"></i><span>{{ selected_job.address }}</span>
                 </div>
             </div>
             {% endif %}
@@ -195,19 +198,166 @@
 
 {% block extra_js %}
 <script>
+let currentPage = {{ pagination.page or 1 }};
+let loading = false;
+let hasMore = {{ 'true' if pagination.has_next else 'false' }};
+const listEl = document.getElementById('jobList');
+const loadMoreWrap = document.getElementById('loadMoreWrap');
+const noMoreText = document.getElementById('noMoreText');
+
 function selectJob(jobId) {
-    // Update URL without reload
     const url = new URL(window.location);
     url.searchParams.set('job_id', jobId);
     window.location.href = url.toString();
 }
 
-// Tab switching
+function changeSort(value) {
+    const url = new URL(window.location);
+    if (value) {
+        url.searchParams.set('sort', value);
+    } else {
+        url.searchParams.delete('sort');
+    }
+    window.location.href = url.toString();
+}
+
+function applyFilter(name, value) {
+    const url = new URL(window.location);
+    if (value) {
+        url.searchParams.set(name, value);
+    } else {
+        url.searchParams.delete(name);
+    }
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
+}
+
+let cityCommitted = '{{ city }}';
+
+function showCityOptions() {
+    document.getElementById('cityDropdown').classList.add('show');
+    filterCityOptions();
+}
+
+function hideCityOptions() {
+    document.getElementById('cityDropdown').classList.remove('show');
+}
+
+function filterCityOptions() {
+    const inputVal = (document.getElementById('cityInput').value || '').trim();
+    const isCommitted = inputVal === cityCommitted;
+    const kw = isCommitted ? '' : inputVal;
+    const options = document.querySelectorAll('#cityDropdown .city-option');
+    options.forEach(opt => {
+        const city = opt.getAttribute('data-city');
+        if (!kw || city.indexOf(kw) !== -1) {
+            opt.style.display = 'block';
+        } else {
+            opt.style.display = 'none';
+        }
+    });
+}
+
+function selectCity(city) {
+    cityCommitted = city;
+    document.getElementById('cityInput').value = city;
+    document.getElementById('cityValue').value = city;
+    hideCityOptions();
+    applyFilter('city', city);
+}
+
+document.addEventListener('click', function(e) {
+    const wrapper = document.querySelector('.city-filter');
+    if (wrapper && !wrapper.contains(e.target)) {
+        hideCityOptions();
+    }
+});
+
+function buildJobCard(job) {
+    const activeClass = '';
+    const tagRow = [];
+    if (job.education_req) tagRow.push('<span class="job-tag type-tag">' + esc(job.education_req) + '</span>');
+    if (job.experience_req) tagRow.push('<span class="job-tag">' + esc(job.experience_req) + '</span>');
+    if (job.job_category) tagRow.push('<span class="job-tag skill-tag">' + esc(job.job_category) + '</span>');
+
+    const metaRow = [];
+    if (job.work_location) metaRow.push('<span><i class="bi bi-geo-alt"></i> ' + esc(job.work_location) + '</span>');
+    if (job.recruit_count) metaRow.push('<span><i class="bi bi-people"></i> ' + esc(job.recruit_count) + '人</span>');
+    if (job.deadline) metaRow.push('<span class="deadline-meta"><i class="bi bi-clock"></i> ' + esc(job.deadline) + '截止</span>');
+
+    const companyMetaline = (job.company_size || '') + (job.company_industry ? ' · ' + job.company_industry : '');
+
+    return `<div class="job-card" onclick="selectJob(${job.id})">
+        <div class="job-card-header">
+            <div class="job-title"><a href="javascript:void(0)">${esc(job.job_name)}</a>${job.is_new ? '<span class="tag-new">New</span>' : ''}</div>
+            <div class="job-salary">${esc(job.salary_display)}</div>
+        </div>
+        <div class="job-tags">${tagRow.join('')}</div>
+        <div class="job-meta">${metaRow.join('')}</div>
+        <div class="job-company">
+            <div class="company-logo"><i class="bi bi-building"></i></div>
+            <div class="company-info">
+                <div class="company-name">${esc(job.company_name)}</div>
+                <div class="company-location">${esc(companyMetaline)}</div>
+            </div>
+        </div>
+    </div>`;
+}
+
+function esc(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function loadMore() {
+    if (loading || !hasMore) return;
+    loading = true;
+    loadMoreWrap.style.display = 'block';
+    noMoreText.style.display = 'none';
+    const params = new URLSearchParams(window.location.search);
+    params.set('page', currentPage + 1);
+    params.set('per_page', 10);
+    try {
+        const res = await fetch('{{ url_for("student.my_pushes_api") }}?' + params.toString(), {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        if (data.success && data.items.length > 0) {
+            currentPage = data.page;
+            if (listEl.querySelector('.empty-state')) listEl.querySelector('.empty-state').remove();
+            data.items.forEach(job => listEl.insertAdjacentHTML('beforeend', buildJobCard(job)));
+            hasMore = data.has_more;
+            noMoreText.style.display = hasMore ? 'none' : 'block';
+        } else {
+            hasMore = false;
+            noMoreText.style.display = 'block';
+        }
+    } catch (e) {
+        hasMore = false;
+        noMoreText.style.display = 'block';
+    } finally {
+        loading = false;
+        loadMoreWrap.style.display = 'none';
+    }
+}
+
+listEl.addEventListener('scroll', function() {
+    const atBottom = listEl.scrollTop + listEl.clientHeight >= listEl.scrollHeight - 40;
+    if (atBottom) {
+        loadMore();
+    } else {
+        noMoreText.style.display = 'none';
+    }
+});
+
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', function() {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        this.classList.add('active');
+        noMoreText.style.display = 'none';
     });
 });
+
+if (!hasMore && !listEl.querySelector('.empty-state')) {
+    noMoreText.style.display = 'block';
+}
 </script>
 {% endblock %}

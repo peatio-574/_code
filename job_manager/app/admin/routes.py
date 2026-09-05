@@ -3,9 +3,9 @@ from flask_login import login_required, current_user
 from ..models import db, User, Job, PushRecord, OperationLog, Campus, Role
 from ..permissions import (
     super_admin_required, admin_required, permission_required, init_csrf,
-    PERMISSION_MANAGE_JOBS, PERMISSION_MANAGE_STUDENTS, 
-    PERMISSION_MANAGE_ACCOUNTS, PERMISSION_PUSH_JOBS,
-    get_user_permissions, can_access_menu
+    PERMISSION_MANAGE_STUDENTS, PERMISSION_PUSH_JOBS,
+    get_user_permissions, can_access_menu,
+    get_campus_filter, validate_object_campus
 )
 from . import admin_bp
 from datetime import datetime
@@ -13,9 +13,24 @@ import openpyxl
 import io
 
 
+def safe_int(value, default=0):
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def safe_strptime(date_str, fmt='%Y-%m-%d %H:%M:%S'):
+    try:
+        return datetime.strptime(date_str, fmt) if date_str else None
+    except (ValueError, TypeError):
+        return None
+
+
 def log_operation(action, target_type='', target_id=0, details=''):
     log = OperationLog(
         user_id=current_user.id, action=action,
+        target_type=target_type, target_id=target_id, details=details,
         ip_address=request.remote_addr
     )
     db.session.add(log)
@@ -45,10 +60,34 @@ def get_template_context():
 @admin_required
 def dashboard():
     ctx = get_template_context()
-    ctx['total_jobs'] = Job.query.filter_by(status='active', is_deleted=False).count()
-    ctx['total_students'] = User.query.filter_by(user_type='student', is_active=True, is_deleted=False).count()
-    ctx['total_pushes'] = PushRecord.query.filter_by(is_deleted=False).count()
-    ctx['recent_pushes'] = PushRecord.query.filter_by(is_deleted=False).order_by(PushRecord.pushed_at.desc()).limit(10).all()
+    from datetime import datetime, date
+    
+    campus_filter = get_campus_filter()
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    
+    if campus_filter is None:
+        # 超管：未过期岗位数、学生总数、推送记录
+        from sqlalchemy import or_
+        ctx['total_jobs'] = Job.query.filter(
+            Job.is_deleted == False, Job.status == 'active',
+            or_(Job.deadline == None, Job.deadline >= datetime.now())
+        ).count()
+        ctx['total_students'] = User.query.filter_by(user_type='student', is_active=True, is_deleted=False).count()
+        ctx['total_pushes'] = PushRecord.query.filter_by(is_deleted=False).count()
+        ctx['today_pushes'] = PushRecord.query.filter(PushRecord.is_deleted == False, PushRecord.pushed_at >= today_start).count()
+        ctx['recent_pushes'] = PushRecord.query.filter_by(is_deleted=False).order_by(PushRecord.pushed_at.desc()).limit(10).all()
+    else:
+        # 管理员：未过期岗位数、学生总数、推送记录、当日推送
+        from sqlalchemy import or_
+        ctx['total_jobs'] = Job.query.filter(
+            Job.is_deleted == False, Job.status == 'active',
+            or_(Job.deadline == None, Job.deadline >= datetime.now())
+        ).count()
+        ctx['total_students'] = User.query.filter_by(user_type='student', is_active=True, is_deleted=False, campus_id=campus_filter).count()
+        ctx['total_pushes'] = PushRecord.query.filter_by(is_deleted=False).join(User, PushRecord.student_id == User.id).filter(User.campus_id == campus_filter).count()
+        ctx['today_pushes'] = PushRecord.query.filter(PushRecord.is_deleted == False, PushRecord.pushed_at >= today_start).join(User, PushRecord.student_id == User.id).filter(User.campus_id == campus_filter).count()
+        ctx['recent_pushes'] = PushRecord.query.filter_by(is_deleted=False).join(User, PushRecord.student_id == User.id).filter(User.campus_id == campus_filter).order_by(PushRecord.pushed_at.desc()).limit(10).all()
+    
     return render_template('admin/dashboard.html', **ctx)
 
 
@@ -134,9 +173,15 @@ def campus_toggle_status():
     campus = Campus.query.get_or_404(campus_id)
     campus.is_active = not campus.is_active
     status_text = '启用' if campus.is_active else '禁用'
-    log_operation('toggle_campus_status', 'campus', campus.id, f'校区{status_text}：{campus.name}')
+    
+    # 校区禁用时，禁用该校区下所有管理员和学员；校区启用时，启用该校区下所有管理员和学员
+    users = User.query.filter_by(campus_id=campus.id, is_deleted=False).all()
+    for user in users:
+        user.is_active = campus.is_active
+    
+    log_operation('toggle_campus_status', 'campus', campus.id, f'校区{status_text}：{campus.name}，影响 {len(users)} 个用户')
     db.session.commit()
-    return jsonify({'success': True, 'message': f'校区已{status_text}'})
+    return jsonify({'success': True, 'message': f'校区已{status_text}，{status_text} {len(users)} 个用户'})
 
 
 @admin_bp.route('/campuses/delete', methods=['POST'])
@@ -302,10 +347,9 @@ def role_edit():
     return jsonify({'success': True, 'message': '角色更新成功'})
 
 
-# ==================== 岗位管理（仅超管） ====================
+# ==================== 岗位管理 ====================
 @admin_bp.route('/jobs/page')
 @admin_required
-@super_admin_required
 def jobs_page():
     """岗位管理页面（HTML骨架，数据由前端异步加载）"""
     ctx = get_template_context()
@@ -314,7 +358,6 @@ def jobs_page():
 
 @admin_bp.route('/jobs')
 @admin_required
-@super_admin_required
 def jobs_list():
     """岗位管理数据接口：返回JSON数据，前端负责渲染"""
     page = request.args.get('page', 1, type=int)
@@ -367,7 +410,8 @@ def jobs_list():
             'recruit_count': job.recruit_count,
             'deadline': job.deadline.strftime('%Y-%m-%d %H:%M') if job.deadline else None,
             'is_expired': job.is_expired(),
-            'is_xiaozhao': '校园' in (job.recruit_type or '')
+            'is_xiaozhao': '校园' in (job.recruit_type or ''),
+            'updated_at': job.updated_at.strftime('%Y-%m-%d %H:%M') if job.updated_at else '-'
         })
     
     return jsonify({
@@ -388,7 +432,6 @@ def jobs_list():
 
 @admin_bp.route('/jobs/add', methods=['GET', 'POST'])
 @admin_required
-@super_admin_required
 def job_add():
     ctx = get_template_context()
     if request.method == 'POST':
@@ -403,14 +446,14 @@ def job_add():
             recruit_type=request.form.get('recruit_type', ''),
             job_nature=request.form.get('job_nature', ''),
             job_category=request.form.get('job_category', ''),
-            salary_range=request.form.get('salary_range', ''),
-            recruit_count=int(request.form.get('recruit_count', 1)),
+            salary_range=request.form.get('salary_range', '').replace(' ', ''),
+            recruit_count=safe_int(request.form.get('recruit_count', 1), 1),
             education_req=request.form.get('education_req', ''),
             experience_req=request.form.get('experience_req', ''),
             major_req=request.form.get('major_req', ''),
             work_location=request.form.get('work_location', ''),
             address=request.form.get('address', ''),
-            deadline=datetime.strptime(request.form['deadline'], '%Y-%m-%d %H:%M:%S') if request.form.get('deadline') else None,
+            deadline=safe_strptime(request.form.get('deadline')),
             job_detail=request.form.get('job_detail', ''),
             created_by=current_user.id
         )
@@ -427,7 +470,6 @@ def job_add():
 
 @admin_bp.route('/jobs/edit/<int:id>', methods=['GET', 'POST'])
 @admin_required
-@super_admin_required
 def job_edit(id):
     ctx = get_template_context()
     job = Job.query.filter_by(id=id, is_deleted=False).first_or_404()
@@ -442,14 +484,14 @@ def job_edit(id):
         job.recruit_type = request.form.get('recruit_type', '')
         job.job_nature = request.form.get('job_nature', '')
         job.job_category = request.form.get('job_category', '')
-        job.salary_range = request.form.get('salary_range', '')
-        job.recruit_count = int(request.form.get('recruit_count', 1))
+        job.salary_range = request.form.get('salary_range', '').replace(' ', '').strip()
+        job.recruit_count = safe_int(request.form.get('recruit_count', 1), 1)
         job.education_req = request.form.get('education_req', '')
         job.experience_req = request.form.get('experience_req', '')
         job.major_req = request.form.get('major_req', '')
         job.work_location = request.form.get('work_location', '')
         job.address = request.form.get('address', '')
-        job.deadline = datetime.strptime(request.form['deadline'], '%Y-%m-%d %H:%M:%S') if request.form.get('deadline') else None
+        job.deadline = safe_strptime(request.form.get('deadline'))
         job.job_detail = request.form.get('job_detail', '')
         log_operation('edit_job', 'job', job.id, f'编辑岗位：{job.job_name}')
         db.session.commit()
@@ -464,7 +506,6 @@ def job_edit(id):
 
 @admin_bp.route('/jobs/<int:id>/data')
 @admin_required
-@super_admin_required
 def job_data(id):
     """岗位编辑页数据接口：返回JSON数据，前端负责填充表单"""
     job = Job.query.filter_by(id=id, is_deleted=False).first_or_404()
@@ -493,7 +534,6 @@ def job_data(id):
 
 @admin_bp.route('/jobs/delete', methods=['POST'])
 @admin_required
-@super_admin_required
 def job_delete():
     ids = request.form.getlist('job_ids')
     if not ids:
@@ -575,33 +615,37 @@ def job_import():
             ws = wb.active
             row_count = max(1, ws.max_row - 1)
             count = 0
-            for row in ws.iter_rows(min_row=2, values_only=True):
+            errors = []
+            for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 if not row[2]:
                     continue
-                job = Job(
-                    province=str(row[0] or ''),
-                    city=str(row[1] or ''),
-                    job_name=str(row[2] or ''),
-                    company_name=str(row[3] or ''),
-                    company_type=str(row[4] or ''),
-                    company_size=str(row[5] or ''),
-                    company_industry=str(row[6] or ''),
-                    recruit_type=str(row[7] or '社会招聘'),
-                    job_nature=str(row[8] or ''),
-                    job_category=str(row[9] or ''),
-                    salary_range=str(row[10] or ''),
-                    recruit_count=int(row[11]) if row[11] and str(row[11]).isdigit() else 1,
-                    education_req=str(row[12] or ''),
-                    experience_req=str(row[13] or ''),
-                    major_req=str(row[14] or ''),
-                    work_location=str(row[15] or ''),
-                    address=str(row[16] or ''),
-                    deadline=datetime.strptime(str(row[17]), '%Y-%m-%d %H:%M:%S') if row[17] and ' ' in str(row[17]) else (datetime.strptime(str(row[17]), '%Y-%m-%d') if row[17] else None),
-                    job_detail=str(row[18] or ''),
-                    created_by=current_user.id
-                )
-                db.session.add(job)
-                count += 1
+                try:
+                    job = Job(
+                        province=str(row[0] or ''),
+                        city=str(row[1] or ''),
+                        job_name=str(row[2] or ''),
+                        company_name=str(row[3] or ''),
+                        company_type=str(row[4] or ''),
+                        company_size=str(row[5] or ''),
+                        company_industry=str(row[6] or ''),
+                        recruit_type=str(row[7] or '社会招聘'),
+                        job_nature=str(row[8] or ''),
+                        job_category=str(row[9] or ''),
+                        salary_range=str(row[10] or '').replace(' ', '').strip(),
+                        recruit_count=safe_int(row[11], 1),
+                        education_req=str(row[12] or ''),
+                        experience_req=str(row[13] or ''),
+                        major_req=str(row[14] or ''),
+                        work_location=str(row[15] or ''),
+                        address=str(row[16] or ''),
+                        deadline=safe_strptime(str(row[17])) if row[17] else None,
+                        job_detail=str(row[18] or ''),
+                        created_by=current_user.id
+                    )
+                    db.session.add(job)
+                    count += 1
+                except Exception as e:
+                    errors.append(f'第{idx}行：{str(e)}')
             if count == 0:
                 msg = '未导入任何岗位，请检查文件格式'
                 if ajax:
@@ -611,9 +655,13 @@ def job_import():
             log_operation('import_jobs', 'job', 0, f'批量导入 {count} 个岗位')
             db.session.commit()
             success_msg = f'成功导入 {count} 个岗位'
+            if errors:
+                success_msg += f'，{len(errors)} 行失败'
             if ajax:
-                return jsonify({'success': True, 'message': success_msg, 'count': count, 'total_rows': row_count})
+                return jsonify({'success': True, 'message': success_msg, 'count': count, 'total_rows': row_count, 'errors': errors})
             flash(success_msg, 'success')
+            if errors:
+                flash('\n'.join(errors), 'warning')
             return redirect(url_for('admin.jobs_page'))
         except Exception as e:
             db.session.rollback()
@@ -648,12 +696,12 @@ def job_template():
                      as_attachment=True, download_name='岗位导入模板.xlsx')
 
 
-# ==================== 用户管理（仅管理员/超管） ====================
+# ==================== 管理员管理（仅超管） ====================
 @admin_bp.route('/users/page')
 @admin_required
 @super_admin_required
 def users_page():
-    """用户管理页面（HTML骨架，数据由前端异步加载）"""
+    """管理员管理页面（HTML骨架，数据由前端异步加载）"""
     ctx = get_template_context()
     ctx['campuses'] = Campus.query.filter_by(is_active=True, is_deleted=False).all()
     ctx['roles'] = Role.query.filter_by(is_active=True, is_deleted=False).all()
@@ -664,7 +712,7 @@ def users_page():
 @admin_required
 @super_admin_required
 def users_list():
-    """用户管理数据接口：仅返回管理员，前端负责渲染"""
+    """管理员管理数据接口：仅返回管理员，前端负责渲染"""
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     keyword = request.args.get('keyword', '')
@@ -758,7 +806,7 @@ def user_add():
             user_type='admin',
             real_name=real_name,
             phone=phone,
-            campus_id=int(request.form.get('campus_id', 0)) or None,
+            campus_id=safe_int(request.form.get('campus_id', 0)) or None,
             role=request.form.get('role', ''),
             can_push_jobs=bool(request.form.get('can_push_jobs')),
             can_view_jobs=bool(request.form.get('can_view_jobs')),
@@ -806,7 +854,7 @@ def user_edit(id):
         
         user.real_name = request.form.get('real_name', '')
         user.phone = request.form.get('phone', '')
-        user.campus_id = int(request.form.get('campus_id', 0)) or None
+        user.campus_id = safe_int(request.form.get('campus_id', 0)) or None
         user.role = request.form.get('role', '')
         user.can_push_jobs = bool(request.form.get('can_push_jobs'))
         user.can_view_jobs = bool(request.form.get('can_view_jobs'))
@@ -932,16 +980,21 @@ def users_list_json():
 # ==================== 学员管理 ====================
 @admin_bp.route('/students/page')
 @admin_required
+@permission_required(PERMISSION_MANAGE_STUDENTS)
 def students_page():
     """学员管理页面（HTML骨架，数据由前端异步加载）"""
     ctx = get_template_context()
-    ctx['campuses'] = Campus.query.filter_by(is_active=True, is_deleted=False).all()
+    if current_user.is_super_admin():
+        ctx['campuses'] = Campus.query.filter_by(is_active=True, is_deleted=False).all()
+    else:
+        ctx['campuses'] = Campus.query.filter_by(id=current_user.campus_id, is_active=True, is_deleted=False).all()
     ctx['admins'] = User.query.filter_by(user_type='admin', is_active=True, is_deleted=False).order_by(User.real_name.asc()).all()
     return render_template('admin/students_list.html', **ctx)
 
 
 @admin_bp.route('/students')
 @admin_required
+@permission_required(PERMISSION_MANAGE_STUDENTS)
 def students_list():
     """学员管理数据接口：返回JSON数据，前端负责渲染"""
     page = request.args.get('page', 1, type=int)
@@ -958,8 +1011,9 @@ def students_list():
         per_page = 20
     
     query = User.query.filter_by(user_type='student', is_deleted=False)
-    if not current_user.is_super_admin():
-        query = query.filter_by(created_by=current_user.id)
+    campus_filter = get_campus_filter()
+    if campus_filter is not None:
+        query = query.filter_by(campus_id=campus_filter)
     if keyword:
         query = query.filter(db.or_(
             User.username.contains(keyword), User.real_name.contains(keyword),
@@ -996,9 +1050,10 @@ def students_list():
             'major': stu.major or '-',
             'intention_city': stu.intention_city or '-',
             'graduation_date': stu.graduation_date.strftime('%Y-%m-%d') if stu.graduation_date else '-',
-            'creator': stu.creator.username if stu.creator else '-',
+            'creator': stu.creator.real_name if stu.creator else '-',
             'password': stu.password_plain or '-',
-            'is_active': stu.is_active
+            'is_active': stu.is_active,
+            'updated_at': stu.updated_at.strftime('%Y-%m-%d %H:%M') if stu.updated_at else '-'
         })
     
     return jsonify({
@@ -1019,6 +1074,7 @@ def students_list():
 
 @admin_bp.route('/students/add', methods=['GET', 'POST'])
 @admin_required
+@permission_required(PERMISSION_MANAGE_STUDENTS)
 def student_add():
     ctx = get_template_context()
     ajax = _is_ajax()
@@ -1072,9 +1128,10 @@ def student_add():
             third_intention=request.form.get('third_intention', ''),
             certificate=request.form.get('certificate', ''),
             remark=request.form.get('remark', ''),
-            graduation_date=datetime.strptime(request.form['graduation_date'], '%Y-%m-%d').date() if request.form.get('graduation_date') else None,
+            graduation_date=safe_strptime(request.form.get('graduation_date'), '%Y-%m-%d').date() if request.form.get('graduation_date') else None,
             origin_place=request.form.get('origin_place', ''),
             avatar=request.form.get('avatar', ''),
+            campus_id=current_user.campus_id,
             created_by=current_user.id
         )
         user.set_password(password)
@@ -1092,16 +1149,14 @@ def student_add():
 
 @admin_bp.route('/students/edit/<int:id>', methods=['GET', 'POST'])
 @admin_required
+@permission_required(PERMISSION_MANAGE_STUDENTS)
 def student_edit(id):
     ctx = get_template_context()
     student = User.query.filter_by(id=id, user_type='student', is_deleted=False).first_or_404()
     
-    if not current_user.is_super_admin() and student.created_by != current_user.id:
-        msg = '无权编辑此学员'
-        if request.method == 'POST' and _is_ajax():
-            return jsonify({'success': False, 'message': msg})
-        flash(msg, 'danger')
-        return redirect(url_for('admin.students_page'))
+    valid, resp = validate_object_campus(student)
+    if not valid:
+        return resp
     
     if request.method == 'POST':
         intention_city = request.form.get('intention_city', '').strip()
@@ -1117,7 +1172,7 @@ def student_edit(id):
         student.third_intention = request.form.get('third_intention', '')
         student.certificate = request.form.get('certificate', '')
         student.remark = request.form.get('remark', '')
-        student.graduation_date = datetime.strptime(request.form['graduation_date'], '%Y-%m-%d').date() if request.form.get('graduation_date') else None
+        student.graduation_date = safe_strptime(request.form.get('graduation_date'), '%Y-%m-%d').date() if request.form.get('graduation_date') else None
         student.origin_place = request.form.get('origin_place', '')
         student.avatar = request.form.get('avatar', '')
         
@@ -1143,6 +1198,7 @@ def student_edit(id):
 
 @admin_bp.route('/students/delete', methods=['POST'])
 @admin_required
+@permission_required(PERMISSION_MANAGE_STUDENTS)
 def student_delete():
     user_id = request.form.get('user_id')
     verify_name = request.form.get('verify_name', '').strip()
@@ -1150,12 +1206,9 @@ def student_delete():
     
     user = User.query.filter_by(id=user_id, user_type='student', is_deleted=False).first_or_404()
     
-    if not current_user.is_super_admin() and user.created_by != current_user.id:
-        msg = '无权删除此学员'
-        if _is_ajax():
-            return jsonify({'success': False, 'message': msg})
-        flash(msg, 'danger')
-        return redirect(url_for('admin.students_page'))
+    valid, resp = validate_object_campus(user)
+    if not valid:
+        return resp
     
     if user.real_name != verify_name or user.phone != verify_phone:
         msg = '姓名或电话验证失败'
@@ -1176,10 +1229,13 @@ def student_delete():
 
 @admin_bp.route('/students/toggle-status', methods=['POST'])
 @admin_required
-@super_admin_required
+@permission_required(PERMISSION_MANAGE_STUDENTS)
 def student_toggle_status():
     student_id = request.form.get('student_id')
     student = User.query.filter_by(id=student_id, user_type='student', is_deleted=False).first_or_404()
+    valid, resp = validate_object_campus(student)
+    if not valid:
+        return resp
     student.is_active = not student.is_active
     status_text = '启用' if student.is_active else '禁用'
     log_operation('toggle_student_status', 'user', student.id, f'学员{status_text}：{student.real_name}')
@@ -1189,7 +1245,7 @@ def student_toggle_status():
 
 @admin_bp.route('/students/batch-delete', methods=['POST'])
 @admin_required
-@super_admin_required
+@permission_required(PERMISSION_MANAGE_STUDENTS)
 def student_batch_delete():
     student_ids = request.form.getlist('student_ids')
     if not student_ids:
@@ -1199,6 +1255,9 @@ def student_batch_delete():
     for sid in student_ids:
         student = User.query.filter_by(id=sid, user_type='student', is_deleted=False).first()
         if not student:
+            continue
+        valid, _ = validate_object_campus(student)
+        if not valid:
             continue
         student.is_deleted = True
         log_operation('delete_user', 'user', student.id, f'批量删除学员：{student.real_name}')
@@ -1211,25 +1270,73 @@ def student_batch_delete():
 # ==================== 岗位推荐 ====================
 @admin_bp.route('/push/page')
 @admin_required
-@permission_required(PERMISSION_PUSH_JOBS)
 def push_page():
     """推荐记录页面（HTML骨架，数据由前端异步加载）"""
     ctx = get_template_context()
     return render_template('admin/push_list.html', **ctx)
 
 
+@admin_bp.route('/push/campuses')
+@admin_required
+def push_campuses():
+    """推送功能校区列表：超管返回全部，管理员返回当前校区"""
+    campus_filter = get_campus_filter()
+    if campus_filter is None:
+        campuses = Campus.query.filter_by(is_active=True, is_deleted=False).all()
+    else:
+        campuses = Campus.query.filter_by(id=campus_filter, is_active=True, is_deleted=False).all()
+    
+    data = []
+    for campus in campuses:
+        student_count = User.query.filter_by(campus_id=campus.id, user_type='student', is_active=True, is_deleted=False).count()
+        data.append({
+            'id': campus.id,
+            'name': campus.name,
+            'student_count': student_count
+        })
+    
+    return jsonify({'success': True, 'campuses': data})
+
+
 @admin_bp.route('/push')
 @admin_required
-@permission_required(PERMISSION_PUSH_JOBS)
 def push_list():
     """推荐记录数据接口：返回JSON数据，前端负责渲染"""
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
+    keyword_job = request.args.get('keyword_job', '').strip()
+    keyword_company = request.args.get('keyword_company', '').strip()
+    keyword_student = request.args.get('keyword_student', '').strip()
+    keyword_pusher = request.args.get('keyword_pusher', '').strip()
+    is_read = request.args.get('is_read', '').strip()
     
     if per_page not in [20, 50, 100]:
         per_page = 20
     
-    pagination = PushRecord.query.filter_by(is_deleted=False).order_by(PushRecord.updated_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    query = PushRecord.query.filter_by(is_deleted=False)
+    if keyword_job:
+        query = query.join(Job, PushRecord.job_id == Job.id, isouter=True).filter(Job.job_name.contains(keyword_job))
+    if keyword_company:
+        query = query.join(Job, PushRecord.job_id == Job.id, isouter=True).filter(Job.company_name.contains(keyword_company))
+    if keyword_student:
+        query = query.join(User, PushRecord.student_id == User.id, isouter=True).filter(
+            db.or_(User.real_name.contains(keyword_student), User.username.contains(keyword_student))
+        )
+    if keyword_pusher:
+        query = query.join(User, PushRecord.pushed_by == User.id, isouter=True).filter(
+            db.or_(User.real_name.contains(keyword_pusher), User.username.contains(keyword_pusher))
+        )
+    if is_read == '1':
+        query = query.filter(PushRecord.is_read == True)
+    elif is_read == '0':
+        query = query.filter(PushRecord.is_read == False)
+    
+    # 管理员只显示当前校区的推送记录
+    campus_filter = get_campus_filter()
+    if campus_filter is not None:
+        query = query.join(User, PushRecord.student_id == User.id, isouter=True).filter(User.campus_id == campus_filter)
+    
+    pagination = query.order_by(PushRecord.updated_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     
     pushes = []
     for push in pagination.items:
@@ -1276,25 +1383,35 @@ def push_do():
         return redirect(url_for('admin.push_page'))
     
     count = 0
-    for job_id in job_ids:
-        for student_id in student_ids:
-            existing = PushRecord.query.filter_by(job_id=int(job_id), student_id=int(student_id), is_deleted=False).first()
-            if not existing:
-                push = PushRecord(job_id=int(job_id), student_id=int(student_id), pushed_by=current_user.id)
-                db.session.add(push)
-                count += 1
-    log_operation('push_jobs', 'push', 0, f'推送 {len(job_ids)} 个岗位给 {len(student_ids)} 个学员')
+    valid_jids = [safe_int(jid) for jid in job_ids if safe_int(jid)]
+    valid_sids = [safe_int(sid) for sid in student_ids if safe_int(sid)]
+
+    # 校验岗位是否存在，避免外键异常
+    valid_jids = [jid for jid in valid_jids if Job.query.filter_by(id=jid, is_deleted=False).first()]
+    # 校验学员是否存在，且未被删除
+    valid_sids = [sid for sid in valid_sids if User.query.filter_by(id=sid, user_type='student', is_deleted=False).first()]
+
+    # 管理员只能推送当前校区的学员
+    campus_filter = get_campus_filter()
+    if campus_filter is not None:
+        valid_sids = [sid for sid in valid_sids if User.query.filter_by(id=sid, user_type='student', campus_id=campus_filter, is_deleted=False).first()]
+
+    for jid in valid_jids:
+        for sid in valid_sids:
+            push = PushRecord(job_id=jid, student_id=sid, pushed_by=current_user.id)
+            db.session.add(push)
+            count += 1
+    log_operation('push_jobs', 'push', 0, f'推送 {len(valid_jids)} 个岗位给 {len(valid_sids)} 个学员')
     db.session.commit()
     if _is_ajax():
-        return jsonify({'success': True, 'message': f'成功推荐 {count} 条岗位', 'count': count})
-    flash(f'成功推荐 {count} 条岗位', 'success')
+        return jsonify({'success': True, 'message': f'成功推送 {len(valid_jids)} 条岗位给 {len(valid_sids)} 人', 'count': count})
+    flash(f'成功推送 {len(valid_jids)} 条岗位给 {len(valid_sids)} 人', 'success')
     return redirect(url_for('admin.push_page'))
 
 
 # ==================== 操作日志 ====================
 @admin_bp.route('/logs/page')
 @admin_required
-@super_admin_required
 def logs_page():
     """操作日志页面（HTML骨架，数据由前端异步加载）"""
     ctx = get_template_context()
@@ -1303,12 +1420,12 @@ def logs_page():
 
 @admin_bp.route('/logs')
 @admin_required
-@super_admin_required
 def logs_list():
     """操作日志数据接口：返回JSON数据，前端负责渲染"""
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     action = request.args.get('action', '')
+    operator = request.args.get('operator', '').strip()
     
     if per_page not in [20, 50, 100]:
         per_page = 20
@@ -1316,6 +1433,18 @@ def logs_list():
     query = OperationLog.query.filter_by(is_deleted=False)
     if action:
         query = query.filter_by(action=action)
+    
+    # 管理员只显示当前校区的操作日志
+    campus_filter = get_campus_filter()
+    if campus_filter is not None:
+        query = query.join(User, OperationLog.user_id == User.id, isouter=True).filter(User.campus_id == campus_filter)
+    
+    # 按操作人搜索
+    if operator:
+        query = query.join(User, OperationLog.user_id == User.id, isouter=True).filter(
+            db.or_(User.real_name.contains(operator), User.username.contains(operator))
+        )
+    
     pagination = query.order_by(OperationLog.updated_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     
     logs = []
@@ -1325,6 +1454,7 @@ def logs_list():
             'created_at': log.created_at.strftime('%Y-%m-%d %H:%M:%S') if log.created_at else '-',
             'operator': log.user.real_name or log.user.username,
             'action': log.action,
+            'details': log.details or '-',
             'ip_address': log.ip_address
         })
     
@@ -1405,6 +1535,9 @@ def import_admins():
                 campus_id = None
                 campus = Campus.query.filter_by(name=campus_name, is_deleted=False).first()
                 if not campus:
+                    if not current_user.is_super_admin():
+                        errors.append(f'第{idx}行：校区"{campus_name}"不存在，仅超级管理员可创建新校区')
+                        continue
                     campus = Campus(name=campus_name)
                     db.session.add(campus)
                     db.session.flush()
@@ -1554,10 +1687,20 @@ def import_students():
                 if campus_name:
                     campus = Campus.query.filter_by(name=campus_name, is_deleted=False).first()
                     if not campus:
+                        if not current_user.is_super_admin():
+                            errors.append(f'第{idx}行：校区"{campus_name}"不存在，仅超级管理员可创建新校区')
+                            continue
                         campus = Campus(name=campus_name)
                         db.session.add(campus)
                         db.session.flush()
                     campus_id = campus.id
+                else:
+                    campus_id = current_user.campus_id
+                
+                # 管理员只能导入到当前校区
+                if not current_user.is_super_admin() and campus_id != current_user.campus_id:
+                    errors.append(f'第{idx}行：无权导入到其他校区')
+                    continue
                 
                 user = User(
                     username=phone,

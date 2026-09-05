@@ -1,6 +1,6 @@
 ﻿{% extends "base.html" %}
 
-{% block title %}用户管理 - 聘安途岗推系统{% endblock %}
+{% block title %}管理员管理 - 聘安途岗推系统{% endblock %}
 
 {% block content %}
 <div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
@@ -20,13 +20,13 @@
                            onfocus="showCampusDropdown()" oninput="filterCampusOptions()" autocomplete="off">
                     <select class="form-select filter-select" name="campus" id="campusFilter" style="display:none;">
                         <option value="">全部</option>
-                        {% for campus in campuses %}
+                        {% for campus in campuses if campus.is_active %}
                         <option value="{{ campus.name }}">{{ campus.name }}</option>
                         {% endfor %}
                     </select>
                     <div id="campusDropdown" class="bg-white border rounded shadow-sm w-100" style="position:absolute; left:0; right:0; max-height:240px; overflow-y:auto; z-index:1000; display:none; margin-top:4px;">
                         <div class="dropdown-item py-2 px-3" onclick="selectCampus('')" style="cursor:pointer; font-size:14px;">全部</div>
-                        {% for campus in campuses %}
+                        {% for campus in campuses if campus.is_active %}
                         <div class="dropdown-item py-2 px-3" onclick="selectCampus('{{ campus.name }}')" style="cursor:pointer; font-size:14px;">{{ campus.name }}</div>
                         {% endfor %}
                     </div>
@@ -35,7 +35,7 @@
                     <label class="form-label fw-bold">角色：</label>
                     <select class="form-select filter-select" name="role" id="roleFilter" onchange="applyFilters()">
                         <option value="">全部</option>
-                        {% for role in roles %}
+                        {% for role in roles if role.is_active %}
                         <option value="{{ role.name }}">{{ role.name }}</option>
                         {% endfor %}
                     </select>
@@ -76,6 +76,11 @@
 <!-- 管理员列表 -->
 <div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
     <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <style>
+        .table.no-data { border: none !important; }
+        .table.no-data thead th { border-bottom: none !important; }
+        .table.no-data td { border: none !important; }
+        </style>
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
             <colgroup>
                 <col style="width:5%;">
@@ -83,8 +88,8 @@
                 <col style="width:7%;">
                 <col style="width:10%;">
                 <col style="width:8%;">
-                <col style="width:8%;">
-                <col style="width:12%;">
+                <col style="width:5%;">
+                <col style="width:15%;">
                 <col style="width:5%;">
                 <col style="width:11%;">
                 <col style="width:8%;">
@@ -99,7 +104,7 @@
                     <th>角色</th>
                     <th>权限</th>
                     <th>状态</th>
-                    <th>修改时间</th>
+                    <th>更新时间</th>
                     <th style="text-align:center;">操作</th>
                 </tr>
             </thead>
@@ -204,15 +209,18 @@ async function loadUsers() {
 
 function renderUsers(users) {
     const body = document.getElementById('usersBody');
+    const table = document.querySelector('table');
     if (!users || users.length === 0) {
+        table.classList.add('no-data');
         body.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-5">暂无管理员数据</td></tr>';
         return;
     }
+    table.classList.remove('no-data');
     body.innerHTML = users.map(u => {
         let perm = '<small>' +
-            (u.can_view_jobs ? '<span class="badge bg-success me-1">查看</span>' : '') +
-            (u.can_push_jobs ? '<span class="badge bg-success me-1">推送</span>' : '') +
-            (u.can_manage_students ? '<span class="badge bg-success">管理</span>' : '') +
+            (u.can_manage_students ? '<span class="badge bg-success me-1">学员管理</span>' : '') +
+            (u.can_push_jobs ? '<span class="badge bg-success me-1">岗位推送</span>' : '') +
+            (u.can_view_jobs ? '<span class="badge bg-success">岗位查看</span>' : '') +
             '</small>';
         const statusSwitch = `<div class="form-check form-switch">
             <input class="form-check-input" type="checkbox" role="switch" id="status_${u.id}" ${u.is_active ? 'checked' : ''} onchange="toggleUserStatus(${u.id}, this)">

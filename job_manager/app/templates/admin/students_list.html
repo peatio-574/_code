@@ -20,13 +20,13 @@
                            onfocus="showCampusDropdown()" oninput="filterCampusOptions()" autocomplete="off">
                     <select class="form-select" name="campus" id="campusInput" style="display:none;">
                         <option value="">全部</option>
-                        {% for campus in campuses %}
+                        {% for campus in campuses if campus.is_active %}
                         <option value="{{ campus.name }}">{{ campus.name }}</option>
                         {% endfor %}
                     </select>
                     <div id="campusDropdown" class="bg-white border rounded shadow-sm w-100" style="position:absolute; left:0; right:0; max-height:240px; overflow-y:auto; z-index:1000; display:none; margin-top:4px;">
                         <div class="dropdown-item py-2 px-3" onclick="selectCampus('')" style="cursor:pointer; font-size:14px;">全部</div>
-                        {% for campus in campuses %}
+                        {% for campus in campuses if campus.is_active %}
                         <div class="dropdown-item py-2 px-3" onclick="selectCampus('{{ campus.name }}')" style="cursor:pointer; font-size:14px;">{{ campus.name }}</div>
                         {% endfor %}
                     </div>
@@ -96,20 +96,26 @@
 <!-- 学员列表 -->
 <div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
     <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <style>
+        .table.no-data { border: none !important; }
+        .table.no-data thead th { border-bottom: none !important; }
+        .table.no-data td { border: none !important; }
+        </style>
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
             <colgroup>
                 <col style="width:4%;">
-                <col style="width:8%;">
+                <col style="width:7%;">
+                <col style="width:10%;">
+                <col style="width:7%;">
                 <col style="width:12%;">
-                <col style="width:8%;">
-                <col style="width:14%;">
                 <col style="width:7%;">
                 <col style="width:5%;">
                 <col style="width:6%;">
                 <col style="width:8%;">
-                <col style="width:8%;">
                 <col style="width:7%;">
-                <col style="width:13%;">
+                <col style="width:7%;">
+                <col style="width:10%;">
+                <col style="width:10%;">
             </colgroup>
             <thead class="sticky-thead">
                 <tr>
@@ -124,6 +130,7 @@
                     <th>专业</th>
                     <th>意向城市</th>
                     <th>状态</th>
+                    <th>更新时间</th>
                     <th style="text-align:center;">操作</th>
                 </tr>
             </thead>
@@ -309,23 +316,26 @@ document.getElementById('creatorSearch').value = '全部';
 
 async function loadStudents() {
     const body = document.getElementById('studentsBody');
-    body.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-5">加载中...</td></tr>';
+    body.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-5">加载中...</td></tr>';
     try {
         const res = await fetch('{{ url_for("admin.students_list") }}?' + buildQuery());
         const data = await res.json();
         renderStudents(data.students);
         renderPagination(data.pagination);
     } catch (e) {
-        body.innerHTML = '<tr><td colspan="12" class="text-center text-danger py-5">加载失败</td></tr>';
+        body.innerHTML = '<tr><td colspan="13" class="text-center text-danger py-5">加载失败</td></tr>';
     }
 }
 
 function renderStudents(students) {
     const body = document.getElementById('studentsBody');
+    const table = document.querySelector('table');
     if (!students || students.length === 0) {
-        body.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-5">暂无学员数据</td></tr>';
+        table.classList.add('no-data');
+        body.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-5">暂无学员数据</td></tr>';
         return;
     }
+    table.classList.remove('no-data');
     body.innerHTML = students.map(s => {
         const statusSwitch = `<div class="form-check form-switch">
             <input class="form-check-input" type="checkbox" role="switch" id="status_${s.id}" ${s.is_active ? 'checked' : ''} onchange="toggleStudentStatus(${s.id}, this)">
@@ -344,6 +354,7 @@ function renderStudents(students) {
             <td>${escapeHtml(s.major)}</td>
             <td>${escapeHtml(s.intention_city)}</td>
             <td>${statusSwitch}</td>
+            <td>${escapeHtml(s.updated_at) || '-'}</td>
             <td style="text-align:center; white-space:nowrap;">${ops}</td>
         </tr>`;
     }).join('');

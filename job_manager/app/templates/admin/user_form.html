@@ -50,7 +50,7 @@
                             <label class="form-label">校区 <span class="text-danger">*</span></label>
                             <select class="form-select" name="campus_id" required>
                                 <option value="">请选择校区</option>
-                                {% for campus in campuses %}
+                                {% for campus in campuses if campus.is_active %}
                                 <option value="{{ campus.id }}" {% if user_obj and user_obj.campus_id == campus.id %}selected{% endif %}>{{ campus.name }}</option>
                                 {% endfor %}
                             </select>
@@ -59,7 +59,7 @@
                             <label class="form-label">角色</label>
                             <select class="form-select" name="role">
                                 <option value="">请选择角色</option>
-                                {% for role in roles %}
+                                {% for role in roles if role.is_active %}
                                 <option value="{{ role.name }}" {% if user_obj and user_obj.role == role.name %}selected{% endif %}>{{ role.name }}</option>
                                 {% endfor %}
                             </select>
@@ -67,6 +67,12 @@
                         <div class="col-md-6 mb-3">
                             <label class="form-label">权限设置 <span class="text-danger">*</span></label>
                             <div class="d-flex align-items-center gap-2 pt-1" style="height:calc(1.5rem + 1px*2 + 0.25rem*2);">
+                                <div class="form-check form-check-inline mb-0">
+                                    <input type="checkbox" class="form-check-input" name="can_manage_students" id="can_manage_students"
+                                           style="width:1.2em;height:1.2em;"
+                                           {% if not user_obj or user_obj.can_manage_students %}checked{% endif %}>
+                                    <label class="form-check-label" for="can_manage_students">学员管理</label>
+                                </div>
                                 <div class="form-check form-check-inline mb-0">
                                     <input type="checkbox" class="form-check-input" name="can_push_jobs" id="can_push_jobs"
                                            style="width:1.2em;height:1.2em;"
@@ -78,12 +84,6 @@
                                            style="width:1.2em;height:1.2em;"
                                            {% if not user_obj or user_obj.can_view_jobs %}checked{% endif %}>
                                     <label class="form-check-label" for="can_view_jobs">岗位查看</label>
-                                </div>
-                                <div class="form-check form-check-inline mb-0">
-                                    <input type="checkbox" class="form-check-input" name="can_manage_students" id="can_manage_students"
-                                           style="width:1.2em;height:1.2em;"
-                                           {% if not user_obj or user_obj.can_manage_students %}checked{% endif %}>
-                                    <label class="form-check-label" for="can_manage_students">学员管理</label>
                                 </div>
                             </div>
                         </div>

@@ -237,33 +237,37 @@
             box-shadow: 0 0 0 3px rgba(74,124,247,0.12);
         }
 
-        /* 截止日期（时间组件） */
-        .form-control.deadline-input {
+        /* 日期/时间输入（统一组件样式） */
+        .form-control.deadline-input,
+        input[type="date"].form-control,
+        input[type="datetime-local"].form-control {
             height: 38px;
             border-radius: 6px;
             border: 1px solid #dde1e7;
             color: #444;
             font-size: 13px;
-            padding: 8px 34px 8px 12px;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%234a7cf7' class='bi bi-calendar3' viewBox='0 0 16 16'%3E%3Cpath d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zM1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857V3.857z'/%3E%3Cpath d='M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 11px center;
-            background-size: 15px 15px;
+            padding: 8px 12px;
+            background-color: #fff;
             transition: border-color 0.2s, box-shadow 0.2s;
         }
-        .form-control.deadline-input:hover { border-color: #b9cdfb; }
-        .form-control.deadline-input:focus {
-            border-color: #4a7cf7;
-            box-shadow: 0 0 0 3px rgba(74,124,247,0.12);
+        .form-control.deadline-input:hover,
+        input[type="date"].form-control:hover,
+        input[type="datetime-local"].form-control:hover { border-color: #b9cdfb; }
+        .form-control.deadline-input:focus,
+        input[type="date"].form-control:focus,
+        input[type="datetime-local"].form-control:focus {
+            border-color: #2b6cb0;
+            box-shadow: 0 0 0 3px rgba(43,108,176,0.12);
         }
-        .form-control.deadline-input::-webkit-calendar-picker-indicator {
-            position: absolute;
-            right: 0;
-            width: 34px;
-            height: 100%;
-            background: transparent;
-            opacity: 0;
+        input[type="date"].form-control::-webkit-calendar-picker-indicator,
+        input[type="datetime-local"].form-control::-webkit-calendar-picker-indicator {
             cursor: pointer;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+        input[type="date"].form-control::-webkit-calendar-picker-indicator:hover,
+        input[type="datetime-local"].form-control::-webkit-calendar-picker-indicator:hover {
+            opacity: 1;
         }
         
         /* Buttons */
@@ -383,6 +387,21 @@
         .form-check.form-switch .form-check-input:focus {
             box-shadow: none;
             border-color: #86b7fe;
+        }
+
+        /* Checkbox - Uniform Style */
+        input[type="checkbox"]:not(.form-check-input) {
+            width: 18px;
+            height: 18px;
+            max-width: 18px;
+            max-height: 18px;
+            accent-color: #2b6cb0;
+            cursor: pointer;
+            border-radius: 4px;
+            vertical-align: middle;
+        }
+        input[type="checkbox"]:not(.form-check-input):hover {
+            accent-color: #1a4a7f;
         }
         
         .pagination-sm .page-link {
@@ -545,6 +564,7 @@
                     {% else %}学员{% endif %}
                 </span></li>
                 <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="#" onclick="showMyInfo()"><i class="bi bi-person-circle me-2"></i>账号信息</a></li>
                 <li><a class="dropdown-item" href="{{ url_for('auth.change_password') }}"><i class="bi bi-key me-2"></i>修改密码</a></li>
                 <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right me-2"></i>退出登录</a></li>
             </ul>
@@ -566,7 +586,7 @@
                 <i class="bi bi-briefcase"></i> 岗位管理
             </a>
             <a href="{{ url_for('admin.users_page') }}" class="menu-item {% if 'user' in request.endpoint or 'import_admin' in request.endpoint %}active{% endif %}">
-                <i class="bi bi-people"></i> 用户管理
+                <i class="bi bi-people"></i> 管理员管理
             </a>
             <a href="{{ url_for('admin.students_page') }}" class="menu-item {% if 'student' in request.endpoint %}active{% endif %}">
                 <i class="bi bi-person-lines-fill"></i> 学员管理
@@ -596,11 +616,22 @@
         </div>
         <div class="menu-group">
             <div class="menu-title">业务管理</div>
-            <a href="{{ url_for('admin.students_page') }}" class="menu-item {% if 'student' in request.endpoint %}active{% endif %}">
-                <i class="bi bi-people"></i> 学员管理
+            <a href="{{ url_for('admin.jobs_page') }}" class="menu-item {% if 'job' in request.endpoint %}active{% endif %}">
+                <i class="bi bi-briefcase"></i> 岗位管理
             </a>
+            {% if can_access_menu('students') %}
+            <a href="{{ url_for('admin.students_page') }}" class="menu-item {% if 'student' in request.endpoint %}active{% endif %}">
+                <i class="bi bi-person-lines-fill"></i> 学员管理
+            </a>
+            {% endif %}
             <a href="{{ url_for('admin.push_page') }}" class="menu-item {% if request.endpoint == 'admin.push_page' %}active{% endif %}">
-                <i class="bi bi-send"></i> 岗位推荐
+                <i class="bi bi-send"></i> 推送记录
+            </a>
+        </div>
+        <div class="menu-group">
+            <div class="menu-title">系统管理</div>
+            <a href="{{ url_for('admin.logs_page') }}" class="menu-item {% if request.endpoint == 'admin.logs_page' %}active{% endif %}">
+                <i class="bi bi-journal-text"></i> 操作日志
             </a>
         </div>
         {% else %}
@@ -673,7 +704,116 @@
         var elapsed = (now - start) % DUR;
         el.style.animationDelay = '-' + (elapsed / 1000) + 's';
     })();
+
+    function showMyInfo() {
+        document.getElementById('myInfo_name').textContent = '{{ current_user.real_name or "-" }}';
+        document.getElementById('myInfo_role').textContent = '{% if current_user.is_super_admin() %}超级管理员{% elif current_user.is_admin() and current_user.role %}{{ current_user.role }}{% elif current_user.is_admin() %}管理员{% else %}学员{% endif %}';
+        var set = function(id, val) {
+            var el = document.getElementById(id);
+            if (el) el.value = val === null || val === undefined ? '' : val;
+        };
+        set('pf_real_name', '{{ current_user.real_name or "" }}');
+        set('pf_username', '{{ current_user.username or "" }}');
+        set('pf_phone', '{{ current_user.phone or "" }}');
+        set('pf_email', '{{ current_user.email or "" }}');
+        set('pf_gender', '{{ current_user.gender or "" }}');
+        set('pf_campus', '{% if current_user.campus %}{{ current_user.campus.name }}{% endif %}');
+        var permHtml = '';
+        {% if current_user.can_view_jobs %}permHtml += '<span class="badge bg-success me-1">查看岗位</span>';{% endif %}
+        {% if current_user.can_push_jobs %}permHtml += '<span class="badge bg-success me-1">推送岗位</span>';{% endif %}
+        {% if current_user.can_manage_students %}permHtml += '<span class="badge bg-success me-1">管理学员</span>';{% endif %}
+        document.getElementById('pf_perm').innerHTML = permHtml || '-';
+        document.getElementById('pf_status').innerHTML = {% if current_user.is_active %}'<span class="badge bg-success">正常</span>'{% else %}'<span class="badge bg-secondary">禁用</span>'{% endif %};
+        new bootstrap.Modal(document.getElementById('myInfoModal')).show();
+    }
+
+    async function saveMyProfile() {
+        var fd = new FormData();
+        fd.append('csrf_token', '{{ csrf_token }}');
+        ['real_name','phone','email','gender'].forEach(function(name) {
+            var el = document.getElementById('pf_' + name);
+            if (el) fd.append(name, el.value);
+        });
+        try {
+            var res = await fetch('{{ url_for("auth.update_profile") }}', {
+                method: 'POST',
+                body: fd,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            var data = await res.json();
+            showToast(data.message || '保存成功', data.success ? 'success' : 'danger');
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('myInfoModal')).hide();
+            }
+        } catch (e) {
+            showToast('保存失败', 'danger');
+        }
+    }
     </script>
+
+    <!-- 账号信息弹窗 -->
+    <div class="modal fade" id="myInfoModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-circle text-primary"></i> 账号信息</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="text-center mb-4">
+                        <div style="width:80px;height:80px;border-radius:50%;background:#e3f2fd;display:flex;align-items:center;justify-content:center;margin:0 auto;">
+                            <i class="bi bi-person-fill text-primary" style="font-size:40px;"></i>
+                        </div>
+                        <h5 id="myInfo_name" class="mt-3 mb-1"></h5>
+                        <span class="badge bg-info" id="myInfo_role"></span>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">姓名</label>
+                            <input type="text" class="form-control" id="pf_real_name">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">账号</label>
+                            <input type="text" class="form-control" id="pf_username" readonly>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">手机号</label>
+                            <input type="text" class="form-control" id="pf_phone">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">邮箱</label>
+                            <input type="email" class="form-control" id="pf_email">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">性别</label>
+                            <select class="form-select" id="pf_gender">
+                                <option value="">请选择</option>
+                                <option value="男">男</option>
+                                <option value="女">女</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">所属校区</label>
+                            <input type="text" class="form-control" id="pf_campus" readonly>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">权限</label>
+                            <div id="pf_perm" class="form-control" style="height:auto;min-height:38px;"></div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">状态</label>
+                            <div id="pf_status" class="form-control" style="height:auto;min-height:38px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveMyProfile()"><i class="bi bi-check-lg"></i> 保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {% block extra_js %}{% endblock %}
 </body>
 </html>

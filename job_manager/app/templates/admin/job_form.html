@@ -4,11 +4,48 @@
 
 {% block extra_css %}
 <style>
-.layui-laydate .laydate-btns-confirm { background: #4a7cf7 !important; border-color: #4a7cf7; color: #fff; }
-.layui-laydate .laydate-btns-confirm:hover { background: #3b6cd8 !important; }
-.layui-laydate .laydate-selected { background: #4a7cf7 !important; color: #fff !important; }
-.layui-laydate td.laydate-selected,
-.layui-laydate .laydate-day-selected { background: #4a7cf7 !important; }
+/* ===== 参考 Element UI 风格美化 Laydate ===== */
+/* 面板整体：白色、圆角、阴影、留白 */
+.layui-laydate {
+    border: 1px solid #e4e7ed !important;
+    border-radius: 6px !important;
+    box-shadow: 0 2px 12px 0 rgba(0,0,0,0.12) !important;
+    padding: 4px !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+/* 顶部年月切换区：居中、清晰 */
+.layui-laydate-header { padding: 8px 4px 4px !important; }
+.layui-laydate-header i,
+.layui-laydate-header .laydate-btns { color: #909399 !important; }
+.layui-laydate-header i:hover { color: #2b6cb0 !important; }
+.layui-laydate-header .laydate-this { color: #2b6cb0 !important; }
+/* 星期表头：浅灰 */
+.layui-laydate .laydate-theme-grid thead th { color: #909399; font-size: 13px; padding: 8px 0; }
+/* 日期单元格：40x40，居中，圆角 */
+.layui-laydate td.laydate-day { width: 40px !important; height: 40px !important; text-align: center; font-size: 14px; color: #606266; line-height: 40px !important; }
+.layui-laydate td.laydate-day:hover { border-radius: 50% !important; background: #f0f6fc !important; color: #2b6cb0 !important; }
+/* 非当前月日期：浅灰 */
+.layui-laydate td.laydate-day.prev-month,
+.layui-laydate td.laydate-day.next-month { color: #c0c4cc !important; }
+/* 今天：蓝色文字 */
+.layui-laydate td.laydate-day.laydate-this { color: #2b6cb0 !important; font-weight: bold; }
+/* 选中日期：圆形蓝色高亮 */
+.layui-laydate td.laydate-selected { border-radius: 50% !important; background-color: #2b6cb0 !important; color: #fff !important; }
+.layui-laydate td.laydate-selected:hover { background-color: #2b6cb0 !important; color: #fff !important; }
+.layui-laydate .laydate-day-selected { background: #2b6cb0 !important; color: #fff !important; border-radius: 50% !important; }
+/* 底部按钮：蓝色主题 */
+.layui-laydate .laydate-btns-confirm { background: #2b6cb0 !important; border-color: #2b6cb0 !important; color: #fff !important; border-radius: 4px !important; }
+.layui-laydate .laydate-btns-confirm:hover { background: #1a4a7f !important; }
+.laydate-btns-time,
+.laydate-btns-clear,
+.laydate-btns-now { color: #2b6cb0 !important; }
+/* 时间列表：hover 高亮 */
+.layui-laydate .laydate-time-list ol li:hover,
+.layui-laydate .laydate-time-list ol li.laydate-this { background: #f0f6fc !important; }
+.layui-laydate .laydate-scroll .laydate-selected { background: #2b6cb0 !important; color: #fff !important; border-radius: 4px !important; }
+/* 输入框：干净、圆角、聚焦蓝色边框 */
+.deadline-input { position: relative; }
+input.deadline-input:readonly, input.deadline-input[readonly] { background-color: #fff; }
 </style>
 {% endblock %}
 
@@ -223,7 +260,7 @@ laydate.render({
     type: 'datetime',
     format: 'yyyy-MM-dd HH:mm:ss',
     lang: 'cn',
-    theme: 'default',
+    theme: '#2b6cb0',
     done: function(value) {}
 });
 

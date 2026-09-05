@@ -21,18 +21,18 @@
                         <div class="col-md-3 mb-3">
                             <label class="form-label">姓名 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="real_name" id="real_name"
-                                   value="{{ student.real_name if student else '' }}" required
+                                   value="{{ student.real_name or '' if student else '' }}" required
                                    onchange="autoFillByStudent()">
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">手机号码 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="phone"
-                                   value="{{ student.phone if student else '' }}" required>
+                                   value="{{ student.phone or '' if student else '' }}" required>
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">密码 {% if student %}<span class="text-danger">*</span>{% endif %}</label>
                             <input type="text" class="form-control" name="password" id="password"
-                                   value="{{ student.password_plain if student else '' }}" placeholder="{{ '留空则不修改' if student else '默认身份证后6位' }}"
+                                   value="{{ student.password_plain or '' if student else '' }}" placeholder="{{ '留空则不修改' if student else '默认身份证后6位' }}"
                                    {% if student %}required{% endif %}>
                         </div>
                         <div class="col-md-3 mb-3">
@@ -50,15 +50,15 @@
                         <div class="col-md-3 mb-3">
                             <label class="form-label">身份证号 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="id_card" id="id_card"
-                                   value="{{ student.id_card if student else '' }}"
+                                   value="{{ student.id_card or '' if student else '' }}"
                                    maxlength="18" {{ 'readonly' if student else '' }}
                                    onchange="autoFillByStudent()">
                         </div>
                         <div class="col-md-2 mb-3">
                             <label class="form-label">性别</label>
                             <input type="text" class="form-control" id="gender_display" readonly
-                                   value="{{ student.gender if student else '' }}">
-                            <input type="hidden" name="gender" id="gender" value="{{ student.gender if student else '' }}">
+                                   value="{{ student.gender or '' if student else '' }}">
+                            <input type="hidden" name="gender" id="gender" value="{{ student.gender or '' if student else '' }}">
                         </div>
                         <div class="col-md-2 mb-3">
                             <label class="form-label">出生日期</label>
@@ -82,7 +82,7 @@
                         <div class="col-md-2 mb-3">
                             <label class="form-label">专业</label>
                             <input type="text" class="form-control" name="major"
-                                   value="{{ student.major if student else '' }}">
+                                   value="{{ student.major or '' if student else '' }}">
                         </div>
                     </div>
                     <div class="row">
@@ -104,45 +104,45 @@
                         <div class="col-md-2 mb-3">
                             <label class="form-label">证书</label>
                             <input type="text" class="form-control" name="certificate"
-                                   value="{{ student.certificate if student else '' }}">
+                                   value="{{ student.certificate or '' if student else '' }}">
                         </div>
                         <div class="col-md-2 mb-3">
                             <label class="form-label">生源地</label>
                             <input type="text" class="form-control" name="origin_place"
-                                   value="{{ student.origin_place if student else '' }}">
+                                   value="{{ student.origin_place or '' if student else '' }}">
                         </div>
                         <div class="col-md-2 mb-3">
                             <label class="form-label">意向城市</label>
                             <input type="text" class="form-control" name="intention_city"
-                                   value="{{ student.intention_city if student else '' }}">
+                                   value="{{ student.intention_city or '' if student else '' }}">
                         </div>
                         <div class="col-md-2 mb-3">
                             <label class="form-label">学员头像</label>
                             <input type="text" class="form-control" name="avatar"
-                                   value="{{ student.avatar if student else '' }}" placeholder="头像URL">
+                                   value="{{ student.avatar or '' if student else '' }}" placeholder="头像URL">
                         </div>
                     </div>
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">第一意向岗位</label>
                             <input type="text" class="form-control" name="first_intention"
-                                   value="{{ student.first_intention if student else '' }}">
+                                   value="{{ student.first_intention or '' if student else '' }}">
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">第二意向岗位</label>
                             <input type="text" class="form-control" name="second_intention"
-                                   value="{{ student.second_intention if student else '' }}">
+                                   value="{{ student.second_intention or '' if student else '' }}">
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">第三意向岗位</label>
                             <input type="text" class="form-control" name="third_intention"
-                                   value="{{ student.third_intention if student else '' }}">
+                                   value="{{ student.third_intention or '' if student else '' }}">
                         </div>
                     </div>
                     <div class="row">
                         <div class="col-md-12 mb-3">
                             <label class="form-label">备注</label>
-                            <textarea class="form-control" name="remark" rows="2">{{ student.remark if student else '' }}</textarea>
+                            <textarea class="form-control" name="remark" rows="2">{{ student.remark or '' if student else '' }}</textarea>
                         </div>
                     </div>
                     <div class="row" style="display:none;">

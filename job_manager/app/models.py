@@ -184,6 +184,15 @@ class Job(db.Model):
             return False
         return self.deadline < datetime.now()
 
+    @property
+    def salary_display(self):
+        s = (self.salary_range or '').replace(' ', '').strip()
+        if not s:
+            return '面议'
+        if not (s.replace('0', '').replace('~', '').replace('-', '').replace('—', '').replace('–', '').replace('至', '').replace('元', '').replace('/', '').replace('月', '').replace(',', '').replace('.', '')):
+            return '面议'
+        return s
+
     def __repr__(self):
         return f'<Job {self.job_name}>'
 

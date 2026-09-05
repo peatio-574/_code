@@ -32,7 +32,13 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <div class="mb-3">
                         <label class="form-label">选择Excel文件 <span class="text-danger">*</span></label>
-                        <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required id="importFile">
+                        <div class="input-group">
+                            <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required id="importFile" style="display:none;">
+                            <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('importFile').click()">
+                                <i class="bi bi-file-earmark-excel"></i> 选择文件
+                            </button>
+                            <span class="form-control" id="fileName" style="cursor:default; background:#f8f9fa;">未选择文件</span>
+                        </div>
                     </div>
                     <div id="importStatus" class="text-muted small mb-2"></div>
                     <button type="submit" class="btn btn-primary" id="importSubmitBtn">
@@ -48,6 +54,11 @@
 
 {% block extra_js %}
 <script>
+document.getElementById('importFile').addEventListener('change', function() {
+    var fileName = this.files[0] ? this.files[0].name : '未选择文件';
+    document.getElementById('fileName').textContent = fileName;
+});
+
 document.getElementById('importForm').addEventListener('submit', function(e) {
     e.preventDefault();
     var fileInput = document.getElementById('importFile');

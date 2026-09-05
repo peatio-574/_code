@@ -1,0 +1,41 @@
+<div class="job-card {% if selected_job and selected_job.id == push.job.id %}active{% endif %}"
+     onclick="selectJob({{ push.job.id }})">
+    <div class="job-card-header">
+        <div class="job-title">
+            <a href="{{ url_for('student.job_detail', id=push.job.id) }}">{{ push.job.job_name }}</a>{% if push.job.created_at and (now - push.job.created_at).days <= 3 %}<span class="tag-new">New</span>{% endif %}
+        </div>
+        <div class="job-salary">{{ push.job.salary_display }}</div>
+    </div>
+    <div class="job-tags">
+        {% if push.job.education_req %}
+        <span class="job-tag type-tag">{{ push.job.education_req }}</span>
+        {% endif %}
+        {% if push.job.experience_req %}
+        <span class="job-tag">{{ push.job.experience_req }}</span>
+        {% endif %}
+        {% if push.job.job_category %}
+        <span class="job-tag skill-tag">{{ push.job.job_category }}</span>
+        {% endif %}
+    </div>
+    <div class="job-meta">
+        {% if push.job.work_location %}
+        <span><i class="bi bi-geo-alt"></i> {{ push.job.work_location }}</span>
+        {% endif %}
+        {% if push.job.recruit_count %}
+        <span><i class="bi bi-people"></i> {{ push.job.recruit_count }}人</span>
+        {% endif %}
+        {% if push.job.deadline %}
+        <span class="deadline-meta"><i class="bi bi-clock"></i> {{ push.job.deadline.strftime('%Y-%m-%d') }}截止</span>
+        {% endif %}
+    </div>
+    <div class="job-company">
+        <div class="company-logo"><i class="bi bi-building"></i></div>
+        <div class="company-info">
+            <div class="company-name">{{ push.job.company_name }}</div>
+            <div class="company-location">
+                {% if push.job.company_size %}{{ push.job.company_size }}{% endif %}
+                {% if push.job.company_industry %} · {{ push.job.company_industry }}{% endif %}
+            </div>
+        </div>
+    </div>
+</div>

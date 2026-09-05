@@ -37,6 +37,11 @@
 <!-- 校区列表 -->
 <div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
     <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <style>
+        .table.no-data { border: none !important; }
+        .table.no-data thead th { border-bottom: none !important; }
+        .table.no-data td { border: none !important; }
+        </style>
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
             <colgroup>
                 <col style="width:5%;">
@@ -140,10 +145,13 @@ async function loadCampuses() {
 
 function renderCampuses(campuses) {
     const body = document.getElementById('campusesBody');
+    const table = document.querySelector('table');
     if (!campuses || campuses.length === 0) {
+        table.classList.add('no-data');
         body.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-5">暂无校区数据</td></tr>';
         return;
     }
+    table.classList.remove('no-data');
     body.innerHTML = campuses.map(function(c) {
         const adminLink = `<a href="{{ url_for("admin.users_page") }}?campus=${encodeURIComponent(c.name)}" class="text-primary fw-bold" title="查看管理员">${c.admin_count || 0}</a>`;
         const studentLink = `<a href="{{ url_for("admin.students_page") }}?campus=${encodeURIComponent(c.name)}" class="text-primary fw-bold" title="查看学员">${c.student_count || 0}</a>`;

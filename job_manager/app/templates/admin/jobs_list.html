@@ -77,9 +77,11 @@
                 <button type="button" class="btn btn-primary fw-bold" id="batchDeleteBtn">
                     <i class="bi bi-trash"></i> 批量删除
                 </button>
+                {% if can_access_menu('push') %}
                 <button type="button" class="btn btn-success fw-bold" id="pushJobBtn" onclick="showPushModal()">
                     <i class="bi bi-send"></i> 岗位推送
                 </button>
+                {% endif %}
                 <button type="button" class="btn btn-warning fw-bold" id="refreshBtn" title="刷新">
                     <i class="bi bi-arrow-clockwise"></i> 刷新
                 </button>
@@ -91,18 +93,24 @@
 <!-- 岗位列表 -->
 <div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
     <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <style>
+        .table.no-data { border: none !important; }
+        .table.no-data thead th { border-bottom: none !important; }
+        .table.no-data td { border: none !important; }
+        </style>
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
                 <colgroup>
                     <col style="width:4%;">
                     <col style="width:12%;">
-                    <col style="width:14%;">
-                    <col style="width:9%;">
+                    <col style="width:12%;">
+                    <col style="width:8%;">
                     <col style="width:7%;">
                     <col style="width:9%;">
-                    <col style="width:6%;">
-                    <col style="width:11%;">
+                    <col style="width:5%;">
+                    <col style="width:10%;">
                     <col style="width:4%;">
-                    <col style="width:15%;">
+                    <col style="width:12%;">
+                    <col style="width:10%;">
                     <col style="width:9%;">
                 </colgroup>
                 <thead class="sticky-thead">
@@ -117,6 +125,7 @@
                         <th>工作地点</th>
                         <th style="text-align:center;">人数</th>
                         <th>截止时间</th>
+                        <th>更新时间</th>
                         <th style="text-align:center;">操作</th>
                     </tr>
                 </thead>
@@ -125,7 +134,9 @@
     </div>
     <div class="card-footer page-footer d-flex flex-wrap align-items-center gap-3 px-3 py-2" style="justify-content:flex-start;">
         <div class="d-flex align-items-center gap-3">
+            {% if current_user.is_super_admin() %}
             <span class="page-total">共 <strong id="jobTotal">0</strong> 条</span>
+            {% endif %}
             <select class="form-select page-select" id="perPage" onchange="changePerPage()">
                 <option value="20" selected>20条/页</option>
                 <option value="50">50条/页</option>
@@ -133,12 +144,14 @@
             </select>
         </div>
         <nav id="paginationNav"></nav>
+        {% if current_user.is_super_admin() %}
         <div class="d-flex align-items-center gap-1">
             <span class="goto-text">前往</span>
             <input type="number" class="form-control goto-input" id="gotoPage" min="1" onkeyup="if(event.key==='Enter')gotoPage()">
             <span class="goto-text">页</span>
             <button type="button" class="btn btn-primary btn-sm" onclick="gotoPage()">跳转</button>
         </div>
+        {% endif %}
     </div>
 </div>
 </div>
@@ -167,13 +180,13 @@
 
 <!-- 岗位推送弹窗 -->
 <style>
-#pushJobModal .table { table-layout: auto; border: none; }
-#pushJobModal .table td, #pushJobModal .table th { border: none; }
-#pushJobModal .table thead th { border-bottom: 1px solid #dee2e6 !important; padding-bottom: 26px !important; }
 #pushJobModal .modal-dialog { height: 100vh; display: flex; margin: 0 auto; }
 #pushJobModal .modal-content { height: 100%; overflow: hidden; display: flex; flex-direction: column; }
 #pushJobModal .modal-body { overflow: hidden; flex: 1; display: flex; flex-direction: column; }
-#pushJobModal .student-list-wrap { flex: 1; overflow-y: auto; min-height: 70%; border: none; }
+#pushJobModal .student-list-wrap { flex: 1; overflow-y: auto; min-height: 70%; }
+#pushJobModal .student-list-wrap .table.no-data { border: none !important; }
+#pushJobModal .student-list-wrap .table.no-data thead th { border-bottom: none !important; }
+#pushJobModal .student-list-wrap .table.no-data td { border: none !important; }
 #pushJobModal .modal-footer { border-top: none; }
 </style>
 <div class="modal fade" id="pushJobModal" tabindex="-1">
@@ -207,10 +220,18 @@
                     </div>
                 </div>
                 <div class="border rounded student-list-wrap">
-                    <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+                    <table class="table table-hover align-middle mb-0 no-data" style="width:100%; table-layout:fixed;">
+                        <colgroup>
+                            <col style="width:5%;">
+                            <col style="width:15%;">
+                            <col style="width:18%;">
+                            <col style="width:18%;">
+                            <col style="width:14%;">
+                            <col style="width:30%;">
+                        </colgroup>
                         <thead class="sticky-thead">
                             <tr>
-                                <th style="width:50px;"><input type="checkbox" id="selectAllPushStudents" onchange="toggleAllPushStudents(this.checked)"></th>
+                                <th><input type="checkbox" id="selectAllPushStudents" onchange="toggleAllPushStudents(this.checked)"></th>
                                 <th>姓名</th>
                                 <th>手机号</th>
                                 <th>校区</th>
@@ -219,7 +240,7 @@
                             </tr>
                         </thead>
                         <tbody id="pushStudentsBody">
-                            <tr><td colspan="6" class="text-center text-muted py-4">请先选择校区</td></tr>
+                            <tr><td colspan="6" class="text-center text-muted py-5">加载中...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -238,6 +259,7 @@
 {% block extra_js %}
 <script>
 const JOB_EDIT_URL = '{{ url_for("admin.job_edit", id=0) }}'.replace('0', '');
+const IS_SUPER_ADMIN = {{ 'true' if current_user.is_super_admin() else 'false' }};
 
 let currentPage = 1;
 let currentPerPage = 20;
@@ -283,24 +305,27 @@ function updateUrl() {}
 
 async function loadJobs() {
     const body = document.getElementById('jobsBody');
-    body.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-5">加载中...</td></tr>';
+    body.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-5">加载中...</td></tr>';
     try {
         const res = await fetch('{{ url_for("admin.jobs_list") }}?' + buildQuery());
         const data = await res.json();
         renderJobs(data.jobs);
         renderPagination(data.pagination);
     } catch (e) {
-        body.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-5">加载失败</td></tr>';
+        body.innerHTML = '<tr><td colspan="12" class="text-center text-danger py-5">加载失败</td></tr>';
     }
 }
 
 function renderJobs(jobs) {
     const body = document.getElementById('jobsBody');
+    const table = document.querySelector('table');
     if (!jobs || jobs.length === 0) {
-        body.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-5">暂无岗位数据</td></tr>';
+        table.classList.add('no-data');
+        body.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-5">暂无岗位数据</td></tr>';
         document.getElementById('selectAll').checked = false;
         return;
     }
+    table.classList.remove('no-data');
     body.innerHTML = jobs.map(job => {
         let deadlineHtml;
         if (job.deadline) {
@@ -322,9 +347,10 @@ function renderJobs(jobs) {
             <td>${escapeHtml(job.location)}</td>
             <td style="text-align:center;">${job.recruit_count}</td>
             <td>${deadlineHtml}</td>
+            <td>${escapeHtml(job.updated_at) || '-'}</td>
             <td style="text-align:center; white-space:nowrap;">
-                <a href="${editUrl}" class="btn btn-sm btn-outline-primary me-1" title="�༭"><i class="bi bi-pencil"></i></a>
-                <button type="button" class="btn btn-sm btn-outline-danger" title="ɾ��" onclick="showJobDeleteModal('${job.id}','${escapeAttr(job.job_name)}')"><i class="bi bi-trash"></i></button>
+                <a href="${editUrl}" class="btn btn-sm btn-outline-primary me-1" title="编辑"><i class="bi bi-pencil"></i></a>
+                <button type="button" class="btn btn-sm btn-outline-danger" title="删除" onclick="showJobDeleteModal('${job.id}','${escapeAttr(job.job_name)}')"><i class="bi bi-trash"></i></button>
             </td>
         </tr>`;
     }).join('');
@@ -338,9 +364,11 @@ function renderJobs(jobs) {
 }
 
 function renderPagination(p) {
-    document.getElementById('jobTotal').textContent = p.total;
-    document.getElementById('gotoPage').max = p.pages;
-    document.getElementById('gotoPage').value = p.page;
+    if (IS_SUPER_ADMIN) {
+        document.getElementById('jobTotal').textContent = p.total;
+        document.getElementById('gotoPage').max = p.pages;
+        document.getElementById('gotoPage').value = p.page;
+    }
     const nav = document.getElementById('paginationNav');
     if (p.pages <= 1) {
         nav.innerHTML = '';
@@ -348,19 +376,32 @@ function renderPagination(p) {
     }
     let html = '<ul class="pagination pagination-sm mb-0">';
     html += `<li class="page-item ${p.has_prev ? '' : 'disabled'}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.prev_num})">&lt;</a></li>`;
-    const left = Math.max(1, p.page - 3);
-    const right = Math.min(p.pages, p.page + 3);
-    if (left > 1) {
-        html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(1)">1</a></li>`;
-        if (left > 2) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+    
+    if (IS_SUPER_ADMIN) {
+        const left = Math.max(1, p.page - 3);
+        const right = Math.min(p.pages, p.page + 3);
+        if (left > 1) {
+            html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(1)">1</a></li>`;
+            if (left > 2) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+        }
+        for (let i = left; i <= right; i++) {
+            html += `<li class="page-item ${i === p.page ? 'active' : ''}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${i})">${i}</a></li>`;
+        }
+        if (right < p.pages) {
+            if (right < p.pages - 1) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+            html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.pages})">${p.pages}</a></li>`;
+        }
+    } else {
+        const left = Math.max(1, p.page - 2);
+        const right = Math.min(p.pages, p.page + 2);
+        if (left > 1) {
+            html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(1)">1</a></li>`;
+        }
+        for (let i = left; i <= right; i++) {
+            html += `<li class="page-item ${i === p.page ? 'active' : ''}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${i})">${i}</a></li>`;
+        }
     }
-    for (let i = left; i <= right; i++) {
-        html += `<li class="page-item ${i === p.page ? 'active' : ''}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${i})">${i}</a></li>`;
-    }
-    if (right < p.pages) {
-        if (right < p.pages - 1) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
-        html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.pages})">${p.pages}</a></li>`;
-    }
+    
     html += `<li class="page-item ${p.has_next ? '' : 'disabled'}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.next_num})">&gt;</a></li>`;
     html += '</ul>';
     nav.innerHTML = html;
@@ -392,10 +433,11 @@ function escapeAttr(str) {
 }
 
 function formatSalary(v) {
-    if (!v) return '-';
-    var t = String(v).trim();
-    if (/^0\s*[~\-—–]\s*0/.test(t) || /^0\s*0/.test(t)) return '-';
-    return v;
+    if (!v) return '面议';
+    var t = String(v).replace(/\s+/g, '');
+    var cleaned = t.replace(/0/g, '').replace(/[ ~\-—–至元/,\.月]/g, '');
+    if (cleaned === '') return '面议';
+    return t;
 }
 
 document.getElementById('searchForm').addEventListener('submit', function(e) {
@@ -580,18 +622,20 @@ function showPushModal() {
     const infoDiv = document.getElementById('selectedJobsInfo');
     infoDiv.textContent = jobIds.length;
     
-    loadPushCampuses();
+    loadPushCampuses().then(() => {
+        loadPushStudents();
+    });
     new bootstrap.Modal(document.getElementById('pushJobModal')).show();
 }
 
 async function loadPushCampuses() {
     try {
-        const res = await fetch('{{ url_for("admin.campuses_list") }}');
+        const res = await fetch('{{ url_for("admin.push_campuses") }}');
         const data = await res.json();
         const select = document.getElementById('pushCampusFilter');
         let html = '<option value="">全部校区</option>';
         (data.campuses || []).forEach(c => {
-            html += `<option value="${escapeAttr(c.name)}">${escapeHtml(c.name)}</option>`;
+            html += `<option value="${escapeAttr(c.name)}">${escapeHtml(c.name)}（${c.student_count}人）</option>`;
         });
         select.innerHTML = html;
     } catch (e) {
@@ -602,7 +646,9 @@ async function loadPushCampuses() {
 async function loadPushStudents() {
     const campus = document.getElementById('pushCampusFilter').value;
     const body = document.getElementById('pushStudentsBody');
-    body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">加载中...</td></tr>';
+    const table = body.closest('table');
+    table.classList.add('no-data');
+    body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">加载中...</td></tr>';
     
     try {
         let url = '{{ url_for("admin.students_list") }}?per_page=0&status=active';
@@ -612,19 +658,23 @@ async function loadPushStudents() {
         pushStudents = data.students || [];
         renderPushStudents(pushStudents);
     } catch (e) {
-        body.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">加载失败</td></tr>';
+        table.classList.add('no-data');
+        body.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-5">加载失败</td></tr>';
     }
 }
 
 function renderPushStudents(students) {
     const body = document.getElementById('pushStudentsBody');
+    const table = body.closest('table');
     if (!students || students.length === 0) {
-        body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">暂无学员数据</td></tr>';
+        table.classList.add('no-data');
+        body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">暂无学员数据</td></tr>';
         return;
     }
+    table.classList.remove('no-data');
     body.innerHTML = students.map(s => {
         const checked = selectedStudentIds.has(s.id) ? 'checked' : '';
-        return `<tr>
+        return `<tr style="height:50px;">
             <td style="padding-left:15px;"><input type="checkbox" value="${s.id}" class="push-student-checkbox" ${checked} onchange="togglePushStudent(${s.id}, this.checked)"></td>
             <td>${escapeHtml(s.real_name)}</td>
             <td>${escapeHtml(s.phone)}</td>
@@ -647,6 +697,12 @@ function filterPushStudents() {
     );
     renderPushStudents(filtered);
 }
+
+let pushSearchTimer = null;
+document.getElementById('pushKeyword').addEventListener('input', function() {
+    clearTimeout(pushSearchTimer);
+    pushSearchTimer = setTimeout(filterPushStudents, 300);
+});
 
 function togglePushStudent(id, checked) {
     if (checked) {
@@ -705,6 +761,11 @@ async function submitPush() {
         return;
     }
     
+    const btn = document.querySelector('#pushJobModal .modal-footer .btn-success');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 推送中...';
+    
     const formData = new FormData();
     formData.append('csrf_token', '{{ csrf_token }}');
     jobIds.forEach(id => formData.append('job_ids', id));
@@ -717,14 +778,18 @@ async function submitPush() {
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         });
         const data = await res.json();
-        if (data.success !== false) {
-            showToast('推送成功', 'success');
+        if (data.success) {
+            showToast(data.message || '推送成功', 'success');
             bootstrap.Modal.getInstance(document.getElementById('pushJobModal')).hide();
+            loadJobs();
         } else {
             showToast(data.message || '推送失败', 'danger');
         }
     } catch (e) {
         showToast('推送失败', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
     }
 }
 </script>

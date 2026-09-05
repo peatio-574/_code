@@ -1,13 +1,11 @@
 from functools import wraps
-from flask import flash, redirect, url_for, session
+from flask import flash, redirect, url_for, session, jsonify, request
 from flask_login import current_user
 import secrets
 
 
 # ==================== 权限常量 ====================
-PERMISSION_MANAGE_JOBS = 'can_manage_jobs'
 PERMISSION_MANAGE_STUDENTS = 'can_manage_students'
-PERMISSION_MANAGE_ACCOUNTS = 'can_manage_accounts'
 PERMISSION_PUSH_JOBS = 'can_push_jobs'
 
 
@@ -86,15 +84,10 @@ def has_permission(user, permission):
 
 def get_user_permissions(user):
     if user.is_super_admin():
-        return [PERMISSION_MANAGE_JOBS, PERMISSION_MANAGE_STUDENTS, 
-                PERMISSION_MANAGE_ACCOUNTS, PERMISSION_PUSH_JOBS]
+        return [PERMISSION_MANAGE_STUDENTS, PERMISSION_PUSH_JOBS]
     permissions = []
-    if getattr(user, 'can_manage_jobs', False):
-        permissions.append(PERMISSION_MANAGE_JOBS)
     if getattr(user, 'can_manage_students', False):
         permissions.append(PERMISSION_MANAGE_STUDENTS)
-    if getattr(user, 'can_manage_accounts', False):
-        permissions.append(PERMISSION_MANAGE_ACCOUNTS)
     if getattr(user, 'can_push_jobs', False):
         permissions.append(PERMISSION_PUSH_JOBS)
     return permissions
@@ -103,11 +96,11 @@ def get_user_permissions(user):
 def can_access_menu(user, menu):
     menu_permissions = {
         'dashboard': True,
-        'jobs': PERMISSION_MANAGE_JOBS,
+        'jobs': True,
         'students': PERMISSION_MANAGE_STUDENTS,
         'push': PERMISSION_PUSH_JOBS,
-        'accounts': PERMISSION_MANAGE_ACCOUNTS,
-        'logs': PERMISSION_MANAGE_ACCOUNTS,
+        'accounts': True,
+        'logs': True,
     }
     required_permission = menu_permissions.get(menu)
     if required_permission is None:
@@ -115,3 +108,38 @@ def can_access_menu(user, menu):
     if required_permission is True:
         return True
     return has_permission(user, required_permission)
+
+
+# ==================== 校区权限校验 ====================
+def get_campus_filter():
+    """获取当前用户的校区过滤条件，超管返回None表示不过滤"""
+    if current_user.is_super_admin():
+        return None
+    return current_user.campus_id
+
+
+def validate_campus_access(campus_id):
+    """校验用户是否有权访问指定校区数据，返回(True, None)或(False, 错误响应)"""
+    if current_user.is_super_admin():
+        return True, None
+    if campus_id != current_user.campus_id:
+        msg = '无权访问其他校区数据'
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return False, jsonify({'success': False, 'message': msg})
+        flash(msg, 'danger')
+        return False, redirect(url_for('admin.dashboard'))
+    return True, None
+
+
+def validate_object_campus(obj):
+    """校验用户是否有权操作指定对象（根据对象的campus_id），返回(True, None)或(False, 错误响应)"""
+    if current_user.is_super_admin():
+        return True, None
+    obj_campus_id = getattr(obj, 'campus_id', None)
+    if obj_campus_id != current_user.campus_id:
+        msg = '无权操作其他校区数据'
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return False, jsonify({'success': False, 'message': msg})
+        flash(msg, 'danger')
+        return False, redirect(url_for('admin.dashboard'))
+    return True, None

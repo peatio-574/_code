@@ -34,6 +34,11 @@
 <!-- 角色列表 -->
 <div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
     <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <style>
+        .table.no-data { border: none !important; }
+        .table.no-data thead th { border-bottom: none !important; }
+        .table.no-data td { border: none !important; }
+        </style>
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
             <colgroup>
                 <col style="width:20%;">
@@ -141,10 +146,13 @@ async function loadRoles() {
 
 function renderRoles(roles) {
     const body = document.getElementById('rolesBody');
+    const table = document.querySelector('table');
     if (!roles || roles.length === 0) {
+        table.classList.add('no-data');
         body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">暂无角色数据</td></tr>';
         return;
     }
+    table.classList.remove('no-data');
     body.innerHTML = roles.map(function(r) {
         const statusSwitch = `<div class="form-check form-switch" style="display:flex; justify-content:center;">
             <input class="form-check-input" type="checkbox" role="switch" id="status_${r.id}" ${r.is_active ? 'checked' : ''} onchange="toggleRoleStatus(${r.id}, this)">

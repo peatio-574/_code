@@ -5,16 +5,66 @@
 {% block content %}
 <div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
 
+<!-- 搜索筛选 -->
+<div class="card mb-3 flex-shrink-0" style="margin-top:0;">
+    <div class="card-body" style="padding-top:0;">
+        <form id="searchForm" style="padding-top:8px;">
+            <div class="row g-3 mb-3">
+                <div class="col-md">
+                    <label class="form-label fw-bold">岗位名称：</label>
+                    <input type="text" class="form-control" name="keyword_job" placeholder="岗位名称">
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">单位名称：</label>
+                    <input type="text" class="form-control" name="keyword_company" placeholder="单位名称">
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">推送学员：</label>
+                    <input type="text" class="form-control" name="keyword_student" placeholder="姓名/手机号">
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">推送人：</label>
+                    <input type="text" class="form-control" name="keyword_pusher" placeholder="姓名/手机号">
+                </div>
+                <div class="col-md">
+                    <label class="form-label fw-bold">是否查看：</label>
+                    <select class="form-select filter-select" name="is_read" onchange="applyFilters()">
+                        <option value="">全部</option>
+                        <option value="1">已查看</option>
+                        <option value="0">未查看</option>
+                    </select>
+                </div>
+            </div>
+            <div class="d-flex align-items-center gap-2 pt-2">
+                <button type="submit" class="btn btn-primary fw-bold">
+                    <i class="bi bi-search"></i> 搜索
+                </button>
+                <a href="{{ url_for('admin.push_page') }}" class="btn btn-secondary btn-reset fw-bold">重置</a>
+                <button type="button" class="btn btn-warning fw-bold" id="refreshBtn" title="刷新">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.table.no-data { border: none !important; }
+.table.no-data thead th { border-bottom: none !important; }
+.table.no-data td { border: none !important; }
+</style>
+
+<!-- 推送记录列表 -->
 <div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
     <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
             <colgroup>
-                <col style="width:180px;">
-                <col style="width:190px;">
-                <col style="width:120px;">
-                <col style="width:110px;">
-                <col style="width:150px;">
-                <col style="width:90px;">
+                <col style="width:15%;">
+                <col style="width:15%;">
+                <col style="width:12%;">
+                <col style="width:12%;">
+                <col style="width:15%;">
+                <col style="width:10%;">
             </colgroup>
             <thead class="sticky-thead">
                 <tr>
@@ -54,16 +104,20 @@
 <script>
 let currentPage = 1;
 let currentPerPage = 20;
+let filters = { keyword_job: '', keyword_company: '', keyword_student: '', keyword_pusher: '', is_read: '' };
 
 function buildQuery() {
     let params = new URLSearchParams();
     params.set('page', currentPage);
     params.set('per_page', currentPerPage);
+    Object.keys(filters).forEach(k => { if (filters[k]) params.set(k, filters[k]); });
     return params.toString();
 }
 
 async function loadPushes() {
     const body = document.getElementById('pushesBody');
+    const table = body.closest('table');
+    table.classList.add('no-data');
     body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">加载中...</td></tr>';
     try {
         const res = await fetch('{{ url_for("admin.push_list") }}?' + buildQuery());
@@ -77,10 +131,13 @@ async function loadPushes() {
 
 function renderPushes(pushes) {
     const body = document.getElementById('pushesBody');
+    const table = body.closest('table');
     if (!pushes || pushes.length === 0) {
+        table.classList.add('no-data');
         body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">暂无推送记录</td></tr>';
         return;
     }
+    table.classList.remove('no-data');
     body.innerHTML = pushes.map(p => {
         const read = p.is_read
             ? '<span class="badge bg-success">已查看</span>'
@@ -139,6 +196,24 @@ function escapeHtml(str) {
     div.textContent = str;
     return div.innerHTML;
 }
+
+document.getElementById('searchForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    applyFilters();
+});
+
+function applyFilters() {
+    const fd = new FormData(document.getElementById('searchForm'));
+    filters.keyword_job = fd.get('keyword_job') || '';
+    filters.keyword_company = fd.get('keyword_company') || '';
+    filters.keyword_student = fd.get('keyword_student') || '';
+    filters.keyword_pusher = fd.get('keyword_pusher') || '';
+    filters.is_read = fd.get('is_read') || '';
+    currentPage = 1;
+    loadPushes();
+}
+
+document.getElementById('refreshBtn').addEventListener('click', function() { loadPushes(); });
 
 loadPushes();
 </script>

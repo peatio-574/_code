@@ -3,21 +3,24 @@
 Job Manager 数据库初始化脚本
 功能：建库、建表、插入默认数据（校区、角色、2个超管账号）
 使用：python init_db.py
+支持通过环境变量覆盖配置：
+  DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
 """
+import os
 import sys
 import pymysql
 from werkzeug.security import generate_password_hash
 
 
-# ==================== 数据库配置 ====================
+# ==================== 数据库配置（支持环境变量覆盖）====================
 DB_CONFIG = {
-    'host': '127.0.0.1',
-    'port': 3306,
-    'user': 'root',
-    'password': 'root',
+    'host': os.environ.get('DB_HOST', '127.0.0.1'),
+    'port': int(os.environ.get('DB_PORT', 3306)),
+    'user': os.environ.get('DB_USER', 'job_CAIQABiAB'),
+    'password': os.environ.get('DB_PASSWORD', 'BBii@BDIKCAU&QABiiBBi*JBTIH'),
     'charset': 'utf8mb4'
 }
-DATABASE_NAME = 'job'
+DATABASE_NAME = os.environ.get('DB_NAME', 'job')
 
 
 # ==================== DDL 建表语句 ====================
@@ -205,11 +208,18 @@ def create_tables():
 def insert_defaults():
     """
     插入默认数据（与 app/__init__.py 中 _create_defaults 保持一致）
-    - 4个角色
+    - 1个默认校区
+    - 3个角色
     - 2个超管账号
     """
     conn = pymysql.connect(**DB_CONFIG, database=DATABASE_NAME)
     cursor = conn.cursor()
+
+    # 默认校区
+    cursor.execute(
+        "INSERT IGNORE INTO `campuses` (`name`, `is_active`) VALUES (%s, 1)",
+        ('默认校区',)
+    )
 
     # 默认角色：校长、老师、教务主管、招生主任
     roles = ['校长', '老师', '教务主管', '招生主任']
