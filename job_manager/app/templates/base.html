@@ -39,6 +39,12 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            white-space: nowrap;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
         .header-nav {
             display: flex;
@@ -471,11 +477,67 @@
         /* Mobile */
         @media (max-width: 768px) {
             .sidebar { display: none; }
-            .main-content { margin-left: 0; }
-            .mobile-menu { display: flex !important; }
+            .main-content { margin-left: 0; padding: 12px; }
             .header-nav { display: none; }
+            .card-body { padding: 12px; }
+            .card-body.p-0 { padding: 0 !important; }
+            .table { min-width: 640px; }
+            .card-body[style*="overflow"] { -webkit-overflow-scrolling: touch; }
+            .modal-dialog { max-width: calc(100% - 16px); margin: 8px auto; }
         }
-        .mobile-menu { display: none; }
+        .mobile-menu-toggle {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 24px;
+            line-height: 1;
+            color: #fff;
+            cursor: pointer;
+            padding: 4px;
+            margin: 0;
+            width: 36px;
+            height: 36px;
+            align-items: center;
+            justify-content: center;
+        }
+        .mobile-menu {
+            display: none;
+            position: fixed;
+            top: 60px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #fff;
+            z-index: 1045;
+            overflow-y: auto;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+        .mobile-menu.show { display: block; }
+        .mobile-menu-inner { padding: 16px; }
+        .mobile-menu .menu-group { margin-bottom: 16px; }
+        .mobile-menu .menu-title {
+            font-size: 12px;
+            color: #999;
+            padding: 6px 12px;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+        .mobile-menu .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            color: #333;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 15px;
+        }
+        .mobile-menu .menu-item:hover { background: #f5f7fa; }
+        .mobile-menu .menu-item.active { background: #eef4fb; color: #2b6cb0; }
+        .mobile-menu .menu-item i { font-size: 18px; width: 20px; text-align: center; }
+        @media (max-width: 768px) {
+            .mobile-menu-toggle { display: flex; }
+        }
         
         /* 弹窗打开时防止页面滚动 */
         body.modal-open { overflow: hidden !important; }
@@ -538,15 +600,59 @@
             from { opacity: 0; transform: translateY(-12px); }
             to { opacity: 1; transform: translateY(0); }
         }
+
+        /* ---- 移动端筛选折叠（超管/列表页通用） ---- */
+        .filter-toggle-btn {
+            display: none;
+            width: 100%;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            background: #fff;
+            border: 1px solid #dde1e7;
+            border-radius: 8px;
+            color: #4a7cf7;
+            font-weight: 600;
+            font-size: 14px;
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .filter-toggle-btn:hover { border-color: #4a7cf7; background: #f0f7ff; }
+        .filter-toggle-btn > span { display: flex; align-items: center; gap: 8px; }
+        .filter-toggle-btn > i { transition: transform 0.25s; transform: rotate(180deg); }
+        .filter-toggle-btn.collapsed > i { transform: rotate(0deg); }
+        .filter-toggle-btn + .card.mb-3.flex-shrink-0 { margin-top: 8px; }
+        .card.mb-3.flex-shrink-0.is-filter-collapsed {
+            max-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: 0 !important;
+            overflow: hidden !important;
+        }
+        @media (max-width: 768px) {
+            body { overflow: auto; }
+            .main-content { height: auto !important; overflow: visible !important; }
+            .main-content > div[style*="display:flex"] { height: auto !important; overflow: visible !important; }
+            .main-content .flex-grow-1[style*="min-height:0"] { min-height: 55vh !important; }
+            .main-content .card[style*="overflow:hidden"] { overflow: visible !important; }
+            .d-flex.align-items-center.gap-2.pt-2 { flex-wrap: wrap; }
+            .filter-toggle-btn { display: flex; }
+        }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
     <!-- Top Header -->
     <div class="top-header">
-        <div class="header-brand">
-            <i class="bi bi-building"></i>
-            聘安途岗推系统
+        <div class="header-left">
+            <button type="button" class="mobile-menu-toggle" onclick="toggleMobileMenu(this)" aria-label="菜单">
+                <i class="bi bi-list"></i>
+            </button>
+            <div class="header-brand">
+                <i class="bi bi-building"></i>
+                聘安途岗推系统
+            </div>
         </div>
         <div class="header-user dropdown">
             <div class="header-welcome-wrap"><span class="header-welcome">你好，{% if current_user.is_super_admin() %}超级管理员{% elif current_user.is_admin() %}{{ current_user.real_name or current_user.username }}{{ current_user.role }}{% else %}{{ current_user.real_name or current_user.username }}{% endif %}！</span></div>
@@ -644,6 +750,53 @@
         {% endif %}
     </div>
 
+    <!-- Mobile Menu -->
+    <div class="mobile-menu" id="mobileMenu">
+        <div class="mobile-menu-inner">
+            {% if current_user.is_super_admin() %}
+            <div class="menu-group">
+                <div class="menu-title">主菜单</div>
+                <a href="{{ url_for('admin.dashboard') }}" class="menu-item {% if request.endpoint == 'admin.dashboard' %}active{% endif %}"><i class="bi bi-house-door"></i> 首页</a>
+            </div>
+            <div class="menu-group">
+                <div class="menu-title">业务管理</div>
+                <a href="{{ url_for('admin.jobs_page') }}" class="menu-item {% if 'job' in request.endpoint %}active{% endif %}"><i class="bi bi-briefcase"></i> 岗位管理</a>
+                <a href="{{ url_for('admin.users_page') }}" class="menu-item {% if 'user' in request.endpoint or 'import_admin' in request.endpoint %}active{% endif %}"><i class="bi bi-people"></i> 管理员管理</a>
+                <a href="{{ url_for('admin.students_page') }}" class="menu-item {% if 'student' in request.endpoint %}active{% endif %}"><i class="bi bi-person-lines-fill"></i> 学员管理</a>
+                <a href="{{ url_for('admin.push_page') }}" class="menu-item {% if request.endpoint == 'admin.push_page' %}active{% endif %}"><i class="bi bi-send"></i> 推送记录</a>
+            </div>
+            <div class="menu-group">
+                <div class="menu-title">系统管理</div>
+                <a href="{{ url_for('admin.campuses_page') }}" class="menu-item {% if 'campus' in request.endpoint %}active{% endif %}"><i class="bi bi-building"></i> 校区管理</a>
+                <a href="{{ url_for('admin.roles_page') }}" class="menu-item {% if 'role' in request.endpoint %}active{% endif %}"><i class="bi bi-person-badge"></i> 角色管理</a>
+                <a href="{{ url_for('admin.logs_page') }}" class="menu-item {% if request.endpoint == 'admin.logs_page' %}active{% endif %}"><i class="bi bi-journal-text"></i> 操作日志</a>
+            </div>
+            {% elif current_user.is_admin() %}
+            <div class="menu-group">
+                <div class="menu-title">主菜单</div>
+                <a href="{{ url_for('admin.dashboard') }}" class="menu-item {% if request.endpoint == 'admin.dashboard' %}active{% endif %}"><i class="bi bi-house-door"></i> 首页</a>
+            </div>
+            <div class="menu-group">
+                <div class="menu-title">业务管理</div>
+                <a href="{{ url_for('admin.jobs_page') }}" class="menu-item {% if 'job' in request.endpoint %}active{% endif %}"><i class="bi bi-briefcase"></i> 岗位管理</a>
+                {% if can_access_menu('students') %}
+                <a href="{{ url_for('admin.students_page') }}" class="menu-item {% if 'student' in request.endpoint %}active{% endif %}"><i class="bi bi-person-lines-fill"></i> 学员管理</a>
+                {% endif %}
+                <a href="{{ url_for('admin.push_page') }}" class="menu-item {% if request.endpoint == 'admin.push_page' %}active{% endif %}"><i class="bi bi-send"></i> 推送记录</a>
+            </div>
+            <div class="menu-group">
+                <div class="menu-title">系统管理</div>
+                <a href="{{ url_for('admin.logs_page') }}" class="menu-item {% if request.endpoint == 'admin.logs_page' %}active{% endif %}"><i class="bi bi-journal-text"></i> 操作日志</a>
+            </div>
+            {% else %}
+            <div class="menu-group">
+                <div class="menu-title">我的</div>
+                <a href="{{ url_for('student.my_pushes') }}" class="menu-item {% if request.endpoint == 'student.my_pushes' %}active{% endif %}"><i class="bi bi-inbox"></i> 我的推送</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
     <!-- Watermark -->
     <div class="watermark">{{ current_user.real_name or current_user.username }} {{ current_user.username }}</div>
 
@@ -663,6 +816,17 @@
         warning: 'bi-exclamation-lg',
         info: 'bi-info-lg'
     };
+    function toggleMobileMenu(btn) {
+        var menu = document.getElementById('mobileMenu');
+        if (menu) menu.classList.toggle('show');
+    }
+    document.addEventListener('click', function(e) {
+        var menu = document.getElementById('mobileMenu');
+        var toggle = document.querySelector('.mobile-menu-toggle');
+        if (menu && menu.classList.contains('show') && toggle && !menu.contains(e.target) && !toggle.contains(e.target)) {
+            menu.classList.remove('show');
+        }
+    });
     function showToast(message, category) {
         var container = document.getElementById('toastContainer');
         if (!container) return;
@@ -813,6 +977,39 @@
             </div>
         </div>
     </div>
+
+    <script>
+    (function () {
+        var mq = window.matchMedia('(max-width: 768px)');
+        function isMobile() { return mq.matches; }
+        function initFilterToggle() {
+            var cards = document.querySelectorAll('.card.mb-3.flex-shrink-0');
+            cards.forEach(function (card) {
+                if (card.dataset.filterToggleReady) return;
+                card.dataset.filterToggleReady = '1';
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'filter-toggle-btn';
+                btn.innerHTML = '<span><i class="bi bi-sliders"></i>筛选条件</span><i class="bi bi-chevron-down"></i>';
+                card.parentNode.insertBefore(btn, card);
+                function setCollapsed(collapsed) {
+                    card.classList.toggle('is-filter-collapsed', collapsed);
+                    btn.classList.toggle('collapsed', collapsed);
+                    btn.setAttribute('aria-expanded', String(!collapsed));
+                }
+                btn.addEventListener('click', function () {
+                    setCollapsed(!card.classList.contains('is-filter-collapsed'));
+                });
+                function apply() { setCollapsed(isMobile()); }
+                apply();
+                if (mq.addEventListener) mq.addEventListener('change', apply);
+                else if (mq.addListener) mq.addListener(apply);
+            });
+        }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initFilterToggle);
+        else initFilterToggle();
+    })();
+    </script>
 
     {% block extra_js %}{% endblock %}
 </body>
