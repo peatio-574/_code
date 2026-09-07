@@ -730,11 +730,35 @@
         .profile-modal-body .form-control,
         .profile-modal-body .form-select { height: 34px; font-size: 13px; padding: 4px 10px; }
         .profile-modal-body textarea.form-control { height: auto; }
+
+        /* Watermark */
+        .watermark {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 500;
+            overflow: hidden;
+        }
+        .watermark::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='160'%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dominant-baseline='middle' fill='rgba(0,0,0,0.12)' font-size='13' font-family='Microsoft YaHei, sans-serif' transform='rotate(-30 120 80)'%3E{{ current_user.real_name or current_user.username }} {{ current_user.username }}%3C/text%3E%3C/svg%3E");
+            background-repeat: repeat;
+        }
         
     </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
+    <!-- Watermark -->
+    <div class="watermark">{{ current_user.real_name or current_user.username }} {{ current_user.username }}</div>
     <!-- Top Header -->
     <div class="top-header">
         <div class="header-brand">
