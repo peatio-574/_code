@@ -677,32 +677,53 @@ def job_import():
                 if not job_name_raw:
                     continue
                 try:
+                    # ---------- 字段校验：不符合则报错并跳过该行 ----------
+                    v_company = str(val(row, '公司名称') or '').strip()
+                    v_job_name = str(job_name_raw or '').strip()
+                    v_source = str(val(row, '来源') or '').strip()
+                    v_salary = str(val(row, '薪资范围') or '').replace(' ', '').strip()
+                    v_count = val(row, '招聘人数')
+                    v_deadline = val(row, '报名截止(YYYY-MM-DD HH:MM:SS)', '报名截止', '截止时间')
+
+                    if not v_job_name:
+                        errors.append(f'第{idx}行：职位名称不能为空')
+                        continue
+                    if not v_company:
+                        errors.append(f'第{idx}行：公司名称不能为空')
+                        continue
+                    if not v_source:
+                        errors.append(f'第{idx}行：来源不能为空')
+                        continue
+                    if v_count and not str(v_count).isdigit():
+                        errors.append(f'第{idx}行：招聘人数应为数字')
+                        continue
+                    if v_deadline and not safe_strptime(str(v_deadline), '%Y-%m-%d %H:%M:%S') and not safe_strptime(str(v_deadline), '%Y-%m-%d'):
+                        errors.append(f'第{idx}行：截止时间格式不正确（应为 YYYY-MM-DD HH:MM:SS）')
+                        continue
+
                     job = Job(
                         province=str(val(row, '省份') or ''),
                         city=str(val(row, '城市') or ''),
-                        job_name=str(job_name_raw or ''),
-                        company_name=str(val(row, '公司名称') or ''),
+                        job_name=v_job_name,
+                        company_name=v_company,
                         company_type=str(val(row, '公司性质') or ''),
                         company_size=str(val(row, '公司规模') or ''),
                         company_industry=str(val(row, '公司行业') or ''),
                         recruit_type=str(val(row, '招聘类型') or '社会招聘'),
                         job_nature=str(val(row, '职位性质') or ''),
                         job_category=str(val(row, '职位类别') or ''),
-                        source=str(val(row, '来源') or ''),
-                        salary_range=str(val(row, '薪资范围') or '').replace(' ', '').strip(),
-                        recruit_count=safe_int(val(row, '招聘人数') or '1', 1),
+                        source=v_source,
+                        salary_range=v_salary,
+                        recruit_count=safe_int(v_count or '1', 1),
                         education_req=str(val(row, '学历要求') or ''),
                         experience_req=str(val(row, '经验要求') or ''),
                         major_req=str(val(row, '专业要求') or ''),
                         work_location=str(val(row, '工作地点') or ''),
                         address=str(val(row, '详细地址') or ''),
-                        deadline=safe_strptime(str(val(row, '报名截止(YYYY-MM-DD HH:MM:SS)', '报名截止', '截止时间')) or '') if val(row, '报名截止(YYYY-MM-DD HH:MM:SS)', '报名截止', '截止时间') else None,
+                        deadline=safe_strptime(str(v_deadline)) if v_deadline else None,
                         job_detail=str(val(row, '职位描述') or ''),
                         created_by=current_user.id
                     )
-                    if not job.source:
-                        errors.append(f'第{idx}行：来源不能为空')
-                        continue
                     db.session.add(job)
                     count += 1
                 except Exception as e:
@@ -1657,19 +1678,32 @@ def import_admins():
             row_count = max(1, ws.max_row - 1)
             count = 0
             errors = []
+
+            header_cells = [str(c.value).strip() if c.value is not None else '' for c in ws[1]]
+            colmap = {}
+            for i, h in enumerate(header_cells):
+                if h:
+                    colmap.setdefault(h, i)
+
+            def val(row, *names):
+                for n in names:
+                    if n in colmap and colmap[n] < len(row):
+                        return row[colmap[n]]
+                return ''
+
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-                if not row[0]:
+                real_name = str(val(row, '姓名') or '').strip()
+                if not real_name:
                     continue
-                real_name = str(row[0] or '').strip()
-                phone = str(row[1] or '').strip()
-                campus_name = str(row[2] or '').strip()
-                password = str(row[3] or '').strip()
-                role = str(row[4] or '').strip()
-                is_active_str = str(row[5] or '启用').strip()
+                phone = str(val(row, '手机号') or '').strip()
+                campus_name = str(val(row, '校区名称') or '').strip()
+                password = str(val(row, '密码(默认手机号后6位)', '密码') or '').strip()
+                role = str(val(row, '角色(校长/老师等)', '角色') or '').strip()
+                is_active_str = str(val(row, '状态(启用/禁用)', '状态') or '启用').strip()
                 is_active = is_active_str not in ('禁用', 'no', 'false', '0', '×')
-                can_push_str = str(row[6] or '').strip()
-                can_view_str = str(row[7] or '').strip()
-                can_manage_str = str(row[8] or '').strip()
+                can_push_str = str(val(row, '岗位推送权限(是/否)', '岗位推送权限') or '').strip()
+                can_view_str = str(val(row, '岗位查看权限(是/否)', '岗位查看权限') or '').strip()
+                can_manage_str = str(val(row, '学员管理权限(是/否)', '学员管理权限') or '').strip()
                 
                 can_push = can_push_str.lower() in ('是', 'yes', 'true', '1', '√') if can_push_str else True
                 can_view = can_view_str.lower() in ('是', 'yes', 'true', '1', '√') if can_view_str else True
@@ -1795,27 +1829,40 @@ def import_students():
             ws = wb.active
             count = 0
             errors = []
+
+            header_cells = [str(c.value).strip() if c.value is not None else '' for c in ws[1]]
+            colmap = {}
+            for i, h in enumerate(header_cells):
+                if h:
+                    colmap.setdefault(h, i)
+
+            def val(row, *names):
+                for n in names:
+                    if n in colmap and colmap[n] < len(row):
+                        return row[colmap[n]]
+                return ''
+
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-                if not row[0]:
+                real_name = str(val(row, '姓名') or '').strip()
+                if not real_name:
                     continue
-                real_name = str(row[0] or '').strip()
-                phone = str(row[1] or '').strip()
-                id_card = str(row[2] or '').strip()
-                password = str(row[3] or '').strip()
-                is_active_str = str(row[4] or '启用').strip()
+                phone = str(val(row, '手机号') or '').strip()
+                id_card = str(val(row, '身份证号(18位)', '身份证号') or '').strip()
+                password = str(val(row, '密码(默认身份证后6位)', '密码') or '').strip()
+                is_active_str = str(val(row, '状态(启用/禁用)', '状态') or '启用').strip()
                 is_active = is_active_str not in ('禁用', 'no', 'false', '0', '×')
-                campus_name = str(row[5] or '').strip()
-                education = str(row[6] or '').strip()
-                major = str(row[7] or '').strip()
-                intention_city = str(row[8] or '').strip()
-                first_intention = str(row[9] or '').strip()
-                second_intention = str(row[10] or '').strip()
-                third_intention = str(row[11] or '').strip()
-                certificate = str(row[12] or '').strip()
-                remark = str(row[13] or '').strip()
-                graduation_date_str = str(row[14] or '').strip()
-                origin_place = str(row[15] or '').strip()
-                
+                campus_name = str(val(row, '校区名称') or '').strip()
+                education = str(val(row, '学历(大专/本科/硕士/博士)', '学历') or '').strip()
+                major = str(val(row, '专业') or '').strip()
+                intention_city = str(val(row, '意向城市') or '').strip()
+                first_intention = str(val(row, '第一意向岗位') or '').strip()
+                second_intention = str(val(row, '第二意向岗位') or '').strip()
+                third_intention = str(val(row, '第三意向岗位') or '').strip()
+                certificate = str(val(row, '证书') or '').strip()
+                remark = str(val(row, '备注') or '').strip()
+                graduation_date_str = str(val(row, '毕业时间(YYYY-MM-DD)', '毕业时间') or '').strip()
+                origin_place = str(val(row, '生源地') or '').strip()
+
                 if not real_name:
                     errors.append(f'第{idx}行：姓名为空')
                     continue
@@ -1828,11 +1875,11 @@ def import_students():
                 if not id_card or len(id_card) != 18:
                     errors.append(f'第{idx}行：身份证号格式错误')
                     continue
-                
+
                 if User.query.filter_by(username=phone, is_deleted=False).first():
                     errors.append(f'第{idx}行：手机号{phone}已注册')
                     continue
-                
+
                 auto_gender, birth_date, age = User.parse_id_card(id_card)
                 
                 if not password:
