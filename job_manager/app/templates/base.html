@@ -14,7 +14,8 @@
             font-size: 14px;
             color: #333;
             line-height: 1.5;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
         }
         
         /* Top Header */
@@ -158,6 +159,7 @@
             margin-top: 56px;
             padding: 0 20px 20px 20px;
             height: calc(100vh - 56px);
+            height: calc(100dvh - 56px);
             overflow-y: auto;
             overflow-x: hidden;
             position: relative;
@@ -364,6 +366,7 @@
         .page-footer {
             background: #fff;
             border-top: 1px solid #eef0f3;
+            flex-shrink: 0;
         }
         .page-total {
             color: #666;
