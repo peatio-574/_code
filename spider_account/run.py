@@ -20,6 +20,13 @@ config_file = os.path.join(os.path.dirname(__file__), 'config.ini')
 dataDir = os.path.join(os.path.dirname(__file__), '数据')
 os.makedirs(dataDir, exist_ok=True)
 
+# === 全局日期变量（脚本启动时计算一次，统一管理） ===
+# 结束时间为昨天，开始时间为结束时间的当月第一天
+endDate = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
+endTime = endDate + ' 23:59:59'
+startDate = endDate[:-2] + '01'
+startTime = startDate + ' 00:00:00'
+
 
 class XHS(object):
 
@@ -225,23 +232,19 @@ class XHS(object):
         title = f'========================开始爬取小红书第{account_id}个店铺账号资金详情======================='
         logger.info(title)
 
-        # 结束时间为昨天，开始时间为结束时间的当月第一天
-        endTime = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
-        startTime = endTime[:-2] + '01'
-
         shopName = cls.xhsLogin(account_id)
         if not shopName:
             logger.error(f'小红书第{account_id}个店铺登录异常')
             return False
 
-        fileName = f'小红书-{shopName}店铺{endTime}账户资金明细.xlsx'
+        fileName = f'小红书-{shopName}店铺{endDate}账户资金明细.xlsx'
         fileName = os.path.join(dataDir, fileName)
 
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
             # 搜索
-            cls.fundsSearch(startTime, endTime)
+            cls.fundsSearch(startDate, endDate)
             # 页面导出
             saveStatus = cls.fundsHtmlSave(fileName)
             if saveStatus:
@@ -306,11 +309,6 @@ class XHS(object):
         """销量明细-单个店铺运行"""
         title = f'========================开始爬取小红书第{account_id}个店铺销量详情======================='
         logger.info(title)
-
-        # 结束时间为昨天，开始时间为结束时间的当月第一天
-        endDate = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
-        endTime = endDate + ' 23:59:59'
-        startTime = endDate[:-2] + '01 00:00:00'
 
         shopName = cls.xhsLogin(account_id)
         if not shopName:
@@ -533,24 +531,20 @@ class TB(object):
         title = f'========================开始爬取淘宝千牛第{account_id}个店铺账号资金详情======================='
         logger.info(title)
 
-        # 结束时间为昨天，开始时间为结束时间的当月第一天
-        endTime = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
-        startTime = endTime[:-2] + '01'
-
         shopName = cls.tbLogin(account_id)
         if not shopName:
             logger.error(f'淘宝第{account_id}个店铺登录异常')
             return False
 
 
-        fileName = f'淘宝-{shopName}店铺{endTime}账户资金明细.xlsx'
+        fileName = f'淘宝-{shopName}店铺{endDate}账户资金明细.xlsx'
         fileName = os.path.join(dataDir, fileName)
 
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
             # 搜索
-            cls.fundsSearch(startTime, endTime)
+            cls.fundsSearch(startDate, endDate)
             time.sleep(3)
             if PlayWright.get_count('//div[text()="没有数据"]'):
                 logger.info(f'{shopName}店铺报表暂无数据')
@@ -664,10 +658,6 @@ class TB(object):
         """销量明细-单个店铺运行"""
         title = f'========================开始爬取淘宝第{account_id}个店铺销量详情======================='
         logger.info(title)
-
-        # 结束时间为昨天，开始时间为结束时间的当月第一天
-        endDate = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
-        startDate = endDate[:-2] + '01'
 
         shopName = cls.tbLogin(account_id)
         if not shopName:
@@ -919,23 +909,19 @@ class WeiDian(object):
         title = f'========================开始爬取微店第{account_id}个店铺账号资金详情======================='
         logger.info(title)
 
-        # 结束时间为昨天，开始时间为结束时间的当月第一天
-        endTime = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
-        startTime = endTime[:-2] + '01'
-
         shopName = cls.wdLogin(account_id)
         if not shopName:
             logger.error(f'微店第{account_id}个店铺登录异常')
             return False
 
-        fileName = f'微店-{shopName}店铺{endTime}账户资金明细.xlsx'
+        fileName = f'微店-{shopName}店铺{endDate}账户资金明细.xlsx'
         fileName = os.path.join(dataDir, fileName)
 
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
             # 搜索
-            cls.fundsSearch(startTime, endTime)
+            cls.fundsSearch(startDate, endDate)
             time.sleep(3)
             # 预生成
             timeFlag = cls.fundsPreHtmlSave()
@@ -1044,10 +1030,6 @@ class WeiDian(object):
         """销量明细-单个店铺运行"""
         title = f'========================开始爬取微店第{account_id}个店铺销量详情======================='
         logger.info(title)
-
-        # 结束时间为昨天，开始时间为结束时间的当月第一天
-        endDate = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
-        startDate = endDate[:-2] + '01'
 
         shopName = cls.wdLogin(account_id)
         if not shopName:
@@ -1342,23 +1324,19 @@ class DouDian(object):
         title = f'========================开始爬取抖店第{account_id}个店铺账号资金详情======================='
         logger.info(title)
 
-        # 结束时间为昨天，开始时间为结束时间的当月第一天
-        endTime = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
-        startTime = endTime[:-2] + '01'
-
         shopName = cls.ddLogin(account_id)
         if not shopName:
             logger.error(f'抖店第{account_id}个店铺登录异常')
             return False
 
-        fileName = f'抖店-{shopName}店铺{endTime}账户资金明细.xlsx'
+        fileName = f'抖店-{shopName}店铺{endDate}账户资金明细.xlsx'
         fileName = os.path.join(dataDir, fileName)
 
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
             # 搜索
-            cls.fundsSearch(startTime, endTime)
+            cls.fundsSearch(startDate, endDate)
             time.sleep(3)
 
             # 页面导出
@@ -1465,10 +1443,6 @@ class DouDian(object):
         """销量明细-单个店铺运行"""
         title = f'========================开始爬取抖店第{account_id}个店铺销量详情======================='
         logger.info(title)
-
-        # 结束时间为昨天，开始时间为结束时间的当月第一天
-        endDate = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
-        startDate = endDate[:-2] + '01'
 
         shopName = cls.ddLogin(account_id)
         if not shopName:
@@ -1702,22 +1676,18 @@ class PDD(object):
         title = f'========================开始爬取拼多多第{account_id}个店铺账号资金详情======================='
         logger.info(title)
 
-        # 结束时间为昨天，开始时间为结束时间的当月第一天
-        endTime = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
-        startTime = endTime[:-2] + '01'
-
         shopName = cls.pddLogin(account_id)
         if not shopName:
             logger.error(f'拼多多第{account_id}个店铺登录异常')
             return False
 
-        fileName = f'拼多多-{shopName}店铺{endTime}账户资金明细.xlsx'
+        fileName = f'拼多多-{shopName}店铺{endDate}账户资金明细.xlsx'
         fileName = os.path.join(dataDir, fileName)
 
         saveStatus = False
         for roll in range(1, 6):
             logger.info(f'开始第{roll}次尝试导出明细')
-            cls.fundsSearch(startTime, endTime)
+            cls.fundsSearch(startDate, endDate)
             time.sleep(3)
 
             # 页面导出
