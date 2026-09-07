@@ -56,27 +56,35 @@ def create_app(config_name='default'):
 
 
 def _create_defaults():
-    # 创建默认校区
-    if not Campus.query.filter_by(name='默认校区', is_deleted=False).first():
-        campus = Campus(name='默认校区')
-        db.session.add(campus)
+    # 默认数据初始化：表里已有则跳过（含软删的复活），无则创建，保证幂等不报错。
 
-    # 创建默认角色
+    # 默认校区
+    campus = Campus.query.filter_by(name='默认校区').first()
+    if campus:
+        campus.is_deleted = False
+        campus.is_active = True
+    else:
+        db.session.add(Campus(name='默认校区'))
+
+    # 默认角色
     default_roles = ['校长', '老师', '教务主管', '招生主任']
     for role_name in default_roles:
-        if not Role.query.filter_by(name=role_name, is_deleted=False).first():
-            role = Role(name=role_name)
-            db.session.add(role)
+        role = Role.query.filter_by(name=role_name).first()
+        if role:
+            role.is_deleted = False
+            role.is_active = True
+        else:
+            db.session.add(Role(name=role_name))
 
-    # 创建2个超管账号
-    if not User.query.filter_by(username='admin1').first():
-        admin = User(username='admin1', user_type='super_admin', real_name='超级管理员1')
-        admin.set_password('admin123')
-        db.session.add(admin)
-
-    if not User.query.filter_by(username='admin2').first():
-        admin2 = User(username='admin2', user_type='super_admin', real_name='超级管理员2')
-        admin2.set_password('admin123')
-        db.session.add(admin2)
+    # 2个超管账号
+    for uname, rname in [('admin1', '超级管理员1'), ('admin2', '超级管理员2')]:
+        user = User.query.filter_by(username=uname).first()
+        if user:
+            # 已有则跳过，仅复活，不改密码/姓名
+            user.is_deleted = False
+        else:
+            admin = User(username=uname, user_type='super_admin', real_name=rname)
+            admin.set_password('admin123')
+            db.session.add(admin)
 
     db.session.commit()

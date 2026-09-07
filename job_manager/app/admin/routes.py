@@ -656,33 +656,48 @@ def job_import():
             wb = openpyxl.load_workbook(file)
             ws = wb.active
             row_count = max(1, ws.max_row - 1)
+
+            # 读取表头行，建立「列名 -> 列索引」映射（兼容列顺序变化）
+            header_cells = [str(c.value).strip() if c.value is not None else '' for c in ws[1]]
+            colmap = {}
+            for i, h in enumerate(header_cells):
+                if h:
+                    colmap.setdefault(h, i)
+
+            def val(row, *names):
+                for n in names:
+                    if n in colmap and colmap[n] < len(row):
+                        return row[colmap[n]]
+                return ''
+
             count = 0
             errors = []
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-                if not row[2]:
+                job_name_raw = val(row, '职位名称', '职位名称 ')
+                if not job_name_raw:
                     continue
                 try:
                     job = Job(
-                        province=str(row[0] or ''),
-                        city=str(row[1] or ''),
-                        job_name=str(row[2] or ''),
-                        company_name=str(row[3] or ''),
-                        company_type=str(row[4] or ''),
-                        company_size=str(row[5] or ''),
-                        company_industry=str(row[6] or ''),
-                        recruit_type=str(row[7] or '社会招聘'),
-                        job_nature=str(row[8] or ''),
-                        job_category=str(row[9] or ''),
-                        source=str(row[10] or ''),
-                        salary_range=str(row[11] or '').replace(' ', '').strip(),
-                        recruit_count=safe_int(row[12], 1),
-                        education_req=str(row[13] or ''),
-                        experience_req=str(row[14] or ''),
-                        major_req=str(row[15] or ''),
-                        work_location=str(row[16] or ''),
-                        address=str(row[17] or ''),
-                        deadline=safe_strptime(str(row[18])) if row[18] else None,
-                        job_detail=str(row[19] or ''),
+                        province=str(val(row, '省份') or ''),
+                        city=str(val(row, '城市') or ''),
+                        job_name=str(job_name_raw or ''),
+                        company_name=str(val(row, '公司名称') or ''),
+                        company_type=str(val(row, '公司性质') or ''),
+                        company_size=str(val(row, '公司规模') or ''),
+                        company_industry=str(val(row, '公司行业') or ''),
+                        recruit_type=str(val(row, '招聘类型') or '社会招聘'),
+                        job_nature=str(val(row, '职位性质') or ''),
+                        job_category=str(val(row, '职位类别') or ''),
+                        source=str(val(row, '来源') or ''),
+                        salary_range=str(val(row, '薪资范围') or '').replace(' ', '').strip(),
+                        recruit_count=safe_int(val(row, '招聘人数') or '1', 1),
+                        education_req=str(val(row, '学历要求') or ''),
+                        experience_req=str(val(row, '经验要求') or ''),
+                        major_req=str(val(row, '专业要求') or ''),
+                        work_location=str(val(row, '工作地点') or ''),
+                        address=str(val(row, '详细地址') or ''),
+                        deadline=safe_strptime(str(val(row, '报名截止(YYYY-MM-DD HH:MM:SS)', '报名截止', '截止时间')) or '') if val(row, '报名截止(YYYY-MM-DD HH:MM:SS)', '报名截止', '截止时间') else None,
+                        job_detail=str(val(row, '职位描述') or ''),
                         created_by=current_user.id
                     )
                     if not job.source:
@@ -725,13 +740,13 @@ def job_template():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = '岗位导入模板'
-    ws.append(['省份', '城市', '职位名称', '公司名称', '公司性质', '公司规模', '公司行业',
-               '招聘类型', '职位性质', '职位类别', '来源', '薪资范围', '招聘人数', '学历要求',
+    ws.append(['来源', '省份', '城市', '职位名称', '公司名称', '公司性质', '公司规模', '公司行业',
+               '招聘类型', '职位性质', '职位类别', '薪资范围', '招聘人数', '学历要求',
                '经验要求', '专业要求', '工作地点', '详细地址', '报名截止(YYYY-MM-DD HH:MM:SS)', '职位描述'])
-    ws.append(['新疆', '阿勒泰地区',
+    ws.append(['企业官网', '新疆', '阿勒泰地区',
                '北屯 供应链组织者（应届本科，财务/统计相关专业）',
                '国药集团新疆新特药业有限公司', '国企', '1000-2000人', '批发业',
-               '校园招聘', '校招', '渠道专员/助理', '企业官网', '5600~7000 元/月', 1,
+               '校园招聘', '校招', '渠道专员/助理', '5600~7000 元/月', 1,
                '本科', '应届生', '财务会计类, 统计学类', '阿勒泰', '',
                '2026-11-09 23:59:59',
                '负责资质证照的备案、盯计划、反馈缺货、协调配送、调价、退货、对账、回款核销等全链路运营操作'])
