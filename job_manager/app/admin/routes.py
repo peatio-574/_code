@@ -1,5 +1,6 @@
 from flask import render_template, redirect, url_for, flash, request, jsonify, send_file, session
 from flask_login import login_required, current_user
+from sqlalchemy.orm import aliased
 from ..models import db, User, Job, PushRecord, OperationLog, Campus, Role
 from ..permissions import (
     super_admin_required, admin_required, permission_required, init_csrf,
@@ -25,6 +26,19 @@ def safe_strptime(date_str, fmt='%Y-%m-%d %H:%M:%S'):
         return datetime.strptime(date_str, fmt) if date_str else None
     except (ValueError, TypeError):
         return None
+
+
+def is_valid_phone(phone):
+    """校验手机号：11位，1开头，纯数字"""
+    phone = (phone or '').strip()
+    import re
+    if len(phone) != 11:
+        return False
+    if not phone.isdigit():
+        return False
+    if not phone.startswith('1'):
+        return False
+    return True
 
 
 def log_operation(action, target_type='', target_id=0, details=''):
@@ -126,6 +140,9 @@ def campuses_list():
         data.append({
             'id': campus.id,
             'name': campus.name,
+            'address': campus.address,
+            'manager': campus.manager,
+            'contact': campus.contact,
             'admin_count': admin_count,
             'student_count': student_count,
             'is_active': campus.is_active,
@@ -154,11 +171,14 @@ def campuses_list():
 @super_admin_required
 def campus_add():
     name = request.form.get('name', '').strip()
+    address = request.form.get('address', '').strip()
+    manager = request.form.get('manager', '').strip()
+    contact = request.form.get('contact', '').strip()
     if not name:
         return jsonify({'success': False, 'message': '校区名称不能为空'})
     if Campus.query.filter_by(name=name, is_deleted=False).first():
         return jsonify({'success': False, 'message': '校区名称已存在'})
-    campus = Campus(name=name)
+    campus = Campus(name=name, address=address, manager=manager, contact=contact)
     db.session.add(campus)
     log_operation('add_campus', 'campus', 0, f'新增校区：{name}')
     db.session.commit()
@@ -212,6 +232,9 @@ def campus_delete():
 def campus_edit():
     campus_id = request.form.get('campus_id')
     name = request.form.get('name', '').strip()
+    address = request.form.get('address', '').strip()
+    manager = request.form.get('manager', '').strip()
+    contact = request.form.get('contact', '').strip()
     if not name:
         return jsonify({'success': False, 'message': '校区名称不能为空'})
     
@@ -222,6 +245,9 @@ def campus_edit():
     
     old_name = campus.name
     campus.name = name
+    campus.address = address
+    campus.manager = manager
+    campus.contact = contact
     log_operation('edit_campus', 'campus', campus.id, f'编辑校区：{old_name} → {name}')
     db.session.commit()
     return jsonify({'success': True, 'message': '校区更新成功'})
@@ -404,6 +430,7 @@ def jobs_list():
             'company_name': job.company_name,
             'company_type': job.company_type,
             'recruit_type': job.recruit_type or '',
+            'source': job.source or '',
             'salary_range': job.salary_range,
             'education_req': job.education_req,
             'location': f"{job.province}-{job.city}",
@@ -435,6 +462,12 @@ def jobs_list():
 def job_add():
     ctx = get_template_context()
     if request.method == 'POST':
+        source = request.form.get('source', '').strip()
+        if not source:
+            if _is_ajax():
+                return jsonify({'success': False, 'message': '来源不能为空'})
+            flash('来源不能为空', 'danger')
+            return render_template('admin/job_form.html', **ctx)
         job = Job(
             province=request.form.get('province', ''),
             city=request.form.get('city', ''),
@@ -446,6 +479,7 @@ def job_add():
             recruit_type=request.form.get('recruit_type', ''),
             job_nature=request.form.get('job_nature', ''),
             job_category=request.form.get('job_category', ''),
+            source=source,
             salary_range=request.form.get('salary_range', '').replace(' ', ''),
             recruit_count=safe_int(request.form.get('recruit_count', 1), 1),
             education_req=request.form.get('education_req', ''),
@@ -474,6 +508,12 @@ def job_edit(id):
     ctx = get_template_context()
     job = Job.query.filter_by(id=id, is_deleted=False).first_or_404()
     if request.method == 'POST':
+        source = request.form.get('source', '').strip()
+        if not source:
+            if _is_ajax():
+                return jsonify({'success': False, 'message': '来源不能为空'})
+            flash('来源不能为空', 'danger')
+            return render_template('admin/job_form.html', **ctx)
         job.province = request.form.get('province', '')
         job.city = request.form.get('city', '')
         job.job_name = request.form.get('job_name', '')
@@ -484,6 +524,7 @@ def job_edit(id):
         job.recruit_type = request.form.get('recruit_type', '')
         job.job_nature = request.form.get('job_nature', '')
         job.job_category = request.form.get('job_category', '')
+        job.source = request.form.get('source', '')
         job.salary_range = request.form.get('salary_range', '').replace(' ', '').strip()
         job.recruit_count = safe_int(request.form.get('recruit_count', 1), 1)
         job.education_req = request.form.get('education_req', '')
@@ -520,6 +561,7 @@ def job_data(id):
         'recruit_type': job.recruit_type or '',
         'job_nature': job.job_nature,
         'job_category': job.job_category,
+        'source': job.source,
         'salary_range': job.salary_range,
         'recruit_count': job.recruit_count,
         'education_req': job.education_req,
@@ -631,17 +673,21 @@ def job_import():
                         recruit_type=str(row[7] or '社会招聘'),
                         job_nature=str(row[8] or ''),
                         job_category=str(row[9] or ''),
-                        salary_range=str(row[10] or '').replace(' ', '').strip(),
-                        recruit_count=safe_int(row[11], 1),
-                        education_req=str(row[12] or ''),
-                        experience_req=str(row[13] or ''),
-                        major_req=str(row[14] or ''),
-                        work_location=str(row[15] or ''),
-                        address=str(row[16] or ''),
-                        deadline=safe_strptime(str(row[17])) if row[17] else None,
-                        job_detail=str(row[18] or ''),
+                        source=str(row[10] or ''),
+                        salary_range=str(row[11] or '').replace(' ', '').strip(),
+                        recruit_count=safe_int(row[12], 1),
+                        education_req=str(row[13] or ''),
+                        experience_req=str(row[14] or ''),
+                        major_req=str(row[15] or ''),
+                        work_location=str(row[16] or ''),
+                        address=str(row[17] or ''),
+                        deadline=safe_strptime(str(row[18])) if row[18] else None,
+                        job_detail=str(row[19] or ''),
                         created_by=current_user.id
                     )
+                    if not job.source:
+                        errors.append(f'第{idx}行：来源不能为空')
+                        continue
                     db.session.add(job)
                     count += 1
                 except Exception as e:
@@ -679,13 +725,13 @@ def job_template():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = '岗位导入模板'
-    ws.append(['省份', '城市', '职位名称', '公司名称', '公司性质', '公司规模', '公司行业', 
-               '招聘类型', '职位性质', '职位类别', '薪资范围', '招聘人数', '学历要求', 
+    ws.append(['省份', '城市', '职位名称', '公司名称', '公司性质', '公司规模', '公司行业',
+               '招聘类型', '职位性质', '职位类别', '来源', '薪资范围', '招聘人数', '学历要求',
                '经验要求', '专业要求', '工作地点', '详细地址', '报名截止(YYYY-MM-DD HH:MM:SS)', '职位描述'])
     ws.append(['新疆', '阿勒泰地区',
                '北屯 供应链组织者（应届本科，财务/统计相关专业）',
                '国药集团新疆新特药业有限公司', '国企', '1000-2000人', '批发业',
-               '校园招聘', '校招', '渠道专员/助理', '5600~7000 元/月', 1,
+               '校园招聘', '校招', '渠道专员/助理', '企业官网', '5600~7000 元/月', 1,
                '本科', '应届生', '财务会计类, 统计学类', '阿勒泰', '',
                '2026-11-09 23:59:59',
                '负责资质证照的备案、盯计划、反馈缺货、协调配送、调价、退货、对账、回款核销等全链路运营操作'])
@@ -790,6 +836,13 @@ def user_add():
         real_name = request.form.get('real_name', '').strip()
         phone = request.form.get('phone', '').strip()
         
+        if not is_valid_phone(phone):
+            msg = '手机号格式不正确，应为11位数字且以1开头'
+            if ajax:
+                return jsonify({'success': False, 'message': msg})
+            flash(msg, 'danger')
+            return render_template('admin/user_form.html', **ctx)
+        
         if User.query.filter_by(username=phone, is_deleted=False).first():
             msg = f'手机号"{phone}"已注册'
             if ajax:
@@ -854,6 +907,11 @@ def user_edit(id):
         
         user.real_name = request.form.get('real_name', '')
         user.phone = request.form.get('phone', '')
+        if not is_valid_phone(user.phone):
+            if _is_ajax():
+                return jsonify({'success': False, 'message': '手机号格式不正确，应为11位数字且以1开头'})
+            flash('手机号格式不正确，应为11位数字且以1开头', 'danger')
+            return render_template('admin/user_form.html', **ctx)
         user.campus_id = safe_int(request.form.get('campus_id', 0)) or None
         user.role = request.form.get('role', '')
         user.can_push_jobs = bool(request.form.get('can_push_jobs'))
@@ -992,6 +1050,40 @@ def students_page():
     return render_template('admin/students_list.html', **ctx)
 
 
+@admin_bp.route('/push_students')
+@admin_required
+@permission_required(PERMISSION_PUSH_JOBS)
+def push_students():
+    """岗位推送弹窗学员列表（仅需推送权限）"""
+    campus = request.args.get('campus', '').strip()
+    status = request.args.get('status', 'active')
+    query = User.query.filter_by(user_type='student', is_deleted=False)
+    campus_filter = get_campus_filter()
+    if campus_filter is not None:
+        query = query.filter_by(campus_id=campus_filter)
+    if campus:
+        campus_obj = Campus.query.filter_by(name=campus, is_deleted=False).first()
+        if campus_obj:
+            query = query.filter(User.campus_id == campus_obj.id)
+    if status == 'active':
+        query = query.filter(User.is_active == True)
+    elif status == 'disabled':
+        query = query.filter(User.is_active == False)
+    students = query.order_by(User.updated_at.desc()).limit(500).all()
+    data = []
+    for stu in students:
+        campus_name = stu.campus.name if stu.campus else '-'
+        data.append({
+            'id': stu.id,
+            'real_name': stu.real_name,
+            'phone': stu.phone,
+            'campus': campus_name,
+            'education': stu.education or '-',
+            'major': stu.major or '-'
+        })
+    return jsonify({'success': True, 'students': data})
+
+
 @admin_bp.route('/students')
 @admin_required
 @permission_required(PERMISSION_MANAGE_STUDENTS)
@@ -1093,6 +1185,13 @@ def student_add():
             flash(msg, 'danger')
             return render_template('admin/student_form.html', **ctx)
         
+        if not is_valid_phone(phone):
+            msg = '手机号格式不正确，应为11位数字且以1开头'
+            if ajax:
+                return jsonify({'success': False, 'message': msg})
+            flash(msg, 'danger')
+            return render_template('admin/student_form.html', **ctx)
+        
         if not id_card or len(id_card) != 18:
             msg = '请输入18位身份证号'
             if ajax:
@@ -1110,7 +1209,13 @@ def student_add():
         gender, birth_date, age = User.parse_id_card(id_card)
         if not password:
             password = id_card[-6:]
-        
+        _gdate_str = request.form.get('graduation_date', '').strip()
+        _gdate = None
+        if _gdate_str:
+            _parsed = safe_strptime(_gdate_str, '%Y-%m-%d')
+            if _parsed:
+                _gdate = _parsed.date()
+
         user = User(
             username=phone,
             user_type='student',
@@ -1128,7 +1233,7 @@ def student_add():
             third_intention=request.form.get('third_intention', ''),
             certificate=request.form.get('certificate', ''),
             remark=request.form.get('remark', ''),
-            graduation_date=safe_strptime(request.form.get('graduation_date'), '%Y-%m-%d').date() if request.form.get('graduation_date') else None,
+            graduation_date=_gdate,
             origin_place=request.form.get('origin_place', ''),
             avatar=request.form.get('avatar', ''),
             campus_id=current_user.campus_id,
@@ -1163,6 +1268,11 @@ def student_edit(id):
         
         student.real_name = request.form.get('real_name', '')
         student.phone = request.form.get('phone', '')
+        if not is_valid_phone(student.phone):
+            if _is_ajax():
+                return jsonify({'success': False, 'message': '手机号格式不正确，应为11位数字且以1开头'})
+            flash('手机号格式不正确，应为11位数字且以1开头', 'danger')
+            return render_template('admin/student_form.html', student=student, **ctx)
         student.education = request.form.get('education', '')
         student.major = request.form.get('major', '')
         student.political_status = request.form.get('political_status', '')
@@ -1172,7 +1282,9 @@ def student_edit(id):
         student.third_intention = request.form.get('third_intention', '')
         student.certificate = request.form.get('certificate', '')
         student.remark = request.form.get('remark', '')
-        student.graduation_date = safe_strptime(request.form.get('graduation_date'), '%Y-%m-%d').date() if request.form.get('graduation_date') else None
+        _gdate_str = request.form.get('graduation_date', '').strip()
+        _parsed = safe_strptime(_gdate_str, '%Y-%m-%d') if _gdate_str else None
+        student.graduation_date = _parsed.date() if _parsed else None
         student.origin_place = request.form.get('origin_place', '')
         student.avatar = request.form.get('avatar', '')
         
@@ -1315,16 +1427,20 @@ def push_list():
     
     query = PushRecord.query.filter_by(is_deleted=False)
     if keyword_job:
-        query = query.join(Job, PushRecord.job_id == Job.id, isouter=True).filter(Job.job_name.contains(keyword_job))
+        J = aliased(Job)
+        query = query.join(J, PushRecord.job_id == J.id, isouter=True).filter(J.job_name.contains(keyword_job))
     if keyword_company:
-        query = query.join(Job, PushRecord.job_id == Job.id, isouter=True).filter(Job.company_name.contains(keyword_company))
+        Jc = aliased(Job)
+        query = query.join(Jc, PushRecord.job_id == Jc.id, isouter=True).filter(Jc.company_name.contains(keyword_company))
     if keyword_student:
-        query = query.join(User, PushRecord.student_id == User.id, isouter=True).filter(
-            db.or_(User.real_name.contains(keyword_student), User.username.contains(keyword_student))
+        Us = aliased(User)
+        query = query.join(Us, PushRecord.student_id == Us.id, isouter=True).filter(
+            db.or_(Us.real_name.contains(keyword_student), Us.username.contains(keyword_student))
         )
     if keyword_pusher:
-        query = query.join(User, PushRecord.pushed_by == User.id, isouter=True).filter(
-            db.or_(User.real_name.contains(keyword_pusher), User.username.contains(keyword_pusher))
+        Up = aliased(User)
+        query = query.join(Up, PushRecord.pushed_by == Up.id, isouter=True).filter(
+            db.or_(Up.real_name.contains(keyword_pusher), Up.username.contains(keyword_pusher))
         )
     if is_read == '1':
         query = query.filter(PushRecord.is_read == True)
@@ -1334,19 +1450,24 @@ def push_list():
     # 管理员只显示当前校区的推送记录
     campus_filter = get_campus_filter()
     if campus_filter is not None:
-        query = query.join(User, PushRecord.student_id == User.id, isouter=True).filter(User.campus_id == campus_filter)
+        Uc = aliased(User)
+        query = query.join(Uc, PushRecord.student_id == Uc.id, isouter=True).filter(Uc.campus_id == campus_filter)
     
     pagination = query.order_by(PushRecord.updated_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     
     pushes = []
     for push in pagination.items:
         pushes.append({
+            'id': push.id,
             'job_name': push.job.job_name if push.job else '',
             'company_name': push.job.company_name if push.job else '',
             'student': push.student.real_name or push.student.username,
+            'campus': push.student.campus.name if push.student.campus else '-',
             'pusher': push.pusher.real_name or push.pusher.username,
             'pushed_at': push.pushed_at.strftime('%Y-%m-%d %H:%M'),
-            'is_read': push.is_read
+            'updated_at': push.updated_at.strftime('%Y-%m-%d %H:%M') if push.updated_at else '-',
+            'is_read': push.is_read,
+            'is_revoked': push.is_revoked
         })
     
     return jsonify({
@@ -1409,6 +1530,24 @@ def push_do():
     return redirect(url_for('admin.push_page'))
 
 
+@admin_bp.route('/push/toggle_revoke', methods=['POST'])
+@admin_required
+def push_toggle_revoke():
+    """撤销/恢复推送记录：撤销后学员不可见，恢复后可见"""
+    push_id = request.form.get('push_id', type=int)
+    if not push_id:
+        return jsonify({'success': False, 'message': '参数错误'})
+    push = PushRecord.query.filter_by(id=push_id, is_deleted=False).first()
+    if not push:
+        return jsonify({'success': False, 'message': '推送记录不存在'})
+    push.is_revoked = not push.is_revoked
+    status_text = '撤销' if push.is_revoked else '恢复'
+    log_operation('toggle_push_revoke', 'push', push.id,
+                  f'{status_text}推送：{push.job.job_name if push.job else ""} → {push.student.real_name or push.student.username}')
+    db.session.commit()
+    return jsonify({'success': True, 'message': f'推送已{status_text}', 'is_revoked': push.is_revoked})
+
+
 # ==================== 操作日志 ====================
 @admin_bp.route('/logs/page')
 @admin_required
@@ -1437,12 +1576,14 @@ def logs_list():
     # 管理员只显示当前校区的操作日志
     campus_filter = get_campus_filter()
     if campus_filter is not None:
-        query = query.join(User, OperationLog.user_id == User.id, isouter=True).filter(User.campus_id == campus_filter)
+        U1 = aliased(User)
+        query = query.join(U1, OperationLog.user_id == U1.id, isouter=True).filter(U1.campus_id == campus_filter)
     
     # 按操作人搜索
     if operator:
-        query = query.join(User, OperationLog.user_id == User.id, isouter=True).filter(
-            db.or_(User.real_name.contains(operator), User.username.contains(operator))
+        U2 = aliased(User)
+        query = query.join(U2, OperationLog.user_id == U2.id, isouter=True).filter(
+            db.or_(U2.real_name.contains(operator), U2.username.contains(operator))
         )
     
     pagination = query.order_by(OperationLog.updated_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
@@ -1524,6 +1665,9 @@ def import_admins():
                     continue
                 if not phone:
                     errors.append(f'第{idx}行：手机号为空')
+                    continue
+                if not is_valid_phone(phone):
+                    errors.append(f'第{idx}行：手机号格式不正确')
                     continue
                 if not campus_name:
                     errors.append(f'第{idx}行：校区名称为空')
@@ -1662,6 +1806,9 @@ def import_students():
                     continue
                 if not phone:
                     errors.append(f'第{idx}行：手机号为空')
+                    continue
+                if not is_valid_phone(phone):
+                    errors.append(f'第{idx}行：手机号格式不正确')
                     continue
                 if not id_card or len(id_card) != 18:
                     errors.append(f'第{idx}行：身份证号格式错误')

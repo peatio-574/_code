@@ -99,36 +99,38 @@
         .table.no-data td { border: none !important; }
         </style>
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
-                <colgroup>
-                    <col style="width:4%;">
-                    <col style="width:12%;">
-                    <col style="width:12%;">
-                    <col style="width:8%;">
-                    <col style="width:7%;">
-                    <col style="width:9%;">
-                    <col style="width:5%;">
-                    <col style="width:10%;">
-                    <col style="width:4%;">
-                    <col style="width:12%;">
-                    <col style="width:10%;">
-                    <col style="width:9%;">
-                </colgroup>
-                <thead class="sticky-thead">
-                    <tr>
-                        <th><input type="checkbox" id="selectAll"></th>
-                        <th>职位名称</th>
-                        <th>公司名称</th>
-                        <th>公司性质</th>
-                        <th>招聘类型</th>
-                        <th>薪资范围</th>
-                        <th>学历</th>
-                        <th>工作地点</th>
-                        <th style="text-align:center;">人数</th>
-                        <th>截止时间</th>
-                        <th>更新时间</th>
-                        <th style="text-align:center;">操作</th>
-                    </tr>
-                </thead>
+            <colgroup>
+                <col style="width:4%;">
+                <col style="width:12%;">
+                <col style="width:12%;">
+                <col style="width:6%;">
+                <col style="width:7%;">
+                <col style="width:8%;">
+                <col style="width:12%;">
+                <col style="width:5%;">
+                <col style="width:10%;">
+                <col style="width:4%;">
+                <col style="width:11%;">
+                <col style="width:10%;">
+                <col style="width:9%;">
+            </colgroup>
+            <thead class="sticky-thead">
+                <tr>
+                    <th><input type="checkbox" id="selectAll"></th>
+                    <th>职位名称</th>
+                    <th>公司名称</th>
+                    <th>公司性质</th>
+                    <th>招聘类型</th>
+                    <th>来源</th>
+                    <th>薪资范围</th>
+                    <th>学历</th>
+                    <th>工作地点</th>
+                    <th style="text-align:center;">人数</th>
+                    <th>截止时间</th>
+                    <th>更新时间</th>
+                    <th style="text-align:center;">操作</th>
+                </tr>
+            </thead>
                 <tbody id="jobsBody"></tbody>
         </table>
     </div>
@@ -305,14 +307,14 @@ function updateUrl() {}
 
 async function loadJobs() {
     const body = document.getElementById('jobsBody');
-    body.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-5">加载中...</td></tr>';
+    body.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-5">加载中...</td></tr>';
     try {
         const res = await fetch('{{ url_for("admin.jobs_list") }}?' + buildQuery());
         const data = await res.json();
         renderJobs(data.jobs);
         renderPagination(data.pagination);
     } catch (e) {
-        body.innerHTML = '<tr><td colspan="12" class="text-center text-danger py-5">加载失败</td></tr>';
+        body.innerHTML = '<tr><td colspan="13" class="text-center text-danger py-5">加载失败</td></tr>';
     }
 }
 
@@ -321,7 +323,7 @@ function renderJobs(jobs) {
     const table = document.querySelector('table');
     if (!jobs || jobs.length === 0) {
         table.classList.add('no-data');
-        body.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-5">暂无岗位数据</td></tr>';
+        body.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-5">暂无岗位数据</td></tr>';
         document.getElementById('selectAll').checked = false;
         return;
     }
@@ -342,6 +344,7 @@ function renderJobs(jobs) {
             <td>${escapeHtml(job.company_name)}</td>
             <td>${escapeHtml(job.company_type) || '-'}</td>
             <td><span class="badge bg-${rc}">${escapeHtml(job.recruit_type) || '-'}</span></td>
+            <td>${escapeHtml(job.source) || '-'}</td>
             <td class="text-danger fw-normal">${escapeHtml(formatSalary(job.salary_range))}</td>
             <td>${escapeHtml(job.education_req) || '不限'}</td>
             <td>${escapeHtml(job.location)}</td>
@@ -651,7 +654,7 @@ async function loadPushStudents() {
     body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">加载中...</td></tr>';
     
     try {
-        let url = '{{ url_for("admin.students_list") }}?per_page=0&status=active';
+        let url = '{{ url_for("admin.push_students") }}?status=active';
         if (campus) url += '&campus=' + encodeURIComponent(campus);
         const res = await fetch(url);
         const data = await res.json();

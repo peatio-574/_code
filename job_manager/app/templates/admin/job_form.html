@@ -65,11 +65,11 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
                     
                     <h6 class="text-primary mb-3"><i class="bi bi-building"></i> 公司信息</h6>
                     <div class="row">
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">公司名称 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="company_name" required>
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">公司性质</label>
                             <select class="form-select" name="company_type">
                                 <option value="">请选择</option>
@@ -81,7 +81,7 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
                                 <option value="政府机关">政府机关</option>
                             </select>
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">公司规模</label>
                             <select class="form-select" name="company_size">
                                 <option value="">请选择</option>
@@ -93,11 +93,11 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
                                 <option value="10000人以上">10000人以上</option>
                             </select>
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">公司行业</label>
                             <input type="text" class="form-control" name="company_industry" placeholder="如：互联网/金融/制造">
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">招聘类型</label>
                             <select class="form-select" name="recruit_type">
                                 <option value="">请选择</option>
@@ -110,29 +110,41 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
 
                     <h6 class="text-primary mb-3 mt-3"><i class="bi bi-briefcase"></i> 职位信息</h6>
                     <div class="row">
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">职位名称 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="job_name" required>
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">职位性质</label>
                             <select class="form-select" name="job_nature">
                                 <option value="全职" selected>全职</option>
                                 <option value="兼职">兼职</option>
                             </select>
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">职位类别</label>
                             <input type="text" class="form-control" name="job_category">
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">来源 <span class="text-danger">*</span></label>
+                            <select class="form-select" name="source">
+                                <option value="">请选择</option>
+                                <option value="企业官网">企业官网</option>
+                                <option value="招聘网站">招聘网站</option>
+                                <option value="内部推荐">内部推荐</option>
+                                <option value="校园招聘">校园招聘</option>
+                                <option value="猎头">猎头</option>
+                                <option value="其他">其他</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">薪资范围</label>
                             <div class="input-group">
                                 <input type="text" class="form-control" name="salary_range" placeholder="如：5000-8000">
                                 <span class="input-group-text">元/月</span>
                             </div>
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">招聘人数</label>
                             <input type="number" class="form-control" name="recruit_count" value="1" min="1">
                         </div>
@@ -140,7 +152,7 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
 
                     <h6 class="text-primary mb-3 mt-3"><i class="bi bi-list-check"></i> 岗位要求</h6>
                     <div class="row">
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">学历要求</label>
                             <select class="form-select" name="education_req">
                                 <option value="">不限</option>
@@ -150,7 +162,7 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
                                 <option value="博士">博士</option>
                             </select>
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">经验要求</label>
                             <select class="form-select" name="experience_req">
                                 <option value="">不限</option>
@@ -162,11 +174,11 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
                                 <option value="10年以上">10年以上</option>
                             </select>
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">专业要求</label>
                             <input type="text" class="form-control" name="major_req">
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">截止日期</label>
                             <input type="text" class="form-control deadline-input" id="deadlinePicker" name="deadline" readonly placeholder="点击选择" style="cursor:pointer;">
                         </div>
@@ -175,25 +187,25 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
                     <div class="row">
                         <div class="col-md-12 mb-3">
                             <label class="form-label">职位描述</label>
-                            <textarea class="form-control" name="job_detail" rows="6" style="min-height:120px; line-height:1.7; white-space:pre-wrap;"></textarea>
+                            <textarea class="form-control" name="job_detail" rows="10" style="min-height:220px; line-height:1.7; white-space:pre-wrap;"></textarea>
                         </div>
                     </div>
 
                     <h6 class="text-primary mb-3 mt-3"><i class="bi bi-geo-alt"></i> 工作地点</h6>
                     <div class="row">
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">省份</label>
                             <select class="form-select" name="province" id="province_select"></select>
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">城市</label>
                             <select class="form-select" name="city" id="city_select"></select>
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">工作地点</label>
                             <input type="text" class="form-control" name="work_location">
                         </div>
-                        <div class="col-md mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">详细地址</label>
                             <input type="text" class="form-control" name="address">
                         </div>
@@ -359,6 +371,7 @@ function populateJob(d) {
     setField('job_name', d.job_name);
     setField('job_nature', d.job_nature, '全职');
     setField('job_category', d.job_category);
+    setField('source', d.source);
     setField('salary_range', String(d.salary_range || '').replace('元/月', '').replace('/月', '').trim());
     setField('recruit_count', d.recruit_count == null ? 1 : d.recruit_count);
     setField('education_req', d.education_req);

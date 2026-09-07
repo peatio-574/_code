@@ -77,7 +77,7 @@ def my_pushes():
     company_size = request.args.get('company_size', '').strip()
     job_id = request.args.get('job_id', '', type=str)
 
-    query = PushRecord.query.filter_by(student_id=current_user.id, is_deleted=False)
+    query = PushRecord.query.filter_by(student_id=current_user.id, is_deleted=False, is_revoked=False)
     query = query.join(Job).filter(
         Job.is_deleted == False,
         Job.status == 'active',
@@ -190,7 +190,7 @@ def my_pushes_api():
     company_size = request.args.get('company_size', '').strip()
     per_page = request.args.get('per_page', 10, type=int)
 
-    query = PushRecord.query.filter_by(student_id=current_user.id, is_deleted=False)
+    query = PushRecord.query.filter_by(student_id=current_user.id, is_deleted=False, is_revoked=False)
     query = query.join(Job).filter(
         Job.is_deleted == False,
         Job.status == 'active',
@@ -279,7 +279,7 @@ def job_detail(id):
         return redirect(url_for('student.my_pushes'))
     
     push = PushRecord.query.filter_by(
-        job_id=id, student_id=current_user.id, is_deleted=False
+        job_id=id, student_id=current_user.id, is_deleted=False, is_revoked=False
     ).first()
     if not push:
         flash('无权查看该岗位', 'danger')

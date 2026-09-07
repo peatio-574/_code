@@ -9,7 +9,7 @@
             <div class="card-header">
                 <h5 class="mb-0">
                     <i class="bi bi-{{ 'pencil' if student else 'person-bounding-box' }}"></i>
-                    {{ '编辑' if student else '新增' }}学员
+                    {{ '编辑' if student else '新增' }}学员信息
                 </h5>
             </div>
             <div class="card-body">
@@ -18,24 +18,24 @@
 
                     <h6 class="text-primary mb-3"><i class="bi bi-person"></i> 基本信息</h6>
                     <div class="row">
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">姓名 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="real_name" id="real_name"
                                    value="{{ student.real_name or '' if student else '' }}" required
                                    onchange="autoFillByStudent()">
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">手机号码 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="phone"
                                    value="{{ student.phone or '' if student else '' }}" required>
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">密码 {% if student %}<span class="text-danger">*</span>{% endif %}</label>
                             <input type="text" class="form-control" name="password" id="password"
                                    value="{{ student.password_plain or '' if student else '' }}" placeholder="{{ '留空则不修改' if student else '默认身份证后6位' }}"
                                    {% if student %}required{% endif %}>
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">状态 <span class="text-danger">*</span></label>
                             <select class="form-select" name="is_active" id="is_active" required>
                                 <option value="1" {% if not student or student.is_active %}selected{% endif %}>启用</option>
@@ -47,29 +47,29 @@
                     <hr>
                     <h6 class="text-success mb-3"><i class="bi bi-person-bounding-box"></i> 学员信息</h6>
                     <div class="row">
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">身份证号 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="id_card" id="id_card"
                                    value="{{ student.id_card or '' if student else '' }}"
                                    maxlength="18" {{ 'readonly' if student else '' }}
                                    onchange="autoFillByStudent()">
                         </div>
-                        <div class="col-md-2 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">性别</label>
                             <input type="text" class="form-control" id="gender_display" readonly
                                    value="{{ student.gender or '' if student else '' }}">
                             <input type="hidden" name="gender" id="gender" value="{{ student.gender or '' if student else '' }}">
                         </div>
-                        <div class="col-md-2 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">出生日期</label>
                             <input type="text" class="form-control" id="birth_display" readonly
                                    value="{{ student.birth_date.strftime('%Y-%m-%d') if student and student.birth_date else '' }}">
                         </div>
-                        <div class="col-md-1 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">年龄</label>
                             <input type="text" class="form-control" id="age_display" readonly value="">
                         </div>
-                        <div class="col-md-2 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">学历</label>
                             <select class="form-select" name="education">
                                 <option value="">请选择</option>
@@ -79,14 +79,14 @@
                                 <option value="博士" {% if student and student.education == '博士' %}selected{% endif %}>博士</option>
                             </select>
                         </div>
-                        <div class="col-md-2 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">专业</label>
                             <input type="text" class="form-control" name="major"
                                    value="{{ student.major or '' if student else '' }}">
                         </div>
                     </div>
                     <div class="row">
-                        <div class="col-md-2 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">政治面貌</label>
                             <select class="form-select" name="political_status">
                                 <option value="">请选择</option>
@@ -96,27 +96,27 @@
                                 <option value="中共预备党员" {% if student and student.political_status == '中共预备党员' %}selected{% endif %}>中共预备党员</option>
                             </select>
                         </div>
-                        <div class="col-md-2 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">毕业时间</label>
                             <input type="date" class="form-control" name="graduation_date"
                                    value="{{ student.graduation_date.strftime('%Y-%m-%d') if student and student.graduation_date else '' }}">
                         </div>
-                        <div class="col-md-2 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">证书</label>
                             <input type="text" class="form-control" name="certificate"
                                    value="{{ student.certificate or '' if student else '' }}">
                         </div>
-                        <div class="col-md-2 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">生源地</label>
                             <input type="text" class="form-control" name="origin_place"
                                    value="{{ student.origin_place or '' if student else '' }}">
                         </div>
-                        <div class="col-md-2 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">意向城市</label>
                             <input type="text" class="form-control" name="intention_city"
                                    value="{{ student.intention_city or '' if student else '' }}">
                         </div>
-                        <div class="col-md-2 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">学员头像</label>
                             <input type="text" class="form-control" name="avatar"
                                    value="{{ student.avatar or '' if student else '' }}" placeholder="头像URL">
@@ -210,6 +210,13 @@ if (existingIdCard && existingIdCard.value) autoFillByStudent();
 
 document.getElementById('studentForm').addEventListener('submit', function(e) {
     e.preventDefault();
+    var phoneEl = document.querySelector('#studentForm [name="phone"]');
+    var phone = phoneEl ? phoneEl.value.trim() : '';
+    if (phone && !/^1\d{10}$/.test(phone)) {
+        showToast('手机号格式不正确，应为11位数字且以1开头', 'warning');
+        phoneEl.focus();
+        return;
+    }
     var btn = document.getElementById('studentSubmitBtn');
     btn.disabled = true;
     var formData = new FormData(this);

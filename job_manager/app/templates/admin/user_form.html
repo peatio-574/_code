@@ -4,12 +4,12 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-lg-8">
+    <div class="col-lg-11">
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">
                     <i class="bi bi-{{ 'pencil' if user_obj else 'person-plus' }}"></i>
-                    {{ '编辑' if user_obj else '新增' }}管理员
+                    {{ '编辑' if user_obj else '新增' }}管理员信息
                 </h5>
             </div>
             <div class="card-body">
@@ -18,24 +18,24 @@
 
                     <h6 class="text-primary mb-3"><i class="bi bi-person"></i> 基本信息</h6>
                     <div class="row">
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">姓名 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="real_name"
                                    value="{{ user_obj.real_name if user_obj else '' }}" required>
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">手机号码 <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" name="phone"
                                    value="{{ user_obj.phone if user_obj else '' }}" required>
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">密码 {% if user_obj %}<span class="text-danger">*</span>{% endif %}</label>
                             <input type="text" class="form-control" name="password"
                                    value="{{ user_obj.password_plain if user_obj and current_user.is_super_admin() else '' }}"
                                    placeholder="{{ '留空则不修改' if user_obj else '默认手机号后6位' }}"
                                    {% if user_obj %}required{% endif %}>
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">状态 <span class="text-danger">*</span></label>
                             <select class="form-select" name="is_active" id="is_active" required>
                                 <option value="1" {% if not user_obj or user_obj.is_active %}selected{% endif %}>启用</option>
@@ -46,7 +46,7 @@
 
                     <h6 class="text-primary mb-3 mt-3"><i class="bi bi-shield-lock"></i> 管理员设置</h6>
                     <div class="row">
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">校区 <span class="text-danger">*</span></label>
                             <select class="form-select" name="campus_id" required>
                                 <option value="">请选择校区</option>
@@ -55,7 +55,7 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">角色</label>
                             <select class="form-select" name="role">
                                 <option value="">请选择角色</option>
@@ -64,7 +64,7 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">权限设置 <span class="text-danger">*</span></label>
                             <div class="d-flex align-items-center gap-2 pt-1" style="height:calc(1.5rem + 1px*2 + 0.25rem*2);">
                                 <div class="form-check form-check-inline mb-0">
@@ -89,7 +89,7 @@
                         </div>
                     </div>
                     <div class="row">
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">管理员头像</label>
                             <input type="text" class="form-control" name="avatar"
                                    value="{{ user_obj.avatar if user_obj else '' }}" placeholder="头像URL">
@@ -118,6 +118,14 @@
 <script>
 document.getElementById('userForm').addEventListener('submit', function(e) {
     e.preventDefault();
+    // 校验手机号格式
+    var phoneEl = document.querySelector('#userForm [name="phone"]');
+    var phone = phoneEl ? phoneEl.value.trim() : '';
+    if (phone && !/^1\d{10}$/.test(phone)) {
+        showToast('手机号格式不正确，应为11位数字且以1开头', 'warning');
+        phoneEl.focus();
+        return;
+    }
     // 验证权限至少选一项
     var canPush = document.getElementById('can_push_jobs').checked;
     var canView = document.getElementById('can_view_jobs').checked;

@@ -47,6 +47,7 @@
                     </optgroup>
                     <optgroup label="岗位推送">
                         <option value="push_jobs">推送岗位</option>
+                        <option value="toggle_push_revoke">撤销/恢复推送</option>
                     </optgroup>
                 </select>
             </div>
@@ -127,7 +128,7 @@ const ACTION_MAP = {
     import_admins: '导入管理员',
     toggle_student_status: '启用/禁用学员', import_students: '导入学员',
     add_job: '新增岗位', edit_job: '编辑岗位', delete_job: '删除岗位',
-    import_jobs: '导入岗位', push_jobs: '推送岗位'
+    import_jobs: '导入岗位', push_jobs: '推送岗位', toggle_push_revoke: '撤销/恢复推送'
 };
 
 let currentPage = 1;

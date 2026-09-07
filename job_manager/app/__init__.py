@@ -3,6 +3,7 @@ from flask_login import LoginManager
 import os
 from .config import config
 from .models import db, User, Campus, Role
+from .permissions import get_user_permissions, can_access_menu as _can_access_menu
 
 login_manager = LoginManager()
 login_manager.login_view = 'auth.login'
@@ -20,6 +21,19 @@ def create_app(config_name='default'):
 
     db.init_app(app)
     login_manager.init_app(app)
+
+    @app.context_processor
+    def inject_globals():
+        from flask_login import current_user
+        from .permissions import init_csrf
+        csrf = init_csrf()
+        if current_user.is_authenticated:
+            return {
+                'csrf_token': csrf,
+                'user_permissions': get_user_permissions(current_user),
+                'can_access_menu': lambda menu: _can_access_menu(current_user, menu)
+            }
+        return {'csrf_token': csrf, 'user_permissions': [], 'can_access_menu': lambda menu: False}
 
     from .auth import auth_bp
     from .admin import admin_bp

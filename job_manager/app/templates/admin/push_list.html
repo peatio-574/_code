@@ -1,11 +1,11 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}推送记录 - 聘安途岗推系统{% endblock %}
 
 {% block content %}
 <div style="display:flex; flex-direction:column; height:calc(100vh - 96px); overflow:hidden;">
 
-<!-- 搜索筛选 -->
+<!-- 推送筛选 -->
 <div class="card mb-3 flex-shrink-0" style="margin-top:0;">
     <div class="card-body" style="padding-top:0;">
         <form id="searchForm" style="padding-top:8px;">
@@ -59,11 +59,14 @@
     <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
             <colgroup>
-                <col style="width:15%;">
-                <col style="width:15%;">
-                <col style="width:12%;">
-                <col style="width:12%;">
-                <col style="width:15%;">
+                <col style="width:13%;">
+                <col style="width:13%;">
+                <col style="width:10%;">
+                <col style="width:10%;">
+                <col style="width:10%;">
+                <col style="width:13%;">
+                <col style="width:11%;">
+                <col style="width:9%;">
                 <col style="width:10%;">
             </colgroup>
             <thead class="sticky-thead">
@@ -71,9 +74,12 @@
                     <th style="padding-left:15px;">岗位名称</th>
                     <th>单位名称</th>
                     <th>推送学员</th>
+                    <th>所属校区</th>
                     <th>推送人</th>
                     <th>推送时间</th>
+                    <th>更新时间</th>
                     <th>学员查看</th>
+                    <th>撤销</th>
                 </tr>
             </thead>
             <tbody id="pushesBody"></tbody>
@@ -118,14 +124,38 @@ async function loadPushes() {
     const body = document.getElementById('pushesBody');
     const table = body.closest('table');
     table.classList.add('no-data');
-    body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">加载中...</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-5">加载中...</td></tr>';
     try {
         const res = await fetch('{{ url_for("admin.push_list") }}?' + buildQuery());
         const data = await res.json();
         renderPushes(data.pushes);
         renderPagination(data.pagination);
     } catch (e) {
-        body.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-5">加载失败</td></tr>';
+        body.innerHTML = '<tr><td colspan="9" class="text-center text-danger py-5">加载失败</td></tr>';
+    }
+}
+
+async function togglePushRevoke(pushId, checkbox) {
+    const formData = new FormData();
+    formData.append('push_id', pushId);
+    formData.append('csrf_token', '{{ csrf_token }}');
+    try {
+        const res = await fetch('{{ url_for("admin.push_toggle_revoke") }}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadPushes();
+        } else {
+            checkbox.checked = !checkbox.checked;
+            showToast(data.message || '操作失败', 'danger');
+        }
+    } catch (e) {
+        checkbox.checked = !checkbox.checked;
+        showToast('操作失败', 'danger');
     }
 }
 
@@ -134,7 +164,7 @@ function renderPushes(pushes) {
     const table = body.closest('table');
     if (!pushes || pushes.length === 0) {
         table.classList.add('no-data');
-        body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">暂无推送记录</td></tr>';
+        body.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-5">暂无推送记录</td></tr>';
         return;
     }
     table.classList.remove('no-data');
@@ -142,13 +172,19 @@ function renderPushes(pushes) {
         const read = p.is_read
             ? '<span class="badge bg-success">已查看</span>'
             : '<span class="badge bg-warning">未查看</span>';
+        const revokeSwitch = `<div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="revoke_${p.id}" ${p.is_revoked ? 'checked' : ''} onchange="togglePushRevoke(${p.id}, this)">
+        </div>`;
         return `<tr>
             <td style="padding-left:15px;">${escapeHtml(p.job_name)}</td>
             <td>${escapeHtml(p.company_name)}</td>
             <td>${escapeHtml(p.student)}</td>
+            <td>${escapeHtml(p.campus)}</td>
             <td>${escapeHtml(p.pusher)}</td>
             <td>${escapeHtml(p.pushed_at)}</td>
+            <td>${escapeHtml(p.updated_at)}</td>
             <td>${read}</td>
+            <td>${revokeSwitch}</td>
         </tr>`;
     }).join('');
 }
