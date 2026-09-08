@@ -1,4 +1,6 @@
-from flask import Flask, request
+import logging
+import sys
+from flask import Flask, request, jsonify
 from flask_login import LoginManager
 import os
 from . import config as config_module
@@ -18,6 +20,9 @@ def load_user(user_id):
 def create_app(config_name='default'):
     app = Flask(__name__)
     app.config.from_object(config_module.config[config_name])
+
+    setup_logging(app)
+    setup_error_handlers(app)
 
     db.init_app(app)
     login_manager.init_app(app)
@@ -60,6 +65,49 @@ def create_app(config_name='default'):
         os.makedirs(upload_dir, exist_ok=True)
 
     return app
+
+
+def setup_logging(app):
+    """全局中文日志：同时输出到控制台与 logs/app.log"""
+    root_logger = logging.getLogger()
+    if root_logger.handlers:
+        app.logger.setLevel(logging.INFO)
+        return
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    log_dir = os.path.join(root, 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, 'app.log')
+    fmt = logging.Formatter(
+        '%(asctime)s [%(levelname)s] [%(name)s:%(lineno)d] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S')
+    for handler in (logging.FileHandler(log_file, encoding='utf-8'),
+                    logging.StreamHandler(sys.stdout)):
+        handler.setFormatter(fmt)
+        handler.setLevel(logging.INFO)
+        root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
+    app.logger.setLevel(logging.INFO)
+    root_logger.info('【日志】系统日志已初始化，日志文件：%s', log_file)
+
+
+def setup_error_handlers(app):
+    @app.errorhandler(413)
+    def handle_request_too_large(_e):
+        limit = app.config.get('MAX_CONTENT_LENGTH') or (16 * 1024 * 1024)
+        mb = int(limit // (1024 * 1024))
+        app.logger.warning('【上传】单次上传超过 %dMB，请求被拒绝', mb)
+        return jsonify({'success': False,
+                        'message': f'上传文件过大（超过 {mb}MB 上限），请压缩或拆分后再上传'}), 413
+
+    @app.errorhandler(404)
+    def handle_not_found(_e):
+        return jsonify({'success': False, 'message': '接口不存在（404）'}), 404
+
+    @app.errorhandler(500)
+    def handle_server_error(_e):
+        app.logger.error('【错误】服务器内部错误（500），请查看日志定位问题')
+        return jsonify({'success': False,
+                        'message': '服务器内部错误，请稍后重试或联系管理员（已记录日志）'}), 500
 
 
 def _add_missing_columns():

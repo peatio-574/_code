@@ -1222,11 +1222,18 @@ function startAiAnalyze() {
     fd.append('resume', file);
     if (targetJob) fd.append('target_job', targetJob);
     fetch(AI_ANALYZE_URL, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(r => r.json())
-        .then(data => {
+        .then(async r => {
+            let data = null;
+            try { data = await r.json(); } catch (e) { data = null; }
             clearInterval(timer);
-            if (!data.success) {
-                showToast(data.message || 'AI 分析失败', 'danger');
+            if (!r.ok) {
+                showToast((data && data.message) || ('服务器异常（HTTP ' + r.status + '），请稍后重试'), 'danger');
+                showAiView('upload');
+                setAiSteps(1);
+                return;
+            }
+            if (!data || !data.success) {
+                showToast((data && data.message) || 'AI 分析失败', 'danger');
                 showAiView('upload');
                 setAiSteps(1);
                 return;
@@ -1237,7 +1244,7 @@ function startAiAnalyze() {
         })
         .catch(() => {
             clearInterval(timer);
-            showToast('网络异常，AI 分析失败', 'danger');
+            showToast('网络异常，AI 分析失败，请检查网络连接后重试', 'danger');
             showAiView('upload');
             setAiSteps(1);
         });

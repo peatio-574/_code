@@ -17,9 +17,12 @@ import shutil
 import tempfile
 import os
 import importlib
+import logging
 from urllib import request as urlrequest
 
 import openpyxl
+
+logger = logging.getLogger(__name__)
 
 
 # 缺少解析依赖时的友好提示
@@ -150,8 +153,10 @@ def convert_document(filename: str, tmp_path: str):
     """
     soffice = shutil.which('soffice') or shutil.which('libreoffice')
     if not soffice:
+        logger.warning('【文档转换】未安装 LibreOffice，无法转换文件「%s」', filename)
         raise ValueError('该文件格式暂不支持直接解析，且本机未安装 LibreOffice 无法转换。'
                          '请将文件另存为 .pdf 或 .docx 后重试。')
+    logger.info('【文档转换】使用 LibreOffice 将「%s」转换为 PDF', filename)
     out_dir = tempfile.mkdtemp()
     subprocess.run([soffice, '--headless', '--convert-to', 'pdf',
                     '--outdir', out_dir, tmp_path], check=True, timeout=120,
@@ -167,6 +172,8 @@ def extract_resume_text(filename: str, data: bytes):
     """解析并返回简历文本。不支持的格式先尝试转换，仍失败则抛出 ValueError。"""
     ext = (filename.rsplit('.', 1)[-1] if '.' in filename else '').lower()
     original_ext = ext
+    logger.info('【文档解析】开始解析简历「%s」，格式：.%s，大小：%.2f MB', filename,
+                original_ext or '未知', len(data) / 1024 / 1024)
     if ext in ('xlsx', 'xls'):
         return _extract_xlsx(data)
     if ext == 'docx':
@@ -176,11 +183,13 @@ def extract_resume_text(filename: str, data: bytes):
             return _extract_pdf(data)
         except ValueError:
             # 无文字层 → 走“文档转换”：OCR 识别扫描件
+            logger.info('【文档解析】PDF 无文字层，使用 OCR 识别扫描件「%s」', filename)
             return _ocr_pdf(data)
     if ext == 'txt':
         return _extract_txt(data)
 
     # 其他格式（如 .doc、扫描件等）：走“文档转换”流程
+    logger.warning('【文档解析】文件「%s」不支持直接解析，尝试文档转换', filename)
     with tempfile.NamedTemporaryFile(suffix='.' + original_ext, delete=False) as tmp:
         tmp.write(data)
         tmp_path = tmp.name
@@ -310,10 +319,13 @@ def _call_ai(system_prompt: str, user_content: str):
     # 读 .env/config 配置；为空则不用外部 AI，回落到内置启发式分析
     api_key = current_app.config.get('AI_API_KEY')
     if not api_key:
+        logger.info('【AI】未配置 AI_API_KEY，本次回落本地启发式分析')
         return None
     base_url = current_app.config.get('AI_BASE_URL', '').rstrip('/')
     model = current_app.config.get('AI_MODEL', '')
     url = base_url + '/chat/completions'
+    logger.info('【AI】开始调用大模型分析（模型：%s，接口：%s，文本长度：%d）',
+                model or '(未配置)', url, len(user_content))
     payload = {
         'model': model,
         'temperature': 0.3,
@@ -327,12 +339,21 @@ def _call_ai(system_prompt: str, user_content: str):
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + api_key,
     }, method='POST')
-    with urlrequest.urlopen(req, timeout=90) as resp:
-        data = json.loads(resp.read().decode('utf-8'))
+    try:
+        with urlrequest.urlopen(req, timeout=90) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except Exception as e:
+        logger.warning('【AI】大模型接口调用异常：%s，将回落本地启发式分析', e)
+        return None
     content = data['choices'][0]['message']['content'].strip()
     # 尝试剥离 ```json ... ```
     content = re.sub(r'^```(json)?', '', content).rstrip('`').strip()
-    return json.loads(content)
+    try:
+        logger.info('【AI】大模型分析成功')
+        return json.loads(content)
+    except Exception as e:
+        logger.warning('【AI】大模型返回内容不是合法 JSON：%s', e)
+        return None
 
 
 def _call_ai_image(system_prompt: str, user_text: str, data_url: str):
@@ -340,10 +361,13 @@ def _call_ai_image(system_prompt: str, user_text: str, data_url: str):
     from flask import current_app
     api_key = current_app.config.get('AI_API_KEY')
     if not api_key:
+        logger.info('【AI】未配置 AI_API_KEY，图片识别将回落 OCR/本地分析')
         return None
     base_url = current_app.config.get('AI_BASE_URL', '').rstrip('/')
     model = current_app.config.get('AI_MODEL', '')
     url = base_url + '/chat/completions'
+    logger.info('【AI】调用多模态大模型识别图片（模型：%s，接口：%s，图片约 %d 字符）',
+                model or '(未配置)', url, len(data_url))
     payload = {
         'model': model,
         'temperature': 0.3,
@@ -359,11 +383,20 @@ def _call_ai_image(system_prompt: str, user_text: str, data_url: str):
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + api_key,
     }, method='POST')
-    with urlrequest.urlopen(req, timeout=120) as resp:
-        data = json.loads(resp.read().decode('utf-8'))
+    try:
+        with urlrequest.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except Exception as e:
+        logger.warning('【AI】多模态接口调用异常：%s，将回落 OCR 识别', e)
+        return None
     content = data['choices'][0]['message']['content'].strip()
     content = re.sub(r'^```(json)?', '', content).rstrip('`').strip()
-    return json.loads(content)
+    try:
+        logger.info('【AI】多模态识别成功')
+        return json.loads(content)
+    except Exception as e:
+        logger.warning('【AI】多模态返回内容不是合法 JSON：%s', e)
+        return None
 
 
 IMAGE_EXTS = {'png', 'jpg', 'jpeg', 'bmp', 'webp'}
@@ -404,6 +437,7 @@ def _ocr_image(data: bytes) -> str:
 def analyze_resume_image(data: bytes, filename: str, target_job: str = '') -> dict:
     """识别图片形式的简历：优先调用多模态大模型直接看图；失败则 OCR 转文本再分析。"""
     from flask import current_app
+    logger.info('【图片识别】开始识别简历图片「%s」，大小：%.2f MB', filename, len(data) / 1024 / 1024)
     data_url = _image_to_data_url(data)
     user_text = '这是一张候选人简历图片，请基于图片内容进行分析。' + \
         (f'该候选人意向/应聘岗位：{target_job}。' if target_job else '')
@@ -412,15 +446,17 @@ def analyze_resume_image(data: bytes, filename: str, target_job: str = '') -> di
             result = _call_ai_image(_AI_SYSTEM_PROMPT, user_text, data_url)
             if result and isinstance(result, dict):
                 return _normalize_result(result, target_job)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning('【图片识别】多模态接口调用异常：%s，尝试 OCR', e)
     # 兜底：OCR → 文本 → 常规分析
     try:
         text = _ocr_image(data)
         if text and text.strip():
+            logger.info('【图片识别】OCR 转写成功，文本长度：%d，继续常规分析', len(text))
             return analyze_resume(text, target_job)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning('【图片识别】OCR 识别失败：%s', e)
+    logger.warning('【图片识别】图片「%s」未能成功识别', filename)
     raise ValueError('无法识别该图片：请上传更清晰的简历截图/照片，或改用 xlsx / pdf / word 简历')
 
 
@@ -558,6 +594,7 @@ def _normalize_result(result: dict, target_job: str = '') -> dict:
 def analyze_resume(text: str, target_job: str = '') -> dict:
     """优先调用外部 AI；失败或未配置时回落本地启发式分析。
     target_job：用户填写的意向岗位（选填），用于让 AI 围绕该岗位给出针对性优化建议。"""
+    logger.info('【简历分析】开始分析，文本长度：%d，目标岗位：%s', len(text or ''), target_job or '(未填写)')
     user_content = text[:12000]
     if target_job:
         user_content = (f'该候选人意向/应聘岗位：{target_job}\n'
@@ -566,10 +603,14 @@ def analyze_resume(text: str, target_job: str = '') -> dict:
     try:
         result = _call_ai(_AI_SYSTEM_PROMPT, user_content)
         if result and isinstance(result, dict):
-            return _normalize_result(result, target_job)
-    except Exception:
-        pass
-    return _mock_analyze(text, target_job)
+            ok = _normalize_result(result, target_job)
+            logger.info('【简历分析】AI 分析成功，评分：%s，等级：%s', ok.get('score'), ok.get('level'))
+            return ok
+    except Exception as e:
+        logger.warning('【简历分析】AI 分析异常：%s，将回落本地启发式', e)
+    fallback = _mock_analyze(text, target_job)
+    logger.info('【简历分析】完成（本地启发式），评分：%s，等级：%s', fallback.get('score'), fallback.get('level'))
+    return fallback
 
 
 # ==================== 5. 岗位筛选 ====================

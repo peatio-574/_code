@@ -480,34 +480,44 @@ def ai_analyze():
 
     filename = file.filename
     data = file.read()
+    from flask import current_app
+    current_app.logger.info('【简历识别】收到文件「%s」，大小：%.2f MB', filename, len(data) / 1024 / 1024)
     ext = (filename.rsplit('.', 1)[-1] if '.' in filename else '').lower()
     if ext not in ('xlsx', 'xls', 'pdf', 'docx', 'txt', 'doc') and ext not in IMAGE_EXTS:
+        current_app.logger.warning('【简历识别】不支持的文件格式：.%s', ext)
         return jsonify({'success': False, 'message': f'不支持的文件格式 .{ext}，'
                         '请上传 xlsx / pdf / word（docx）/ 图片或 txt 简历'})
 
     target_job = request.form.get('target_job', '').strip()
+    text = ''
 
     # 图片简历：直接交给多模态模型识别；文档简历：先转文本再分析
     if ext in IMAGE_EXTS:
         try:
             result = analyze_resume_image(data, filename, target_job)
         except ValueError as e:
+            current_app.logger.warning('【简历识别】图片识别失败：%s', e)
             return jsonify({'success': False, 'message': str(e)})
         except Exception as e:
+            current_app.logger.error('【简历识别】图片识别异常：%s', e)
             return jsonify({'success': False, 'message': '图片识别失败：' + str(e)})
     else:
         try:
             text = extract_resume_text(filename, data)
         except Exception as e:
+            current_app.logger.warning('【简历识别】文档解析失败：%s', e)
             return jsonify({'success': False, 'message': str(e)})
         if not text or not text.strip():
+            current_app.logger.warning('【简历识别】未能从文件「%s」中解析出文本', filename)
             return jsonify({'success': False, 'message': '未能从文件中解析出文本内容，请检查文件是否正常'})
         result = analyze_resume(text, target_job)
 
     result['success'] = True
     result['filename'] = filename
-    result['char_count'] = 0
+    result['char_count'] = len(text or '')
     log_operation('AI_ANALYZE', 'resume', 0, f'AI简历识别：{filename}')
+    current_app.logger.info('【简历识别】分析完成，评分：%s，等级：%s，提取字数：%d',
+                            result.get('score'), result.get('level'), len(text or ''))
 
     # 记录每次识别信息：岗位、时间、识别人、候选人、AI打分、筛选条件
     scr = result.get('screening') or {}
@@ -527,8 +537,11 @@ def ai_analyze():
                 f.write(data.encode('utf-8'))
             else:
                 f.write(data)
-    except Exception:
+    except Exception as e:
         stored_path = ''
+        current_app.logger.warning('【简历识别】简历附件保存失败：%s', e)
+    if stored_path:
+        current_app.logger.info('【简历识别】简历附件已保存：%s', stored_path)
 
     detail = '；'.join(filter(None, [
         ('意向/技能：' + scr.get('keyword', '') if scr.get('keyword') else ''),
@@ -563,6 +576,7 @@ def ai_analyze():
     )
     db.session.add(record)
     db.session.commit()
+    current_app.logger.info('【简历识别】已入库记录 ID=%s，候选人：%s', record.id, candidate or '(未识别)')
     return jsonify(result)
 
 
