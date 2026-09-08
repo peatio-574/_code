@@ -282,9 +282,10 @@ class XHS(object):
             if PlayWright.get_count(know_ele):
                 PlayWright.click(know_ele)
                 time.sleep(1)
+        PlayWright.click('//span[text()="展开"]')
 
-        PlayWright.slow_input('//div[@class="d-daterangepicker-content"]/div[1]/input', startTime)
-        PlayWright.slow_input('//div[@class="d-daterangepicker-content"]/div[3]/input', endTime)
+        PlayWright.slow_input('(//div[@class="d-daterangepicker-content"]/div[1]/input)[1]', startTime)
+        PlayWright.slow_input('(//div[@class="d-daterangepicker-content"]/div[3]/input)[1]', endTime)
         PlayWright.click('//span[text()="查询"]')
 
     @classmethod
