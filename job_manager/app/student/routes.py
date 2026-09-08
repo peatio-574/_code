@@ -1,8 +1,8 @@
-from flask import render_template, redirect, url_for, flash, request
+from flask import render_template, redirect, url_for, flash, request, jsonify
 from flask_login import login_required, current_user
 from datetime import datetime, timedelta
 import re
-from ..models import db, Job, PushRecord
+from ..models import db, Job, PushRecord, OperationLog
 from ..permissions import student_required
 from . import student_bp
 
@@ -290,3 +290,55 @@ def job_detail(id):
         db.session.commit()
 
     return render_template('student/job_detail.html', job=job, push=push, now=datetime.now())
+
+
+# ==================== 我的操作日志（仅本人可见） ====================
+@student_bp.route('/logs')
+@student_required
+def logs_page():
+    """学员操作日志页面（HTML骨架，数据由前端异步加载）"""
+    return render_template('admin/logs_list.html', logs_api_url=url_for('student.logs_data'))
+
+
+@student_bp.route('/logs/data')
+@student_required
+def logs_data():
+    """学员操作日志数据接口：仅返回当前学员自己的操作记录"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    action = request.args.get('action', '').strip()
+
+    if per_page not in [20, 50, 100]:
+        per_page = 20
+
+    query = OperationLog.query.filter_by(is_deleted=False, user_id=current_user.id)
+    if action:
+        query = query.filter_by(action=action)
+
+    pagination = query.order_by(OperationLog.updated_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+
+    logs = []
+    for log in pagination.items:
+        logs.append({
+            'id': log.id,
+            'created_at': log.created_at.strftime('%Y-%m-%d %H:%M:%S') if log.created_at else '-',
+            'operator': log.user.real_name or log.user.username,
+            'action': log.action,
+            'details': log.details or '-',
+            'ip_address': log.ip_address,
+        })
+
+    return jsonify({
+        'success': True,
+        'logs': logs,
+        'pagination': {
+            'page': pagination.page,
+            'pages': pagination.pages,
+            'total': pagination.total,
+            'per_page': pagination.per_page,
+            'has_prev': pagination.has_prev,
+            'has_next': pagination.has_next,
+            'prev_num': pagination.prev_num,
+            'next_num': pagination.next_num
+        }
+    })

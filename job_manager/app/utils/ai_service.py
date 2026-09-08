@@ -311,8 +311,8 @@ def _call_ai(system_prompt: str, user_content: str):
     api_key = current_app.config.get('AI_API_KEY')
     if not api_key:
         return None
-    base_url = (current_app.config.get('AI_BASE_URL') or 'https://api.deepseek.com').rstrip('/')
-    model = current_app.config.get('AI_MODEL') or 'deepseek-v4-flash-vision-exp'
+    base_url = current_app.config.get('AI_BASE_URL', '').rstrip('/')
+    model = current_app.config.get('AI_MODEL', '')
     url = base_url + '/chat/completions'
     payload = {
         'model': model,
@@ -335,6 +335,95 @@ def _call_ai(system_prompt: str, user_content: str):
     return json.loads(content)
 
 
+def _call_ai_image(system_prompt: str, user_text: str, data_url: str):
+    """多模态（图像）请求：把简历图片以 base64 data URL 传给支持视觉的模型。"""
+    from flask import current_app
+    api_key = current_app.config.get('AI_API_KEY')
+    if not api_key:
+        return None
+    base_url = current_app.config.get('AI_BASE_URL', '').rstrip('/')
+    model = current_app.config.get('AI_MODEL', '')
+    url = base_url + '/chat/completions'
+    payload = {
+        'model': model,
+        'temperature': 0.3,
+        'messages': [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': [
+                {'type': 'text', 'text': user_text},
+                {'type': 'image_url', 'image_url': {'url': data_url}},
+            ]},
+        ],
+    }
+    req = urlrequest.Request(url, data=json.dumps(payload).encode('utf-8'), headers={
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + api_key,
+    }, method='POST')
+    with urlrequest.urlopen(req, timeout=120) as resp:
+        data = json.loads(resp.read().decode('utf-8'))
+    content = data['choices'][0]['message']['content'].strip()
+    content = re.sub(r'^```(json)?', '', content).rstrip('`').strip()
+    return json.loads(content)
+
+
+IMAGE_EXTS = {'png', 'jpg', 'jpeg', 'bmp', 'webp'}
+
+
+def _image_to_data_url(data: bytes) -> str:
+    """压缩并转成 base64 data URL，控制图片体积避免请求过大。"""
+    import base64, io
+    from PIL import Image
+    img = Image.open(io.BytesIO(data))
+    if img.mode in ('RGBA', 'LA', 'P'):
+        img = img.convert('RGBA')
+        bg = Image.new('RGB', img.size, (255, 255, 255))
+        bg.paste(img, mask=img.split()[-1])
+        img = bg
+    else:
+        img = img.convert('RGB')
+    w, h = img.size
+    max_dim = 1500
+    if max(w, h) > max_dim:
+        scale = max_dim / max(w, h)
+        img = img.resize((int(w * scale), int(h * scale)))
+    buf = io.BytesIO()
+    img.save(buf, format='JPEG', quality=85)
+    b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+    return 'data:image/jpeg;base64,' + b64
+
+
+def _ocr_image(data: bytes) -> str:
+    """本地 OCR 兜底：用 tesseract 识别图片中的文字，未安装则抛错。"""
+    import io
+    from PIL import Image
+    import pytesseract
+    img = Image.open(io.BytesIO(data))
+    return (pytesseract.image_to_string(img, lang='chi_sim+eng') or '').strip()
+
+
+def analyze_resume_image(data: bytes, filename: str, target_job: str = '') -> dict:
+    """识别图片形式的简历：优先调用多模态大模型直接看图；失败则 OCR 转文本再分析。"""
+    from flask import current_app
+    data_url = _image_to_data_url(data)
+    user_text = '这是一张候选人简历图片，请基于图片内容进行分析。' + \
+        (f'该候选人意向/应聘岗位：{target_job}。' if target_job else '')
+    try:
+        if current_app.config.get('AI_API_KEY'):
+            result = _call_ai_image(_AI_SYSTEM_PROMPT, user_text, data_url)
+            if result and isinstance(result, dict):
+                return _normalize_result(result, target_job)
+    except Exception:
+        pass
+    # 兜底：OCR → 文本 → 常规分析
+    try:
+        text = _ocr_image(data)
+        if text and text.strip():
+            return analyze_resume(text, target_job)
+    except Exception:
+        pass
+    raise ValueError('无法识别该图片：请上传更清晰的简历截图/照片，或改用 xlsx / pdf / word 简历')
+
+
 _AI_SYSTEM_PROMPT = (
     '你是一位资深 HR 与职业规划顾问。请阅读用户提供的简历文本，'
     '输出严格的 JSON（不要其它文字），字段如下：\n'
@@ -348,19 +437,27 @@ _AI_SYSTEM_PROMPT = (
     'screening 用于岗位筛选：keyword 取简历中明确的求职意向/技能关键词，'
     'age 推断候选人可接受的年龄范围，experience 推断期望的工作年限，'
     'major 提取专业要求；不明确的字段传空字符串"".\n'
-    '给出具体、可执行、避免空话；建议 3-5 条。'
+    '"suggestions" 为 3-5 条具体、可落地的简历优化建议，要求：\n'
+    '1) 避免“建议补充与岗位相关的技能/经历”这类笼统表述，直接指出简历当前缺失或薄弱之处；\n'
+    '2) 结合目标岗位 JD 要求，说明应埋入哪些具体关键词：技术栈/工具、业务能力、项目落地细节、可量化产出指标；\n'
+    '3) 涉及“补充技能/经历关键词”时，写出【旧写法(笼统) → 新写法(埋入关键词)】的具体改法示例，用 ❌/✅ 标注，'
+    '例如 ❌“负责网站项目开发” ✅“负责企业官网 Web 系统搭建，完成腾讯云 ECS 配置、域名 DNS 解析、安全组策略；'
+    '主导 ICP 备案、公安网安备案落地；基于 Nginx 反向代理实现前后端端口转发，保障系统稳定上线”；\n'
+    '4) 每条建议独立成句，具体到可照着改，避免空话。'
 )
 
 
 # ==================== 4. 备用启发式分析（无 AI Key 时） ====================
 
-def _mock_analyze(text: str) -> dict:
+def _mock_analyze(text: str, target_job: str = '') -> dict:
     skills = _detect_skills(text)
     edu = _detect_education(text)
     city = _detect_city(text)
-    intent = _detect_job_intent(text)
+    intent = _detect_job_intent(text) or target_job
     name = _detect_name(text)
     exp = _detect_experience(text)
+    if target_job and target_job != intent:
+        intent = target_job
 
     score = 60
     strengths = []
@@ -387,18 +484,27 @@ def _mock_analyze(text: str) -> dict:
     if intent:
         strengths.append(f'有明确求职意向：{intent}')
 
-    if len(skills) < 3:
-        suggestions.append('建议补充更多专业技能与项目经历关键词，增强匹配度')
+    if len(skills) < 3 or (target_job and not any(k.lower() in text.lower() for k in target_job.split())):
+        suggestions.append(
+            f'建议在简历中进一步补充与「{target_job or "目标岗位"}」高度相关的专业技能关键词、项目落地细节关键词。'
+            '结合目标岗位 JD 要求，把业务能力、工具栈、项目产出指标拆解嵌入经历段落，避免笼统描述，'
+            '提升简历与招聘岗位的关键词匹配度，便于系统筛选及 HR 快速抓取核心竞争力。'
+            '示例：❌“负责网站项目开发，完成域名解析与服务器部署”'
+            ' → ✅“负责企业官网 Web 系统搭建，完成腾讯云 ECS 服务器配置、域名 DNS 解析、安全组策略配置；'
+            '主导 ICP 备案、公安网安备案全流程落地；基于 Nginx 实现反向代理，完成前后端服务端口转发，保障业务系统稳定上线”。'
+        )
     if not edu:
-        suggestions.append('请补充最高学历，便于岗位学历门槛筛选')
+        suggestions.append('补充最高学历（院校/专业/学位），便于岗位学历门槛的自动筛选')
     if not intent:
-        suggestions.append('建议在简历开头明确“求职意向/目标岗位”，提升筛选精度')
+        suggestions.append('在简历开头明确“求职意向/目标岗位”，并写明意向城市、期望薪资，方便做岗位匹配')
     if exp < 1:
-        suggestions.append('可补充实习/项目经历时间轴，体现量化成果')
+        suggestions.append('补齐实习/项目经历的关键时间轴，每段用“做过 + 用什么 + 结果/指标”呈现，体现量化产出')
     if not _detect_salary(text):
-        suggestions.append('建议补充期望薪资区间，便于薪酬匹配')
+        suggestions.append('补充期望薪资区间，便于薪酬匹配与后续沟通')
+    if target_job:
+        suggestions.append(f'结合意向岗位「{target_job}」，在简历顶部放置“技能关键词 + 目标岗位”一句话定位，突出与岗位核心要求相符的技能与项目成果')
     if not suggestions:
-        suggestions.append('简历结构较完整，可结合岗位JD再微调关键词')
+        suggestions.append('简历结构较完整，可结合目标岗位 JD 再微调关键词，增加量化成果与业务落地细节')
 
     score = max(30, min(95, score))
     if score >= 88:
@@ -425,35 +531,45 @@ def _mock_analyze(text: str) -> dict:
             'screening': screening, 'ai': False}
 
 
-def analyze_resume(text: str) -> dict:
-    """优先调用外部 AI；失败或未配置时回落本地启发式分析。"""
+def _normalize_result(result: dict, target_job: str = '') -> dict:
+    """把大模型返回的 JSON 规范化为前端/记录统一结构。"""
+    scr = result.get('screening') or {}
+    keyword = (scr.get('keyword', '') or '').strip() or target_job
+    return {
+        'score': max(0, min(100, int(result.get('score', 60)))),
+        'level': result.get('level', '') or '中',
+        'candidate_name': (result.get('candidate_name') or '').strip(),
+        'strengths': result.get('strengths') or [],
+        'suggestions': result.get('suggestions') or [],
+        'screening': {
+            'keyword': keyword,
+            'province': scr.get('province', ''),
+            'city': scr.get('city', ''),
+            'education': scr.get('education', ''),
+            'age': scr.get('age', ''),
+            'experience': scr.get('experience', ''),
+            'major': scr.get('major', ''),
+            'remark': scr.get('remark', '由 AI 分析生成'),
+        },
+        'ai': True,
+    }
+
+
+def analyze_resume(text: str, target_job: str = '') -> dict:
+    """优先调用外部 AI；失败或未配置时回落本地启发式分析。
+    target_job：用户填写的意向岗位（选填），用于让 AI 围绕该岗位给出针对性优化建议。"""
+    user_content = text[:12000]
+    if target_job:
+        user_content = (f'该候选人意向/应聘岗位：{target_job}\n'
+                        f'——请围绕“{target_job}”提出针对性可落地的简历优化建议。\n'
+                        f'--------------------------------\n' + user_content)
     try:
-        result = _call_ai(_AI_SYSTEM_PROMPT, text[:12000])
+        result = _call_ai(_AI_SYSTEM_PROMPT, user_content)
         if result and isinstance(result, dict):
-            # 规范化字段
-            scr = result.get('screening') or {}
-            out = {
-                'score': max(0, min(100, int(result.get('score', 60)))),
-                'level': result.get('level', '') or '中',
-                'candidate_name': (result.get('candidate_name') or '').strip(),
-                'strengths': result.get('strengths') or [],
-                'suggestions': result.get('suggestions') or [],
-                'screening': {
-                    'keyword': scr.get('keyword', ''),
-                    'province': scr.get('province', ''),
-                    'city': scr.get('city', ''),
-                    'education': scr.get('education', ''),
-                    'age': scr.get('age', ''),
-                    'experience': scr.get('experience', ''),
-                    'major': scr.get('major', ''),
-                    'remark': scr.get('remark', '由 AI 分析生成'),
-                },
-                'ai': True,
-            }
-            return out
+            return _normalize_result(result, target_job)
     except Exception:
         pass
-    return _mock_analyze(text)
+    return _mock_analyze(text, target_job)
 
 
 # ==================== 5. 岗位筛选 ====================

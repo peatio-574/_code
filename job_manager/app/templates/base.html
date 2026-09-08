@@ -774,6 +774,9 @@
             <a href="{{ url_for('student.my_pushes') }}" class="menu-item {% if request.endpoint == 'student.my_pushes' %}active{% endif %}">
                 <i class="bi bi-inbox"></i> 我的推送
             </a>
+            <a href="{{ url_for('student.logs_page') }}" class="menu-item {% if 'logs' in request.endpoint %}active{% endif %}">
+                <i class="bi bi-journal-text"></i> 操作日志
+            </a>
         </div>
         {% endif %}
     </div>
@@ -821,6 +824,7 @@
             <div class="menu-group">
                 <div class="menu-title">我的</div>
                 <a href="{{ url_for('student.my_pushes') }}" class="menu-item {% if request.endpoint == 'student.my_pushes' %}active{% endif %}"><i class="bi bi-inbox"></i> 我的推送</a>
+                <a href="{{ url_for('student.logs_page') }}" class="menu-item {% if 'logs' in request.endpoint %}active{% endif %}"><i class="bi bi-journal-text"></i> 操作日志</a>
             </div>
             {% endif %}
         </div>

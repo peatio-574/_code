@@ -2,7 +2,10 @@ from flask import render_template, redirect, url_for, flash, request, jsonify, s
 from flask_login import login_required, current_user
 from sqlalchemy.orm import aliased
 from ..models import db, User, Job, PushRecord, OperationLog, Campus, Role, ResumeAnalysisLog
-from ..utils.ai_service import analyze_resume, extract_resume_text, extract_candidate_name, screen_jobs
+from ..utils.ai_service import (
+    analyze_resume, analyze_resume_image, extract_resume_text,
+    extract_candidate_name, screen_jobs, IMAGE_EXTS,
+)
 from ..permissions import (
     super_admin_required, admin_required, permission_required, init_csrf,
     PERMISSION_MANAGE_STUDENTS, PERMISSION_PUSH_JOBS, PERMISSION_AI_RECOGNITION,
@@ -40,6 +43,14 @@ def is_valid_phone(phone):
     if not phone.startswith('1'):
         return False
     return True
+
+
+def mask_phone(phone):
+    """手机号脱敏为 156****4260 形式（管理员查看学员手机号时使用）"""
+    phone = (phone or '').strip()
+    if len(phone) == 11 and phone.isdigit():
+        return phone[:3] + '****' + phone[-4:]
+    return phone
 
 
 def log_operation(action, target_type='', target_id=0, details=''):
@@ -470,23 +481,32 @@ def ai_analyze():
     filename = file.filename
     data = file.read()
     ext = (filename.rsplit('.', 1)[-1] if '.' in filename else '').lower()
-    if ext not in ('xlsx', 'xls', 'pdf', 'docx', 'txt', 'doc'):
+    if ext not in ('xlsx', 'xls', 'pdf', 'docx', 'txt', 'doc') and ext not in IMAGE_EXTS:
         return jsonify({'success': False, 'message': f'不支持的文件格式 .{ext}，'
-                        '请上传 xlsx / pdf / word（docx）或 txt 简历'})
+                        '请上传 xlsx / pdf / word（docx）/ 图片或 txt 简历'})
 
-    try:
-        text = extract_resume_text(filename, data)
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
+    target_job = request.form.get('target_job', '').strip()
 
-    if not text or not text.strip():
-        return jsonify({'success': False, 'message': '未能从文件中解析出文本内容，请检查文件是否正常'})
-
-    result = analyze_resume(text)
+    # 图片简历：直接交给多模态模型识别；文档简历：先转文本再分析
+    if ext in IMAGE_EXTS:
+        try:
+            result = analyze_resume_image(data, filename, target_job)
+        except ValueError as e:
+            return jsonify({'success': False, 'message': str(e)})
+        except Exception as e:
+            return jsonify({'success': False, 'message': '图片识别失败：' + str(e)})
+    else:
+        try:
+            text = extract_resume_text(filename, data)
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+        if not text or not text.strip():
+            return jsonify({'success': False, 'message': '未能从文件中解析出文本内容，请检查文件是否正常'})
+        result = analyze_resume(text, target_job)
 
     result['success'] = True
     result['filename'] = filename
-    result['char_count'] = len(text)
+    result['char_count'] = 0
     log_operation('AI_ANALYZE', 'resume', 0, f'AI简历识别：{filename}')
 
     # 记录每次识别信息：岗位、时间、识别人、候选人、AI打分、筛选条件
@@ -530,7 +550,7 @@ def ai_analyze():
     record = ResumeAnalysisLog(
         user_id=current_user.id,
         user_name=(current_user.real_name or current_user.username),
-        job=scr.get('keyword') or '',
+        job=scr.get('keyword') or target_job or '',
         candidate_name=candidate,
         score=result.get('score', 0),
         level=result.get('level', ''),
@@ -1332,7 +1352,7 @@ def push_students():
         data.append({
             'id': stu.id,
             'real_name': stu.real_name,
-            'phone': stu.phone,
+            'phone': mask_phone(stu.phone),
             'campus': campus_name,
             'education': stu.education or '-',
             'major': stu.major or '-'
@@ -1391,7 +1411,7 @@ def students_list():
             'username': stu.username,
             'campus': campus_name,
             'id_card_last6': stu.get_id_card_last6(),
-            'phone': stu.phone,
+            'phone': mask_phone(stu.phone),
             'gender': stu.gender or '-',
             'age': stu.get_age() or '-',
             'education': stu.education or '-',
@@ -1806,17 +1826,19 @@ def push_toggle_revoke():
 
 # ==================== 操作日志 ====================
 @admin_bp.route('/logs/page')
-@admin_required
+@login_required
 def logs_page():
     """操作日志页面（HTML骨架，数据由前端异步加载）"""
     ctx = get_template_context()
+    ctx['logs_api_url'] = url_for('admin.logs_list')
     return render_template('admin/logs_list.html', **ctx)
 
 
 @admin_bp.route('/logs')
-@admin_required
+@login_required
 def logs_list():
-    """操作日志数据接口：返回JSON数据，前端负责渲染"""
+    """操作日志数据接口：返回JSON数据，前端负责渲染。
+    规则：仅超管可见全部操作日志；普通管理员与其他账号仅可见自己的操作记录。"""
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     action = request.args.get('action', '')
@@ -1829,18 +1851,16 @@ def logs_list():
     if action:
         query = query.filter_by(action=action)
     
-    # 管理员只显示当前校区的操作日志
-    campus_filter = get_campus_filter()
-    if campus_filter is not None:
-        U1 = aliased(User)
-        query = query.join(U1, OperationLog.user_id == U1.id, isouter=True).filter(U1.campus_id == campus_filter)
-    
-    # 按操作人搜索
-    if operator:
-        U2 = aliased(User)
-        query = query.join(U2, OperationLog.user_id == U2.id, isouter=True).filter(
-            db.or_(U2.real_name.contains(operator), U2.username.contains(operator))
-        )
+    if current_user.is_super_admin():
+        # 超管：可见全部操作日志，支持按操作人搜索
+        if operator:
+            U2 = aliased(User)
+            query = query.join(U2, OperationLog.user_id == U2.id, isouter=True).filter(
+                db.or_(U2.real_name.contains(operator), U2.username.contains(operator))
+            )
+    else:
+        # 普通管理员 / 其他账号：仅可见自己的操作记录
+        query = query.filter(OperationLog.user_id == current_user.id)
     
     pagination = query.order_by(OperationLog.updated_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     

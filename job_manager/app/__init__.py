@@ -1,7 +1,7 @@
 from flask import Flask, request
 from flask_login import LoginManager
 import os
-from .config import config
+from . import config as config_module
 from .models import db, User, Campus, Role
 from .permissions import get_user_permissions, can_access_menu as _can_access_menu, validate_csrf
 
@@ -17,7 +17,7 @@ def load_user(user_id):
 
 def create_app(config_name='default'):
     app = Flask(__name__)
-    app.config.from_object(config[config_name])
+    app.config.from_object(config_module.config[config_name])
 
     db.init_app(app)
     login_manager.init_app(app)
@@ -86,10 +86,13 @@ def _add_missing_columns():
             with db.engine.begin() as conn:
                 conn.execute(text('ALTER TABLE resume_analysis_logs ADD COLUMN strengths TEXT NULL'))
                 conn.execute(text('ALTER TABLE resume_analysis_logs ADD COLUMN suggestions TEXT NULL'))
-        with db.engine.begin() as conn:
-            conn.execute(text(
-                "UPDATE resume_analysis_logs SET detail = CONCAT('AI识别完成，评分', score, '分') "
-                "WHERE (detail IS NULL OR detail = '')"))
+        # 回填历史记录 detail（跨库安全，避免 MySQL 专用 CONCAT 在 SQLite 上失败）
+        from .models import ResumeAnalysisLog
+        history = ResumeAnalysisLog.query.filter(
+            db.or_(ResumeAnalysisLog.detail.is_(None), ResumeAnalysisLog.detail == '')).all()
+        for row in history:
+            row.detail = f'AI识别完成，评分{row.score}分'
+        db.session.commit()
     except Exception as e:
         print('[migrate] resume_analysis_logs 迁移失败:', e)
         db.session.rollback()

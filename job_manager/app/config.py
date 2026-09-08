@@ -1,26 +1,45 @@
 import os
 from datetime import timedelta
 from urllib.parse import quote
+from dotenv import load_dotenv
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
-# ---------------- 数据库连接（单一来源，供应用与 init_db.py 共用） ----------------
-# 密码只在此配置一次；用 .env / 环境变量覆盖即可，不要在多处代码里重复写。
-DB_HOST = os.environ.get('DB_HOST', '127.0.0.1')
-DB_PORT = os.environ.get('DB_PORT', '3306')
-DB_USER = os.environ.get('DB_USER', 'job_CAIQABiAB')
-DB_PASSWORD = os.environ.get('DB_PASSWORD', 'BBii@BDIKCAU&QABiiBBi*JBTIH')
-DB_NAME = os.environ.get('DB_NAME', 'job')
+# 自动加载项目根目录的 .env（含真实值，不入库）；不存在则用下方默认/空配置。
+load_dotenv(os.path.join(basedir, '..', '.env'))
+
+# ============================================================
+# 统一配置区 —— 数据库连接 + AI 模型（全部从 .env 读取）
+# 本文件不再内置任何真实值，默认空；实际值统一写在 .env（由 .env.example 复制）。
+# ============================================================
+# ---- 数据库连接 ----
+DB_HOST = os.environ.get('DB_HOST', '')
+DB_PORT = os.environ.get('DB_PORT', '')
+DB_USER = os.environ.get('DB_USER', '')
+DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
+DB_NAME = os.environ.get('DB_NAME', '')
+
+# ---- AI 模型（OpenAI 兼容协议）----
+# AI_API_KEY 配了才调用外部大模型；否则回落到内置启发式分析（离线兜底）。
+AI_API_KEY = os.environ.get('AI_API_KEY', '')
+AI_BASE_URL = os.environ.get('AI_BASE_URL', '')
+AI_MODEL = os.environ.get('AI_MODEL', '')
+AI_OCR_ENABLED = os.environ.get('AI_OCR_ENABLED', 'true').lower() == 'true'
+# ============================================================
 
 
 def _build_database_uri():
-    # 密码含特殊字符（@ & / 等）必须 URL 编码，否则 SQLAlchemy 解析报错
-    return (f"mysql+pymysql://{DB_USER}:{quote(DB_PASSWORD, safe='')}"
-            f"@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4")
+    # 密码/用户名含特殊字符（@ & / 等）必须 URL 编码，否则 SQLAlchemy 解析报错。
+    # host/port/库名 仅作结构兜底（MySQL 惯例值，非机密），用户/密码仍取 .env 配置。
+    host = DB_HOST or '127.0.0.1'
+    port = DB_PORT or '3306'
+    name = DB_NAME or 'job'
+    return (f"mysql+pymysql://{quote(DB_USER, safe='')}:{quote(DB_PASSWORD, safe='')}"
+            f"@{host}:{port}/{name}?charset=utf8mb4")
 
 
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
+    SECRET_KEY = os.environ.get('SECRET_KEY', '')
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or _build_database_uri()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
@@ -31,14 +50,11 @@ class Config:
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
     PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
 
-    # ---------------- AI 简历识别配置 ----------------
-    # 配置了 AI_API_KEY 才真正调用外部大模型；否则内置启发式分析（离线兜底）。
-    AI_API_KEY = os.environ.get('AI_API_KEY', '')                  # API Key（建议放 .env，勿提交）
-    AI_BASE_URL = os.environ.get('AI_BASE_URL', 'https://api.deepseek.com')
-    AI_MODEL = os.environ.get('AI_MODEL', 'deepseek-v4-flash-vision-exp')
-    # 说明：AI 模型只接收【提取出的文本】，因此 PDF/Word/Excel 都会先转成文本再交给模型，
-    # 模型本身不需要直接“识别 PDF”。对于没有文字层的 PDF（扫描件），需要 OCR 才能转文本。
-    AI_OCR_ENABLED = os.environ.get('AI_OCR_ENABLED', 'true').lower() == 'true'
+    # 引用上方统一配置区的值，供 current_app.config.get('AI_*') 读取
+    AI_API_KEY = AI_API_KEY
+    AI_BASE_URL = AI_BASE_URL
+    AI_MODEL = AI_MODEL
+    AI_OCR_ENABLED = AI_OCR_ENABLED
 
 
 class DevelopmentConfig(Config):

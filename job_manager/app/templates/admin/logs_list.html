@@ -51,10 +51,12 @@
                     </optgroup>
                 </select>
             </div>
+            {% if current_user.is_super_admin() %}
             <div class="col-md-3">
                 <label class="form-label fw-bold">操作人：</label>
                 <input type="text" class="form-control" name="operator" id="operatorFilter" placeholder="搜索操作人" onkeyup="if(event.key==='Enter')applyFilters()">
             </div>
+            {% endif %}
             <div class="d-flex align-items-center gap-2 pt-2">
                 <button type="submit" class="btn btn-primary fw-bold">
                     <i class="bi bi-search"></i> 筛选
@@ -149,7 +151,7 @@ async function loadLogs() {
     const body = document.getElementById('logsBody');
     body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">加载中...</td></tr>';
     try {
-        const res = await fetch('{{ url_for("admin.logs_list") }}?' + buildQuery());
+        const res = await fetch('{{ logs_api_url }}?' + buildQuery());
         const data = await res.json();
         renderLogs(data.logs);
         renderPagination(data.pagination);
@@ -245,7 +247,8 @@ document.getElementById('filterForm').addEventListener('submit', function(e) {
 
 function applyFilters() {
     currentAction = document.getElementById('actionFilter').value;
-    currentOperator = document.getElementById('operatorFilter').value;
+    var opEl = document.getElementById('operatorFilter');
+    currentOperator = opEl ? opEl.value : '';
     currentPage = 1;
     loadLogs();
 }

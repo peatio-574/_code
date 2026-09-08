@@ -3,6 +3,36 @@
 {% block title %}AI识别记录 - 聘安途岗推系统{% endblock %}
 
 {% block content %}
+<style>
+/* 详情弹窗：与 AI 识别页面一致的样式 */
+#detailModal .modal-dialog { max-width: 700px; }
+#detailModal .ai-score-wrap { display: flex; align-items: center; gap: 20px; margin-bottom: 14px; }
+#detailModal .ai-score-circle { position: relative; width: 108px; height: 108px; flex-shrink: 0; }
+#detailModal .ai-score-circle svg { transform: rotate(-90deg); }
+#detailModal .ai-score-circle .ai-score-num {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 30px; font-weight: 800; color: #7c3aed;
+}
+#detailModal .ai-level-badge { font-size: 13px; padding: 6px 14px; border-radius: 20px; font-weight: 700; display: inline-block; margin-top: 6px; }
+#detailModal .ai-block { margin-bottom: 14px; }
+#detailModal .ai-block-title { font-size: 14px; font-weight: 700; color: #333; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+#detailModal .ai-basic-row { display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 13px; color: #555; }
+#detailModal .ai-basic-label { color: #999; margin-right: 6px; }
+#detailModal .ai-suggestion-item {
+    display: flex; gap: 8px; padding: 8px 10px; border-radius: 8px; background: #fafafa;
+    font-size: 13px; color: #444; line-height: 1.5; margin-bottom: 6px;
+}
+#detailModal .ai-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+#detailModal .ai-chip {
+    background: #f0ecff; color: #6d28d9; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600;
+    word-break: break-all;
+}
+#detailModal .ai-file-card {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    border: 1px solid #e6e8eb; border-radius: 10px; background: #fff;
+}
+#detailModal .ai-file-card > i { font-size: 26px; color: #7c3aed; flex-shrink: 0; }
+</style>
 <div style="display:flex; flex-direction:column; height:calc(100vh - 96px); height:calc(100dvh - 96px); overflow:hidden;">
 
 <!-- 筛选 -->
@@ -109,8 +139,8 @@
 {% block extra_js %}
 <script>
 const LEVEL_MAP = { '优': 'success', '良': 'primary', '中': 'warning', '待提升': 'danger' };
-const DOWNLOAD_URL = '{{ url_for("admin.ai_record_download", record_id=0) }}'.replace('0', '');
-const DELETE_RESUME_URL = '{{ url_for("admin.ai_record_resume_delete", record_id=0) }}'.replace('0', '');
+const DOWNLOAD_URL = '{{ url_for("admin.ai_record_download", record_id=0) }}';
+const DELETE_RESUME_URL = '{{ url_for("admin.ai_record_resume_delete", record_id=0) }}';
 
 function fmtSize(bytes) {
     if (!bytes) return '';
@@ -235,7 +265,7 @@ function escapeAttr(str) {
 async function deleteResume(id, fileName) {
     if (!confirm('确定删除该记录的简历附件吗？\n' + (fileName || ''))) return;
     try {
-        const res = await fetch(DELETE_RESUME_URL + id, { method: 'POST', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+        const res = await fetch(DELETE_RESUME_URL.replace('/0/', '/' + id + '/'), { method: 'POST', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
         const data = await res.json();
         if (data.success) {
             const modalEl = document.getElementById('detailModal');
@@ -253,35 +283,71 @@ async function deleteResume(id, fileName) {
 function showDetail(id) {
     const r = recordsMap[id];
     if (!r) return;
-    const lvl = r.level && r.level !== '-' ? `<span class="badge bg-${LEVEL_MAP[lvl] || 'secondary'}">${escapeHtml(lvl)}</span>` : '-';
+    const lvlColor = { '优': '#52c41a', '良': '#4a7cf7', '中': '#faad14', '待提升': '#ff4d4f' };
+    const lvlVal = r.level;
+    const lvlColorHex = lvlColor[lvlVal] || '#6d28d9';
+    const lvlBadge = lvlVal && lvlVal !== '-'
+        ? `<span class="ai-level-badge" style="background:${lvlColorHex}22;color:${lvlColorHex};">${escapeHtml(lvlVal)}</span>`
+        : '<span class="text-muted" style="font-size:13px;">-</span>';
+
+    const pct = Math.max(0, Math.min(100, r.score || 0));
+    const dash = 301.6 * (1 - pct / 100);
+    const scoreCircle = `
+        <div class="ai-score-circle">
+            <svg width="108" height="108" viewBox="0 0 108 108">
+                <circle cx="54" cy="54" r="48" fill="none" stroke="#f0ecff" stroke-width="10"/>
+                <circle cx="54" cy="54" r="48" fill="none" stroke="#7c3aed" stroke-width="10" stroke-linecap="round" stroke-dasharray="301.6" stroke-dashoffset="${dash}"/>
+            </svg>
+            <div class="ai-score-num">${r.score ?? '-'}</div>
+        </div>`;
+
     const fileBtn = (r.file_name && r.file_size)
-        ? `<div class="d-flex align-items-center gap-2 flex-wrap">
-            <a href="${DOWNLOAD_URL + r.id}" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i> ${escapeHtml(r.file_name)} (${fmtSize(r.file_size)})</a>
+        ? `<div class="ai-file-card">
+            <i class="bi bi-file-earmark-text"></i>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:14px;font-weight:700;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.file_name)}</div>
+                <div style="font-size:12px;color:#999;">${fmtSize(r.file_size)}</div>
+            </div>
+            <a href="${DOWNLOAD_URL.replace('/0/', '/' + r.id + '/')}" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i> 下载</a>
             <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteResume(${r.id}, '${escapeAttr(r.file_name)}')"><i class="bi bi-trash"></i> 删除</button>
-          </div>`
-        : '<span class="text-muted">-</span>';
+        </div>`
+        : '<span class="text-muted" style="font-size:13px;">-</span>';
+
     const strengthsList = (r.strengths || '')
         .split('\n').map(s => s.trim()).filter(Boolean)
-        .map(s => `<li>${escapeHtml(s)}</li>`).join('');
+        .map(s => `<div class="ai-suggestion-item"><i class="bi bi-check-circle-fill text-success" style="margin-top:2px;"></i><span>${escapeHtml(s)}</span></div>`).join('');
     const suggestionsList = (r.suggestions || '')
         .split('\n').map(s => s.trim()).filter(Boolean)
-        .map(s => `<li>${escapeHtml(s)}</li>`).join('');
+        .map(s => `<div class="ai-suggestion-item"><i class="bi bi-lightbulb-fill text-warning" style="margin-top:2px;"></i><span>${escapeHtml(s)}</span></div>`).join('');
+    const chips = (r.detail || '')
+        .split('；').map(s => s.trim()).filter(Boolean)
+        .map(s => `<span class="ai-chip">${escapeHtml(s)}</span>`).join('');
+
     document.getElementById('detailBody').innerHTML = `
-        <div class="row g-3">
-            <div class="col-md-6"><small class="text-muted d-block">候选人</small><strong>${escapeHtml(r.candidate_name)}</strong></div>
-            <div class="col-md-6"><small class="text-muted d-block">操作人</small><strong>${escapeHtml(r.user_name)}</strong></div>
-            <div class="col-md-6"><small class="text-muted d-block">意向岗位</small><strong>${escapeHtml(r.job)}</strong></div>
-            <div class="col-md-6"><small class="text-muted d-block">识别时间</small><strong>${escapeHtml(r.created_at)}</strong></div>
-            <div class="col-md-6"><small class="text-muted d-block">AI打分</small><strong class="${r.score >= 75 ? 'text-success' : (r.score >= 60 ? 'text-warning' : 'text-danger')}">${r.score}</strong></div>
-            <div class="col-md-6"><small class="text-muted d-block">评级</small>${lvl}</div>
-            <div class="col-md-6"><small class="text-muted d-block">简历</small>${fileBtn}</div>
-            <div class="col-12">
-                <small class="text-muted d-block">筛选条件</small>
-                <div style="white-space:pre-wrap;">${escapeHtml(r.detail || '暂无')}</div>
+        <div class="ai-score-wrap">
+            ${scoreCircle}
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:14px;color:#888;">简历综合评分</div>
+                ${lvlBadge}
             </div>
-            ${strengthsList ? `<div class="col-12"><small class="text-muted d-block">优势分析</small><ul class="mb-0 ps-3">${strengthsList}</ul></div>` : ''}
-            ${suggestionsList ? `<div class="col-12"><small class="text-muted d-block">修改建议</small><ul class="mb-0 ps-3">${suggestionsList}</ul></div>` : ''}
-        </div>`;
+        </div>
+        <div class="ai-block">
+            <div class="ai-block-title"><i class="bi bi-person-lines-fill text-primary"></i> 基本信息</div>
+            <div class="ai-basic-row">
+                <div><span class="ai-basic-label">候选人</span>${escapeHtml(r.candidate_name)}</div>
+                <div><span class="ai-basic-label">操作人</span>${escapeHtml(r.user_name)}</div>
+                <div><span class="ai-basic-label">意向岗位</span>${escapeHtml(r.job)}</div>
+                <div><span class="ai-basic-label">识别时间</span>${escapeHtml(r.created_at)}</div>
+            </div>
+        </div>
+        <div class="ai-block">
+            <div class="ai-block-title"><i class="bi bi-folder-fill text-primary"></i> 简历附件</div>
+            ${fileBtn}
+        </div>
+        ${strengthsList ? `<div class="ai-block"><div class="ai-block-title"><i class="bi bi-check-circle-fill text-success"></i> 简历优势</div>${strengthsList}</div>` : ''}
+        ${suggestionsList ? `<div class="ai-block"><div class="ai-block-title"><i class="bi bi-lightbulb-fill text-warning"></i> 修改建议</div>${suggestionsList}</div>` : ''}
+        ${chips ? `<div class="ai-block"><div class="ai-block-title"><i class="bi bi-funnel-fill text-primary"></i> 提炼的筛选条件</div><div class="ai-chips">${chips}</div></div>` : ''}
+    `;
     new bootstrap.Modal(document.getElementById('detailModal')).show();
 }
 

@@ -16,7 +16,7 @@ from app.config import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
 # ==================== 数据库配置（统一取自 app/config.py）====================
 DB_CONFIG = {
     'host': DB_HOST,
-    'port': int(DB_PORT),
+    'port': int(DB_PORT or 3306),  # 空时回退 MySQL 默认端口
     'user': DB_USER,
     'password': DB_PASSWORD,
     'charset': 'utf8mb4'

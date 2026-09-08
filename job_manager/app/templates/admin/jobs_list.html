@@ -82,7 +82,7 @@
                 </button>
                 {% if can_access_menu('ai') %}
                 <button type="button" class="btn btn-ai fw-bold ms-auto" id="aiAnalyzeBtn" onclick="showAiModal()">
-                    <i class="bi bi-stars"></i> AI识别
+                    <i class="bi bi-stars"></i> 让AI看简历匹配
                 </button>
                 {% endif %}
                 {% if can_access_menu('push') %}
@@ -394,9 +394,10 @@
                             <span class="ai-format-chip">xlsx</span>
                             <span class="ai-format-chip">pdf</span>
                             <span class="ai-format-chip">docx</span>
+                            <span class="ai-format-chip">png/jpg</span>
                             <span class="ai-format-chip">txt</span>
                         </div>
-                        <input type="file" id="aiFileInput" accept=".xlsx,.xls,.pdf,.docx,.doc,.txt" style="display:none;">
+                        <input type="file" id="aiFileInput" accept=".xlsx,.xls,.pdf,.docx,.doc,.png,.jpg,.jpeg,.bmp,.webp,.txt" style="display:none;">
                     </div>
                     <!-- 已选文件卡片：可删除 -->
                     <div id="aiFileCard" class="ai-file-card" style="display:none;">
@@ -408,6 +409,13 @@
                         <button type="button" class="btn btn-link p-0 text-danger ai-remove-btn" onclick="removeAiFile()" title="移除文件">
                             <i class="bi bi-x-circle-fill"></i>
                         </button>
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label fw-bold mb-1">
+                            <i class="bi bi-bullseye"></i> 意向岗位
+                            <span class="text-muted" style="font-weight:400;font-size:12px;">（选填，填写后 AI 将围绕该岗位给出针对性优化建议并精准匹配）</span>
+                        </label>
+                        <input type="text" class="form-control" id="aiTargetJob" placeholder="例如：Java开发工程师 / 前端开发工程师" maxlength="60">
                     </div>
                     <div class="mt-3 d-flex gap-2">
                         <button type="button" class="btn ai-analyze-btn flex-grow-1 fw-bold" id="aiAnalyzeBtn2" onclick="startAiAnalyze()" disabled>
@@ -463,34 +471,56 @@
                         <div class="ai-chips" id="aiScreenChips"></div>
                         <div id="aiScreenRemark" style="font-size:12px;color:#999;margin-top:8px;"></div>
                     </div>
-                    <div class="mb-3 d-flex align-items-center flex-wrap gap-2">
-                        <div style="font-size:14px;color:#555;">共为您匹配到 <strong id="aiMatchedCount" class="text-primary">0</strong> 个岗位</div>
+                    <div class="mb-3 d-flex align-items-center flex-wrap gap-2 justify-content-between" style="background:#fff;border:1px solid #eef0f3;border-radius:10px;padding:10px 12px;">
+                        <div style="font-size:14px;color:#555;">共匹配 <strong id="aiMatchedCount" class="text-primary">0</strong> 个 · 已勾选 <strong id="aiRecSelCount" class="text-success">0</strong> 个</div>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleAllAiRec()" id="aiRecAllBtn"><i class="bi bi-check2-all"></i> 全选</button>
+                            <button type="button" class="btn btn-success btn-sm fw-bold" onclick="recommendAiJobs()"><i class="bi bi-send"></i> 岗位推荐</button>
+                        </div>
                     </div>
                     <div id="aiJobsList"></div>
                     <div class="text-center text-muted py-3" id="aiJobsEmpty" style="display:none;">暂未匹配到合适的岗位</div>
                 </div>
             </div>
-            <div class="modal-footer" id="aiModalFooter" style="justify-content:space-between; gap:12px;">
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
-                    <button type="button" class="btn btn-outline-secondary" id="aiBackBtn" onclick="aiBack()" style="display:none;">
-                        <i class="bi bi-arrow-left"></i> 返回上一步
-                    </button>
-                    <button type="button" class="btn btn-ai fw-bold" id="aiNextBtn" onclick="goAiResult()" style="display:none;">
-                        <i class="bi bi-skip-forward"></i> 下一步
-                    </button>
-                    <button type="button" class="btn btn-ai fw-bold" id="aiFooterBtn" onclick="goAiScreen()" style="display:none;">
-                        <i class="bi bi-funnel"></i> 开始岗位筛选
-                    </button>
-                </div>
-                <div class="d-flex align-items-center gap-2">
+            <div class="modal-footer" id="aiModalFooter" style="flex-direction:column; align-items:stretch; gap:0; padding:0;">
+                <div class="d-flex justify-content-between align-items-center gap-2" style="padding:.75rem 1rem;">
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                        <button type="button" class="btn btn-outline-secondary" id="aiBackBtn" onclick="aiBack()" style="display:none;">
+                            <i class="bi bi-arrow-left"></i> 返回上一步
+                        </button>
+                        <button type="button" class="btn btn-ai fw-bold" id="aiNextBtn" onclick="goAiResult()" style="display:none;">
+                            <i class="bi bi-skip-forward"></i> 下一步
+                        </button>
+                        <button type="button" class="btn btn-ai fw-bold" id="aiFooterBtn" onclick="goAiScreen()" style="display:none;">
+                            <i class="bi bi-funnel"></i> 开始岗位筛选
+                        </button>
+                    </div>
                     <button type="button" class="btn btn-outline-primary fw-bold" id="aiAgainBtn" onclick="aiAgain()" style="display:none;">
                         <i class="bi bi-arrow-repeat"></i> 再次识别
                     </button>
+                </div>
+                <div class="d-flex justify-content-end align-items-center" style="padding:.25rem 1rem .5rem; border-top:1px solid #eef0f3;">
                     <span class="ai-footer-badge" id="aiFooterBadge" style="display:none;">
-                        <i class="bi bi-stars"></i> 由AI大模型智能识别
+                        <i class="bi bi-stars"></i> 由GPT大模型NLP引擎自动解析识别，内容仅供参考
                     </span>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 岗位详情弹窗 -->
+<div class="modal fade" id="jobDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-briefcase text-primary"></i> 岗位详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body" id="jobDetailBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
             </div>
         </div>
     </div>
@@ -847,22 +877,25 @@ async function confirmJobDelete() {
 /* ---- 岗位推送功能 ---- */
 let pushStudents = [];
 let selectedStudentIds = new Set();
+let pendingPushJobIds = [];
 
 function getSelectedJobIds() {
     return Array.from(document.querySelectorAll('.job-checkbox:checked')).map(cb => cb.value);
 }
 
-function showPushModal() {
-    const jobIds = getSelectedJobIds();
-    if (jobIds.length === 0) {
+// jobIds 可选：由 AI“岗位推荐”传入待推送岗位；缺省则读取主列表勾选岗位
+function showPushModal(jobIds) {
+    const ids = (Array.isArray(jobIds) && jobIds.length) ? jobIds : getSelectedJobIds();
+    if (ids.length === 0) {
         showToast('请先选择要推送的岗位', 'warning');
         return;
     }
+    pendingPushJobIds = ids;
     selectedStudentIds.clear();
     updateSelectedCount();
     
     const infoDiv = document.getElementById('selectedJobsInfo');
-    infoDiv.textContent = jobIds.length;
+    infoDiv.textContent = ids.length;
     
     loadPushCampuses().then(() => {
         loadPushStudents();
@@ -991,7 +1024,7 @@ function updateSelectedCount() {
 }
 
 async function submitPush() {
-    const jobIds = getSelectedJobIds();
+    const jobIds = pendingPushJobIds.length ? pendingPushJobIds : getSelectedJobIds();
     const studentIds = Array.from(selectedStudentIds);
     
     if (jobIds.length === 0) {
@@ -1022,6 +1055,7 @@ async function submitPush() {
         const data = await res.json();
         if (data.success) {
             showToast(data.message || '推送成功', 'success');
+            pendingPushJobIds = [];
             bootstrap.Modal.getInstance(document.getElementById('pushJobModal')).hide();
             loadJobs();
         } else {
@@ -1040,6 +1074,7 @@ async function submitPush() {
 /* ---- AI 简历识别 ---- */
 const AI_ANALYZE_URL = '{{ url_for("admin.ai_analyze") }}';
 const AI_SCREEN_URL = '{{ url_for("admin.ai_screen") }}';
+const JOB_DATA_URL = '{{ url_for("admin.job_data", id=0) }}';
 let aiScreeningData = null;
 let aiJobsData = [];
 
@@ -1165,12 +1200,15 @@ function resetAiUpload() {
 function startAiAnalyze() {
     const file = aiFileInput.files[0];
     if (!file) { showToast('请先选择或上传一份简历文件', 'warning'); return; }
-    const okExt = /\.(xlsx|xls|pdf|docx|doc|txt)$/i.test(file.name);
-    if (!okExt) { showToast('仅支持 xlsx / pdf / word / txt 格式', 'warning'); return; }
+    const okExt = /\.(xlsx|xls|pdf|docx|doc|png|jpg|jpeg|bmp|webp|txt)$/i.test(file.name);
+    if (!okExt) { showToast('仅支持 xlsx / pdf / word / 图片 / txt 格式', 'warning'); return; }
+    const isImage = /\.(png|jpg|jpeg|bmp|webp)$/i.test(file.name);
 
     showAiView('loading');
     setAiSteps(2);
-    const steps = ['正在解析文档...', 'AI 正在提取关键信息...', '正在生成评分与建议...'];
+    const steps = isImage
+        ? ['正在识别图片...', 'AI 正在提取关键信息...', '正在生成评分与建议...']
+        : ['正在解析文档...', 'AI 正在提取关键信息...', '正在生成评分与建议...'];
     let i = 0;
     document.getElementById('aiLoadingText').textContent = steps[0];
     const timer = setInterval(function(){
@@ -1178,9 +1216,11 @@ function startAiAnalyze() {
         document.getElementById('aiLoadingText').textContent = steps[i];
     }, 900);
 
+    const targetJob = (document.getElementById('aiTargetJob').value || '').trim();
     const fd = new FormData();
     fd.append('csrf_token', '{{ csrf_token }}');
     fd.append('resume', file);
+    if (targetJob) fd.append('target_job', targetJob);
     fetch(AI_ANALYZE_URL, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(r => r.json())
         .then(data => {
@@ -1312,13 +1352,80 @@ function renderAiJobs(jobs) {
     empty.style.display = jobs.length ? 'none' : '';
     list.innerHTML = jobs.map(j => `
         <div class="ai-job-item">
+            <input type="checkbox" class="ai-job-checkbox" value="${j.id}" title="选择推荐" onchange="updateAiRecCount()">
             <div class="ai-jobs-score">${j.score}</div>
             <div style="flex:1;min-width:0;">
                 <div style="font-size:14px;font-weight:700;color:#333;">${escapeHtml(j.job_name)}</div>
                 <div style="font-size:13px;color:#888;margin-top:2px;">${escapeHtml(j.company_name)}${j.company_type ? ' · ' + escapeHtml(j.company_type) : ''}</div>
                 <div style="font-size:12px;color:#999;margin-top:2px;">${escapeHtml(j.location)} · ${escapeHtml(j.education_req)} · ${escapeHtml(j.salary_range)||'面议'}</div>
             </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" onclick="showJobDetail(${j.id})"><i class="bi bi-eye"></i> 查看详情</button>
         </div>`).join('');
+    updateAiRecCount();
+}
+
+function getSelectedAiRecIds() {
+    return Array.from(document.querySelectorAll('.ai-job-checkbox:checked')).map(cb => cb.value);
+}
+
+function updateAiRecCount() {
+    const n = getSelectedAiRecIds().length;
+    document.getElementById('aiRecSelCount').textContent = n;
+}
+
+async function showJobDetail(id) {
+    try {
+        const res = await fetch(JOB_DATA_URL.replace('/0/', '/' + id + '/'));
+        const data = await res.json();
+        if (!data || !data.job_name) { showToast('岗位不存在', 'danger'); return; }
+        const fields = [
+            ['职位名称', data.job_name], ['公司名称', data.company_name],
+            ['薪资范围', data.salary_range || '面议'],
+            ['工作地点', data.work_location || (data.province + '-' + data.city)],
+            ['招聘人数', data.recruit_count != null ? data.recruit_count + ' 人' : ''],
+            ['学历要求', data.education_req || '不限'],
+            ['经验要求', data.experience_req || '不限'],
+            ['专业要求', data.major_req || '不限'],
+            ['公司性质', data.company_type], ['公司规模', data.company_size],
+            ['公司行业', data.company_industry], ['招聘类型', data.recruit_type],
+            ['职位性质', data.job_nature], ['职位类别', data.job_category],
+            ['截止时间', data.deadline || '不限'],
+        ].filter(f => (f[1] !== '' ) && (f[1] != null));
+        const rows = fields.map(f => `
+            <div class="col-md-6">
+                <small class="text-muted d-block">${escapeHtml(f[0])}</small>
+                <strong>${escapeHtml(f[1])}</strong>
+            </div>`).join('');
+        document.getElementById('jobDetailBody').innerHTML = `
+            <div class="row g-3">
+                ${rows}
+                <div class="col-12">
+                    <small class="text-muted d-block">职位描述</small>
+                    <div style="white-space:pre-wrap; background:#fafafa; border-radius:8px; padding:10px 12px;">${escapeHtml(data.job_detail || '暂无')}</div>
+                </div>
+            </div>`;
+        new bootstrap.Modal(document.getElementById('jobDetailModal')).show();
+    } catch (e) {
+        showToast('加载岗位详情失败', 'danger');
+    }
+}
+
+function toggleAllAiRec() {
+    const boxes = Array.from(document.querySelectorAll('.ai-job-checkbox'));
+    const allChecked = boxes.length > 0 && boxes.every(b => b.checked);
+    boxes.forEach(b => b.checked = !allChecked);
+    updateAiRecCount();
+}
+
+function recommendAiJobs() {
+    const ids = getSelectedAiRecIds();
+    if (ids.length === 0) {
+        showToast('请勾选要推荐的岗位', 'warning');
+        return;
+    }
+    const aiModal = bootstrap.Modal.getInstance(document.getElementById('aiModal'));
+    if (aiModal) aiModal.hide();
+    showPushModal(ids);
 }
 </script>
 {% endblock %}
