@@ -1,10 +1,11 @@
 from flask import render_template, redirect, url_for, flash, request, jsonify, send_file, session
 from flask_login import login_required, current_user
 from sqlalchemy.orm import aliased
-from ..models import db, User, Job, PushRecord, OperationLog, Campus, Role
+from ..models import db, User, Job, PushRecord, OperationLog, Campus, Role, ResumeAnalysisLog
+from ..utils.ai_service import analyze_resume, extract_resume_text, extract_candidate_name, screen_jobs
 from ..permissions import (
     super_admin_required, admin_required, permission_required, init_csrf,
-    PERMISSION_MANAGE_STUDENTS, PERMISSION_PUSH_JOBS,
+    PERMISSION_MANAGE_STUDENTS, PERMISSION_PUSH_JOBS, PERMISSION_AI_RECOGNITION,
     get_user_permissions, can_access_menu,
     get_campus_filter, validate_object_campus
 )
@@ -457,6 +458,222 @@ def jobs_list():
     })
 
 
+# ==================== AI 简历识别 ====================
+@admin_bp.route('/ai/analyze', methods=['POST'])
+@permission_required(PERMISSION_AI_RECOGNITION)
+def ai_analyze():
+    """上传简历 -> 文档解析/转换 -> AI 分析 -> 打分/建议/筛选条件"""
+    file = request.files.get('resume')
+    if file is None or not file.filename:
+        return jsonify({'success': False, 'message': '请先选择要上传的简历文件'})
+
+    filename = file.filename
+    data = file.read()
+    ext = (filename.rsplit('.', 1)[-1] if '.' in filename else '').lower()
+    if ext not in ('xlsx', 'xls', 'pdf', 'docx', 'txt', 'doc'):
+        return jsonify({'success': False, 'message': f'不支持的文件格式 .{ext}，'
+                        '请上传 xlsx / pdf / word（docx）或 txt 简历'})
+
+    try:
+        text = extract_resume_text(filename, data)
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+    if not text or not text.strip():
+        return jsonify({'success': False, 'message': '未能从文件中解析出文本内容，请检查文件是否正常'})
+
+    result = analyze_resume(text)
+
+    result['success'] = True
+    result['filename'] = filename
+    result['char_count'] = len(text)
+    log_operation('AI_ANALYZE', 'resume', 0, f'AI简历识别：{filename}')
+
+    # 记录每次识别信息：岗位、时间、识别人、候选人、AI打分、筛选条件
+    scr = result.get('screening') or {}
+    candidate = result.get('candidate_name') or extract_candidate_name(text)
+
+    # 保存简历附件到服务器
+    import uuid
+    import os
+    from flask import current_app
+    safe_ext = ext if ext else 'bin'
+    stored_name = f"{uuid.uuid4().hex}.{safe_ext}"
+    upload_dir = current_app.config.get('UPLOAD_FOLDER')
+    stored_path = os.path.join(upload_dir, stored_name) if upload_dir else ''
+    try:
+        with open(stored_path, 'wb') as f:
+            if isinstance(data, str):
+                f.write(data.encode('utf-8'))
+            else:
+                f.write(data)
+    except Exception:
+        stored_path = ''
+
+    detail = '；'.join(filter(None, [
+        ('意向/技能：' + scr.get('keyword', '') if scr.get('keyword') else ''),
+        ('城市：' + scr.get('city', '') if scr.get('city') else ''),
+        ('学历：' + scr.get('education', '') if scr.get('education') else ''),
+        ('年龄：' + scr.get('age', '') if scr.get('age') else ''),
+        ('经验：' + scr.get('experience', '') if scr.get('experience') else ''),
+        ('专业：' + scr.get('major', '') if scr.get('major') else ''),
+        (scr.get('remark', '') if scr.get('remark') else ''),
+    ]))
+    strengths = result.get('strengths') or []
+    suggestions = result.get('suggestions') or []
+    if not detail:
+        parts = [('优势：' + '；'.join(strengths)) if strengths else '']
+        if suggestions:
+            parts.append('建议：' + '；'.join(suggestions))
+        detail = '；'.join(filter(None, parts)) or ('AI识别完成，评分' + str(result.get('score', 0)) + '分')
+
+    record = ResumeAnalysisLog(
+        user_id=current_user.id,
+        user_name=(current_user.real_name or current_user.username),
+        job=scr.get('keyword') or '',
+        candidate_name=candidate,
+        score=result.get('score', 0),
+        level=result.get('level', ''),
+        detail=detail,
+        strengths='\n'.join(strengths),
+        suggestions='\n'.join(suggestions),
+        file_path=stored_path,
+        file_name=filename,
+        file_size=len(data) if data else 0,
+    )
+    db.session.add(record)
+    db.session.commit()
+    return jsonify(result)
+
+
+@admin_bp.route('/ai/screen', methods=['POST'])
+@permission_required(PERMISSION_AI_RECOGNITION)
+def ai_screen():
+    """基于简历分析出的筛选条件，进行岗位筛选，返回匹配度排序列表"""
+    payload = request.get_json(silent=True) or {}
+    screening = payload.get('screening') or {}
+    if not any((screening.get('keyword'), screening.get('province'),
+                screening.get('city'), screening.get('education'))):
+        return jsonify({'success': False, 'message': '缺少有效的筛选条件'})
+    jobs = screen_jobs(screening)
+    return jsonify({'success': True, 'jobs': jobs, 'screening': screening})
+
+
+# ==================== AI 简历识别记录（仅超管可见） ====================
+@admin_bp.route('/ai/records/page')
+@admin_required
+@super_admin_required
+def ai_records_page():
+    """AI 简历识别记录页面（HTML骨架，数据由前端异步加载）"""
+    ctx = get_template_context()
+    return render_template('admin/ai_records.html', **ctx)
+
+
+@admin_bp.route('/ai/records')
+@admin_required
+@super_admin_required
+def ai_records():
+    """AI 简历识别记录数据接口：返回JSON数据，前端负责渲染"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    operator = request.args.get('operator', '').strip()
+    keyword = request.args.get('keyword', '').strip()
+
+    if per_page not in [20, 50, 100]:
+        per_page = 20
+
+    query = ResumeAnalysisLog.query
+    if operator:
+        query = query.filter(db.or_(ResumeAnalysisLog.user_name.contains(operator)))
+    if keyword:
+        query = query.filter(db.or_(
+            ResumeAnalysisLog.candidate_name.contains(keyword),
+            ResumeAnalysisLog.job.contains(keyword),
+        ))
+
+    pagination = query.order_by(ResumeAnalysisLog.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+
+    records = []
+    for r in pagination.items:
+        records.append({
+            'id': r.id,
+            'created_at': r.created_at.strftime('%Y-%m-%d %H:%M:%S') if r.created_at else '-',
+            'user_name': r.user_name or (r.user.real_name if r.user else '') or '-',
+            'job': r.job or '-',
+            'candidate_name': r.candidate_name or '-',
+            'score': r.score,
+            'level': r.level or '-',
+            'detail': r.detail or '',
+            'strengths': r.strengths or '',
+            'suggestions': r.suggestions or '',
+            'file_name': r.file_name or '',
+            'file_size': r.file_size or 0,
+        })
+
+    return jsonify({
+        'success': True,
+        'records': records,
+        'pagination': {
+            'page': pagination.page,
+            'pages': pagination.pages,
+            'total': pagination.total,
+            'per_page': pagination.per_page,
+            'has_prev': pagination.has_prev,
+            'has_next': pagination.has_next,
+            'prev_num': pagination.prev_num,
+            'next_num': pagination.next_num
+        }
+    })
+
+
+@admin_bp.route('/ai/record/<int:record_id>/download')
+@admin_required
+@super_admin_required
+def ai_record_download(record_id):
+    """下载 AI 分析记录的简历附件"""
+    import os
+    from flask import current_app, send_from_directory
+    record = ResumeAnalysisLog.query.get(record_id)
+    if not record or not record.file_path:
+        return jsonify({'success': False, 'message': '该记录没有可下载的简历附件'}), 404
+    if not os.path.exists(record.file_path):
+        return jsonify({'success': False, 'message': '简历附件文件不存在或已被移除'}), 404
+    return send_from_directory(
+        os.path.dirname(record.file_path) or current_app.config.get('UPLOAD_FOLDER'),
+        os.path.basename(record.file_path),
+        as_attachment=True,
+        download_name=record.file_name or os.path.basename(record.file_path),
+    )
+
+
+@admin_bp.route('/ai/record/<int:record_id>/resume/delete', methods=['POST'])
+@admin_required
+@super_admin_required
+def ai_record_resume_delete(record_id):
+    """删除 AI 识别记录的简历附件"""
+    import os
+    record = ResumeAnalysisLog.query.get(record_id)
+    if not record:
+        return jsonify({'success': False, 'message': '记录不存在'}), 404
+    if not record.file_path:
+        return jsonify({'success': False, 'message': '该记录没有简历附件'})
+    removed = False
+    try:
+        if os.path.exists(record.file_path):
+            os.remove(record.file_path)
+            removed = True
+    except Exception:
+        removed = False
+    record.file_path = ''
+    record.file_name = ''
+    record.file_size = 0
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'message': '已删除简历附件' if removed else '已清除简历附件记录（物理文件删除失败）'
+    })
+
+
 @admin_bp.route('/jobs/add', methods=['GET', 'POST'])
 @admin_required
 def job_add():
@@ -834,6 +1051,7 @@ def users_list():
             'can_push_jobs': user.can_push_jobs,
             'can_view_jobs': user.can_view_jobs,
             'can_manage_students': user.can_manage_students,
+            'can_ai_recognition': user.can_ai_recognition,
             'creator': user.creator.real_name if user.creator else '-',
             'is_active': user.is_active,
             'created_at': user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else '-',
@@ -900,6 +1118,7 @@ def user_add():
             can_push_jobs=bool(request.form.get('can_push_jobs')),
             can_view_jobs=bool(request.form.get('can_view_jobs')),
             can_manage_students=bool(request.form.get('can_manage_students')),
+            can_ai_recognition=bool(request.form.get('can_ai_recognition')),
             avatar=request.form.get('avatar', ''),
             is_active=request.form.get('is_active') == '1',
             created_by=current_user.id
@@ -953,6 +1172,7 @@ def user_edit(id):
         user.can_push_jobs = bool(request.form.get('can_push_jobs'))
         user.can_view_jobs = bool(request.form.get('can_view_jobs'))
         user.can_manage_students = bool(request.form.get('can_manage_students'))
+        user.can_ai_recognition = bool(request.form.get('can_ai_recognition'))
         user.avatar = request.form.get('avatar', '')
         user.is_active = request.form.get('is_active') == '1'
         

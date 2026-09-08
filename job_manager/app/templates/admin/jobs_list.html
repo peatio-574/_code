@@ -77,14 +77,19 @@
                 <button type="button" class="btn btn-primary fw-bold" id="batchDeleteBtn">
                     <i class="bi bi-trash"></i> 批量删除
                 </button>
+                <button type="button" class="btn btn-warning fw-bold" id="refreshBtn" title="刷新">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+                {% if can_access_menu('ai') %}
+                <button type="button" class="btn btn-ai fw-bold ms-auto" id="aiAnalyzeBtn" onclick="showAiModal()">
+                    <i class="bi bi-stars"></i> AI识别
+                </button>
+                {% endif %}
                 {% if can_access_menu('push') %}
                 <button type="button" class="btn btn-success fw-bold" id="pushJobBtn" onclick="showPushModal()">
                     <i class="bi bi-send"></i> 岗位推送
                 </button>
                 {% endif %}
-                <button type="button" class="btn btn-warning fw-bold" id="refreshBtn" title="刷新">
-                    <i class="bi bi-arrow-clockwise"></i> 刷新
-                </button>
             </div>
         </form>
     </div>
@@ -252,6 +257,240 @@
                 <button type="button" class="btn btn-success fw-bold" onclick="submitPush()">
                     <i class="bi bi-send"></i> 确认推送
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI 简历识别弹窗 -->
+<style>
+#aiModal .modal-dialog { height: 100vh; display: flex; margin: 0 auto; }
+#aiModal .modal-content { height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+#aiModal .modal-body { overflow: hidden; flex: 1; display: flex; flex-direction: column; }
+#aiModal .ai-stepper { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+#aiModal .ai-step { display: flex; align-items: center; gap: 8px; color: #999; font-size: 13px; font-weight: 600; }
+#aiModal .ai-step .ai-num {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: #eef0f3; color: #999; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; flex-shrink: 0;
+}
+#aiModal .ai-step.active { color: #7c3aed; }
+#aiModal .ai-step.active .ai-num { background: #7c3aed; color: #fff; }
+#aiModal .ai-step.done { color: #52c41a; }
+#aiModal .ai-step.done .ai-num { background: #52c41a; color: #fff; }
+#aiModal .ai-step-line { width: 34px; height: 2px; background: #eef0f3; }
+#aiModal .ai-step.done + .ai-step-line { background: #52c41a; }
+#aiModal .ai-step.active + .ai-step-line { background: #d8c4ff; }
+#aiModal .ai-dropzone {
+    border: 2px dashed #c4b5fd; border-radius: 14px; background: #faf7ff;
+    min-height: 240px; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 24px; text-align: center; cursor: pointer;
+    transition: all 0.2s;
+}
+#aiModal .ai-dropzone:hover, #aiModal .ai-dropzone.dragover { border-color: #7c3aed; background: #f3ecff; }
+#aiModal .ai-dropzone i { font-size: 52px; color: #a855f7; margin-bottom: 12px; }
+#aiModal .ai-format-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
+#aiModal .ai-format-chip {
+    background: #fff; border: 1px solid #e6e8eb; border-radius: 20px; padding: 4px 12px;
+    font-size: 12px; color: #666;
+}
+#aiModal .ai-loading { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+#aiModal .ai-loading .ai-loading-ring {
+    width: 72px; height: 72px; border: 6px solid #e9d5ff; border-top-color: #7c3aed;
+    border-radius: 50%; animation: aiSpin 0.8s linear infinite; margin-bottom: 22px;
+}
+@keyframes aiSpin { to { transform: rotate(360deg); } }
+#aiModal .ai-loading-text { font-size: 15px; color: #444; font-weight: 600; min-height: 24px; }
+#aiModal .ai-loading-sub { font-size: 13px; color: #999; margin-top: 8px; }
+#aiModal .ai-score-wrap { display: flex; align-items: center; gap: 20px; margin-bottom: 14px; }
+#aiModal .ai-score-circle { position: relative; width: 108px; height: 108px; flex-shrink: 0; }
+#aiModal .ai-score-circle svg { transform: rotate(-90deg); }
+#aiModal .ai-score-circle .ai-score-num {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 30px; font-weight: 800; color: #7c3aed;
+}
+#aiModal .ai-level-badge { font-size: 13px; padding: 6px 14px; border-radius: 20px; font-weight: 700; }
+#aiModal .ai-block { margin-bottom: 14px; }
+#aiModal .ai-block-title { font-size: 14px; font-weight: 700; color: #333; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+#aiModal .ai-suggestion-item {
+    display: flex; gap: 8px; padding: 8px 10px; border-radius: 8px; background: #fafafa;
+    font-size: 13px; color: #444; line-height: 1.5; margin-bottom: 6px;
+}
+#aiModal .ai-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+#aiModal .ai-chip {
+    background: #f0ecff; color: #6d28d9; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600;
+}
+#aiModal .ai-job-item {
+    border: 1px solid #eef0f3; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 14px; background: #fff;
+}
+#aiModal .ai-job-item .ai-jobs-score {
+    width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0; background: #f0ecff; color: #6d28d9;
+    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px;
+}
+#aiModal .ai-file-card {
+    display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 14px;
+    border: 1px solid #e6e8eb; border-radius: 10px; background: #fff;
+}
+#aiModal .ai-file-card > i { font-size: 26px; color: #7c3aed; flex-shrink: 0; }
+#aiModal .ai-remove-btn { font-size: 18px; line-height: 1; }
+
+/* 开始分析按钮：高亮 + 文案居中 */
+#aiModal .ai-analyze-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: #fff;
+    background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+    border-color: #7c3aed;
+    font-weight: 700;
+    transition: all 0.2s;
+}
+#aiModal .ai-analyze-btn:not(:disabled) {
+    box-shadow: 0 0 0 3px rgba(124,58,237,.18), 0 6px 18px rgba(124,58,237,.35);
+    animation: aiBtnGlow 2s ease-in-out infinite;
+}
+#aiModal .ai-analyze-btn:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0 0 4px rgba(124,58,237,.28), 0 8px 22px rgba(124,58,237,.45);
+}
+#aiModal .ai-analyze-btn:disabled { opacity: .5; cursor: not-allowed; }
+@keyframes aiBtnGlow {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(124,58,237,.18), 0 6px 18px rgba(124,58,237,.35); }
+    50%      { box-shadow: 0 0 0 6px rgba(124,58,237,.26), 0 6px 22px rgba(124,58,237,.5); }
+}
+/* 分析后的右下角标识 */
+#aiModal .ai-footer-badge {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 12px; color: #a855f7; white-space: nowrap;
+}
+
+</style>
+<div class="modal fade" id="aiModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-stars text-primary"></i> AI 简历识别</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 步骤条 -->
+                <div class="ai-stepper">
+                    <div class="ai-step active" id="aiStep1"><span class="ai-num">1</span>上传简历</div>
+                    <div class="ai-step-line"></div>
+                    <div class="ai-step" id="aiStep2"><span class="ai-num">2</span>AI分析</div>
+                    <div class="ai-step-line"></div>
+                    <div class="ai-step" id="aiStep3"><span class="ai-num">3</span>筛选岗位</div>
+                </div>
+
+                <!-- 步骤1：上传 -->
+                <div id="aiViewUpload" style="display:none;">
+                    <div class="ai-dropzone" id="aiDropzone" onclick="resetAiUpload();document.getElementById('aiFileInput').click()">
+                        <i class="bi bi-cloud-arrow-up"></i>
+                        <div id="aiDropTitle" style="font-size:15px;font-weight:700;color:#333;">点击上传，或将文件拖拽到此处</div>
+                        <div id="aiDropSub" style="font-size:13px;color:#999;margin-top:6px;">上传一份候选人简历，AI 将自动打分并给出修改建议</div>
+                        <div class="ai-format-chips">
+                            <span class="ai-format-chip">xlsx</span>
+                            <span class="ai-format-chip">pdf</span>
+                            <span class="ai-format-chip">docx</span>
+                            <span class="ai-format-chip">txt</span>
+                        </div>
+                        <input type="file" id="aiFileInput" accept=".xlsx,.xls,.pdf,.docx,.doc,.txt" style="display:none;">
+                    </div>
+                    <!-- 已选文件卡片：可删除 -->
+                    <div id="aiFileCard" class="ai-file-card" style="display:none;">
+                        <i class="bi bi-file-earmark-text"></i>
+                        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;">
+                            <div id="aiFileName" style="font-size:14px;font-weight:700;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+                            <div id="aiFileMeta" style="font-size:12px;color:#999;flex-shrink:0;"></div>
+                        </div>
+                        <button type="button" class="btn btn-link p-0 text-danger ai-remove-btn" onclick="removeAiFile()" title="移除文件">
+                            <i class="bi bi-x-circle-fill"></i>
+                        </button>
+                    </div>
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="button" class="btn ai-analyze-btn flex-grow-1 fw-bold" id="aiAnalyzeBtn2" onclick="startAiAnalyze()" disabled>
+                            <i class="bi bi-stars"></i> 开始 AI 分析
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 步骤2：加载中 -->
+                <div id="aiViewLoading" style="display:none;">
+                    <div class="ai-loading">
+                        <div class="ai-loading-ring"></div>
+                        <div class="ai-loading-text" id="aiLoadingText">正在解析文档...</div>
+                        <div class="ai-loading-sub" id="aiLoadingSub">请稍候，AI 正在提取简历信息</div>
+                    </div>
+                </div>
+
+                <!-- 步骤3：分析结果 -->
+                <div id="aiViewResult" style="display:none; overflow-y:auto; flex:1;">
+                    <div class="ai-score-wrap">
+                        <div class="ai-score-circle">
+                            <svg width="108" height="108" viewBox="0 0 108 108">
+                                <circle cx="54" cy="54" r="48" fill="none" stroke="#f0ecff" stroke-width="10"/>
+                                <circle id="aiScoreArc" cx="54" cy="54" r="48" fill="none" stroke="#7c3aed" stroke-width="10" stroke-linecap="round" stroke-dasharray="301.6" stroke-dashoffset="301.6"/>
+                            </svg>
+                            <div class="ai-score-num" id="aiScoreNum">0</div>
+                        </div>
+                        <div>
+                            <div style="font-size:14px;color:#888;">简历综合评分</div>
+                            <span class="ai-level-badge" id="aiLevelBadge" style="background:#f0ecff;color:#6d28d9;">中</span>
+                            <div style="font-size:12px;color:#999;margin-top:8px;" id="aiAnalyzedMeta"></div>
+                        </div>
+                    </div>
+                    <div class="ai-block">
+                        <div class="ai-block-title"><i class="bi bi-check-circle-fill text-success"></i> 简历优势</div>
+                        <div id="aiStrengths"></div>
+                    </div>
+                    <div class="ai-block">
+                        <div class="ai-block-title"><i class="bi bi-lightbulb-fill text-warning"></i> 修改建议</div>
+                        <div id="aiSuggestions"></div>
+                    </div>
+                    <div class="ai-block">
+                        <div class="ai-block-title"><i class="bi bi-funnel-fill text-primary"></i> 提炼的筛选条件</div>
+                        <div class="ai-chips" id="aiScreeningChips"></div>
+                        <div style="font-size:12px;color:#999;margin-top:8px;" id="aiScreeningRemark"></div>
+                    </div>
+                </div>
+
+                <!-- 步骤4：筛选结果 -->
+                <div id="aiViewScreen" style="display:none; flex:1; overflow-y:auto;">
+                    <div class="mb-3" style="background:#faf7ff;border:1px solid #e9d8fd;border-radius:10px;padding:12px 16px;">
+                        <div style="font-size:13px;font-weight:700;color:#7c3aed;margin-bottom:8px;"><i class="bi bi-funnel-fill"></i> AI 提炼的筛选条件</div>
+                        <div class="ai-chips" id="aiScreenChips"></div>
+                        <div id="aiScreenRemark" style="font-size:12px;color:#999;margin-top:8px;"></div>
+                    </div>
+                    <div class="mb-3 d-flex align-items-center flex-wrap gap-2">
+                        <div style="font-size:14px;color:#555;">共为您匹配到 <strong id="aiMatchedCount" class="text-primary">0</strong> 个岗位</div>
+                    </div>
+                    <div id="aiJobsList"></div>
+                    <div class="text-center text-muted py-3" id="aiJobsEmpty" style="display:none;">暂未匹配到合适的岗位</div>
+                </div>
+            </div>
+            <div class="modal-footer" id="aiModalFooter" style="justify-content:space-between; gap:12px;">
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                    <button type="button" class="btn btn-outline-secondary" id="aiBackBtn" onclick="aiBack()" style="display:none;">
+                        <i class="bi bi-arrow-left"></i> 返回上一步
+                    </button>
+                    <button type="button" class="btn btn-ai fw-bold" id="aiNextBtn" onclick="goAiResult()" style="display:none;">
+                        <i class="bi bi-skip-forward"></i> 下一步
+                    </button>
+                    <button type="button" class="btn btn-ai fw-bold" id="aiFooterBtn" onclick="goAiScreen()" style="display:none;">
+                        <i class="bi bi-funnel"></i> 开始岗位筛选
+                    </button>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-outline-primary fw-bold" id="aiAgainBtn" onclick="aiAgain()" style="display:none;">
+                        <i class="bi bi-arrow-repeat"></i> 再次识别
+                    </button>
+                    <span class="ai-footer-badge" id="aiFooterBadge" style="display:none;">
+                        <i class="bi bi-stars"></i> 由AI大模型智能识别
+                    </span>
+                </div>
             </div>
         </div>
     </div>
@@ -794,6 +1033,292 @@ async function submitPush() {
         btn.disabled = false;
         btn.innerHTML = originalText;
     }
+}
+</script>
+
+<script>
+/* ---- AI 简历识别 ---- */
+const AI_ANALYZE_URL = '{{ url_for("admin.ai_analyze") }}';
+const AI_SCREEN_URL = '{{ url_for("admin.ai_screen") }}';
+let aiScreeningData = null;
+let aiJobsData = [];
+
+function showAiModal() {
+    resetAiModal();
+    new bootstrap.Modal(document.getElementById('aiModal')).show();
+}
+
+function resetAiModal() {
+    aiScreeningData = null;
+    aiJobsData = [];
+    showAiView('upload');
+    setAiSteps(1);
+    resetAiUpload();
+    document.getElementById('aiScreeningChips').innerHTML = '';
+    document.getElementById('aiScreeningRemark').textContent = '';
+    document.getElementById('aiScreenChips').innerHTML = '';
+    document.getElementById('aiScreenRemark').textContent = '';
+    document.getElementById('aiJobsList').innerHTML = '';
+}
+
+function setAiSteps(activeStep) {
+    [1,2,3].forEach(n => {
+        const el = document.getElementById('aiStep' + n);
+        el.classList.remove('active', 'done');
+        if (n < activeStep) el.classList.add('done');
+        else if (n === activeStep) el.classList.add('active');
+    });
+}
+
+let currentAiView = 'upload';
+function showAiView(name) {
+    currentAiView = name;
+    document.getElementById('aiViewUpload').style.display = name === 'upload' ? '' : 'none';
+    document.getElementById('aiViewLoading').style.display = name === 'loading' ? '' : 'none';
+    document.getElementById('aiViewResult').style.display = name === 'result' ? '' : 'none';
+    document.getElementById('aiViewScreen').style.display = name === 'screen' ? '' : 'none';
+    updateAiFooter();
+}
+
+function updateAiFooter() {
+    const v = currentAiView;
+    const inProgress = v === 'result' || v === 'screen';
+    const hasResult = !!aiScreeningData;
+    document.getElementById('aiBackBtn').style.display = inProgress ? '' : 'none';
+    document.getElementById('aiAgainBtn').style.display = inProgress ? '' : 'none';
+    document.getElementById('aiNextBtn').style.display = (v === 'upload' && hasResult) ? '' : 'none';
+    document.getElementById('aiFooterBtn').style.display = v === 'result' ? '' : 'none';
+    document.getElementById('aiFooterBadge').style.display = inProgress ? '' : 'none';
+}
+
+function aiBack() {
+    if (currentAiView === 'screen') {
+        showAiView('result');
+        setAiSteps(2);
+    } else if (currentAiView === 'result') {
+        showAiView('upload');
+        setAiSteps(1);
+    }
+}
+
+function goAiResult() {
+    if (!aiScreeningData) { showToast('请先完成简历分析', 'warning'); return; }
+    showAiView('result');
+    setAiSteps(2);
+}
+
+function aiAgain() {
+    startAiAnalyze();
+}
+
+/* ---- 拖拽上传 ---- */
+const aiDropzone = document.getElementById('aiDropzone');
+const aiFileInput = document.getElementById('aiFileInput');
+if (aiDropzone && aiFileInput) {
+    aiFileInput.addEventListener('change', function() {
+        if (this.files && this.files[0]) updateAiFileLabel(this.files[0], this.files[0].name);
+        else resetAiUpload();
+    });
+    ['dragenter','dragover'].forEach(ev => aiDropzone.addEventListener(ev, function(e){
+        e.preventDefault(); aiDropzone.classList.add('dragover');
+    }));
+    ['dragleave','drop'].forEach(ev => aiDropzone.addEventListener(ev, function(e){
+        e.preventDefault(); aiDropzone.classList.remove('dragover');
+    }));
+    aiDropzone.addEventListener('drop', function(e){
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            aiFileInput.files = e.dataTransfer.files;
+            updateAiFileLabel(e.dataTransfer.files[0], e.dataTransfer.files[0].name);
+        }
+    });
+}
+
+function fmtFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function updateAiFileLabel(file, filename) {
+    if (file) {
+        document.getElementById('aiFileName').textContent = file.name;
+        document.getElementById('aiFileMeta').textContent = fmtFileSize(file.size);
+        document.getElementById('aiFileCard').style.display = '';
+        document.getElementById('aiAnalyzeBtn2').disabled = false;
+    } else {
+        resetAiUpload();
+    }
+}
+
+function removeAiFile() {
+    document.getElementById('aiFileInput').value = '';
+    document.getElementById('aiFileCard').style.display = 'none';
+    document.getElementById('aiAnalyzeBtn2').disabled = true;
+}
+
+function resetAiUpload() {
+    document.getElementById('aiFileInput').value = '';
+    document.getElementById('aiFileCard').style.display = 'none';
+    document.getElementById('aiAnalyzeBtn2').disabled = true;
+}
+
+function startAiAnalyze() {
+    const file = aiFileInput.files[0];
+    if (!file) { showToast('请先选择或上传一份简历文件', 'warning'); return; }
+    const okExt = /\.(xlsx|xls|pdf|docx|doc|txt)$/i.test(file.name);
+    if (!okExt) { showToast('仅支持 xlsx / pdf / word / txt 格式', 'warning'); return; }
+
+    showAiView('loading');
+    setAiSteps(2);
+    const steps = ['正在解析文档...', 'AI 正在提取关键信息...', '正在生成评分与建议...'];
+    let i = 0;
+    document.getElementById('aiLoadingText').textContent = steps[0];
+    const timer = setInterval(function(){
+        i = Math.min(i + 1, steps.length - 1);
+        document.getElementById('aiLoadingText').textContent = steps[i];
+    }, 900);
+
+    const fd = new FormData();
+    fd.append('csrf_token', '{{ csrf_token }}');
+    fd.append('resume', file);
+    fetch(AI_ANALYZE_URL, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.json())
+        .then(data => {
+            clearInterval(timer);
+            if (!data.success) {
+                showToast(data.message || 'AI 分析失败', 'danger');
+                showAiView('upload');
+                setAiSteps(1);
+                return;
+            }
+            renderAiResult(data);
+            showAiView('result');
+            setAiSteps(2);
+        })
+        .catch(() => {
+            clearInterval(timer);
+            showToast('网络异常，AI 分析失败', 'danger');
+            showAiView('upload');
+            setAiSteps(1);
+        });
+}
+
+let aiScoreAnimateTimer = null;
+function animateAiScore(from, to) {
+    clearInterval(aiScoreAnimateTimer);
+    const num = document.getElementById('aiScoreNum');
+    const arc = document.getElementById('aiScoreArc');
+    const start = performance.now();
+    const dur = 900;
+    const C = 2 * Math.PI * 48;
+    function tick(now) {
+        const p = Math.min((now - start) / dur, 1);
+        const val = Math.round(from + (to - from) * p);
+        num.textContent = val;
+        arc.setAttribute('stroke-dashoffset', String(C * (1 - p)));
+        if (p < 1) aiScoreAnimateTimer = requestAnimationFrame(tick);
+    }
+    aiScoreAnimateTimer = requestAnimationFrame(tick);
+}
+
+function renderAiResult(data) {
+    document.getElementById('aiScoreNum').textContent = data.score;
+    const C = 2 * Math.PI * 48;
+    document.getElementById('aiScoreArc').setAttribute('stroke-dashoffset', String(C * (1 - data.score / 100)));
+
+    const lvl = data.level || '中';
+    const lvlColor = { '优': '#52c41a', '良': '#4a7cf7', '中': '#faad14', '待提升': '#ff4d4f' };
+    const badge = document.getElementById('aiLevelBadge');
+    badge.textContent = lvl;
+    badge.style.background = (lvlColor[lvl] || '#f0ecff') + '22';
+    badge.style.color = lvlColor[lvl] || '#6d28d9';
+
+    const meta = document.getElementById('aiAnalyzedMeta');
+    meta.textContent = data.filename ? (data.filename + ' · 已提取约 ' + (data.char_count||0) + ' 字') : '';
+    // 分析后的右下角标识固定改为“由AI大模型智能识别”
+
+    document.getElementById('aiStrengths').innerHTML = (data.strengths || []).length
+        ? (data.strengths || []).map(s => `<div class="ai-suggestion-item"><i class="bi bi-check-circle-fill text-success" style="margin-top:2px;"></i><span>${escapeHtml(s)}</span></div>`).join('')
+        : '<div class="text-muted" style="font-size:13px;">暂未识别明显优势</div>';
+
+    document.getElementById('aiSuggestions').innerHTML = (data.suggestions || []).length
+        ? (data.suggestions || []).map(s => `<div class="ai-suggestion-item"><i class="bi bi-lightbulb-fill text-warning" style="margin-top:2px;"></i><span>${escapeHtml(s)}</span></div>`).join('')
+        : '<div class="text-muted" style="font-size:13px;">暂未生成建议</div>';
+
+    aiScreeningData = data.screening || {};
+    const chips = document.getElementById('aiScreeningChips');
+    const chipMap = [
+        ['keyword', '意向/技能'], ['province', '省份'], ['city', '城市'],
+        ['education', '学历'], ['age', '年龄'], ['experience', '经验'], ['major', '专业']
+    ];
+    const finalChips = [];
+    chipMap.forEach(([key, label]) => {
+        const v = aiScreeningData[key];
+        if (v) finalChips.push(`<div class="ai-chip">${label}：${escapeHtml(v)}</div>`);
+    });
+    chips.innerHTML = finalChips.length ? finalChips.join('') : '<div class="text-muted" style="font-size:13px;">无明确筛选条件</div>';
+    document.getElementById('aiScreeningRemark').textContent = aiScreeningData.remark || '';
+}
+
+async function goAiScreen() {
+    if (!aiScreeningData) {
+        showToast('请先完成简历分析', 'warning');
+        return;
+    }
+    showAiView('loading');
+    setAiSteps(3);
+    document.getElementById('aiLoadingText').textContent = '正在根据简历筛选岗位...';
+    document.getElementById('aiLoadingSub').textContent = 'AI 正在匹配符合求职意向的岗位';
+
+    try {
+        const res = await fetch(AI_SCREEN_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            body: JSON.stringify({ screening: aiScreeningData, csrf_token: '{{ csrf_token }}' })
+        });
+        const data = await res.json();
+        if (!data.success) { showToast(data.message || '筛选失败', 'danger'); showAiView('result'); setAiSteps(2); return; }
+        aiJobsData = data.jobs || [];
+        renderAiJobs(aiJobsData);
+        renderAiScreenChips();
+        showAiView('screen');
+    } catch (e) {
+        showToast('筛选失败', 'danger');
+        showAiView('result');
+        setAiSteps(2);
+    }
+}
+
+function renderAiScreenChips() {
+    const s = aiScreeningData || {};
+    const chips = document.getElementById('aiScreenChips');
+    const chipMap = [
+        ['keyword', '意向/技能'], ['province', '省份'], ['city', '城市'],
+        ['education', '学历'], ['age', '年龄'], ['experience', '经验'], ['major', '专业']
+    ];
+    const finalChips = [];
+    chipMap.forEach(([key, label]) => {
+        const v = s[key];
+        if (v) finalChips.push(`<div class="ai-chip">${label}：${escapeHtml(v)}</div>`);
+    });
+    chips.innerHTML = finalChips.length ? finalChips.join('') : '<div class="text-muted" style="font-size:13px;">无明确筛选条件</div>';
+    document.getElementById('aiScreenRemark').textContent = s.remark || '';
+}
+
+function renderAiJobs(jobs) {
+    const list = document.getElementById('aiJobsList');
+    const empty = document.getElementById('aiJobsEmpty');
+    document.getElementById('aiMatchedCount').textContent = jobs.length;
+    empty.style.display = jobs.length ? 'none' : '';
+    list.innerHTML = jobs.map(j => `
+        <div class="ai-job-item">
+            <div class="ai-jobs-score">${j.score}</div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:14px;font-weight:700;color:#333;">${escapeHtml(j.job_name)}</div>
+                <div style="font-size:13px;color:#888;margin-top:2px;">${escapeHtml(j.company_name)}${j.company_type ? ' · ' + escapeHtml(j.company_type) : ''}</div>
+                <div style="font-size:12px;color:#999;margin-top:2px;">${escapeHtml(j.location)} · ${escapeHtml(j.education_req)} · ${escapeHtml(j.salary_range)||'面议'}</div>
+            </div>
+        </div>`).join('');
 }
 </script>
 {% endblock %}

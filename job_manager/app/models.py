@@ -91,6 +91,7 @@ class User(UserMixin, db.Model):
     can_push_jobs = db.Column(db.Boolean, default=False, comment='岗位推送权限')
     can_view_jobs = db.Column(db.Boolean, default=False, comment='岗位查看权限')
     can_manage_students = db.Column(db.Boolean, default=False, comment='学员管理权限')
+    can_ai_recognition = db.Column(db.Boolean, default=False, comment='AI简历识别权限')
     
     is_active = db.Column(db.Boolean, default=True, comment='账号状态')
     is_deleted = db.Column(db.Boolean, default=False, comment='是否删除')
@@ -242,3 +243,29 @@ class OperationLog(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
 
     user = db.relationship('User', backref='operation_logs')
+
+
+class ResumeAnalysisLog(db.Model):
+    """
+    AI 简历识别记录表
+    """
+    __tablename__ = 'resume_analysis_logs'
+    __table_args__ = {'comment': 'AI简历识别记录表'}
+
+    id = db.Column(db.Integer, primary_key=True, comment='记录ID')
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, comment='识别人ID')
+    user_name = db.Column(db.String(50), default='', comment='识别人')
+    job = db.Column(db.String(120), default='', comment='意向岗位/目标岗位')
+    object_name = db.Column(db.String(255), default='', comment='识别对象(简历文件)')
+    candidate_name = db.Column(db.String(50), default='', comment='候选人姓名')
+    score = db.Column(db.Integer, default=0, comment='AI打分')
+    level = db.Column(db.String(20), default='', comment='评级')
+    detail = db.Column(db.Text, default='', comment='筛选条件/备注')
+    strengths = db.Column(db.Text, default='', comment='AI优势分析(JSON或换行文本)')
+    suggestions = db.Column(db.Text, default='', comment='AI修改建议(JSON或换行文本)')
+    file_path = db.Column(db.String(500), default='', comment='简历附件存储路径')
+    file_name = db.Column(db.String(255), default='', comment='简历附件原始文件名')
+    file_size = db.Column(db.Integer, default=0, comment='简历附件大小(字节)')
+    created_at = db.Column(db.DateTime, default=datetime.now, comment='识别时间')
+
+    user = db.relationship('User', backref='resume_analysis_logs')

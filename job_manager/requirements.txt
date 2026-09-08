@@ -9,3 +9,6 @@ gunicorn==21.2.0
 PyMySQL==1.1.0
 cryptography==41.0.7
 email-validator==2.1.0
+# PDF/Word 简历文本提取（AI 分析前先生成文本）——缺失会导致上传 PDF/Word 报错
+pdfplumber
+python-docx

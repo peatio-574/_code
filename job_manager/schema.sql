@@ -89,7 +89,8 @@ CREATE TABLE `users` (
   `can_push_jobs` TINYINT(1) DEFAULT 0 COMMENT '岗位推送权限',
   `can_view_jobs` TINYINT(1) DEFAULT 0 COMMENT '岗位查看权限',
   `can_manage_students` TINYINT(1) DEFAULT 0 COMMENT '学员管理权限',
-  
+  `can_ai_recognition` TINYINT(1) DEFAULT 0 COMMENT 'AI简历识别权限',
+
   `is_active` TINYINT(1) DEFAULT 1 COMMENT '账号状态',
   `is_deleted` TINYINT(1) DEFAULT 0 COMMENT '是否删除',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -184,6 +185,25 @@ CREATE TABLE `operation_logs` (
   INDEX `idx_operation_logs_user_id` (`user_id`),
   CONSTRAINT `fk_operation_logs_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作日志表';
+
+CREATE TABLE `resume_analysis_logs` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT COMMENT '记录ID',
+  `user_id` INT(11) NOT NULL COMMENT '识别人ID',
+  `user_name` VARCHAR(50) DEFAULT '' COMMENT '识别人',
+  `job` VARCHAR(120) DEFAULT '' COMMENT '意向岗位/目标岗位',
+  `object_name` VARCHAR(255) DEFAULT '' COMMENT '识别对象(简历文件名)',
+  `candidate_name` VARCHAR(50) DEFAULT '' COMMENT '候选人姓名',
+  `score` INT(11) DEFAULT 0 COMMENT 'AI打分',
+  `level` VARCHAR(20) DEFAULT '' COMMENT '评级',
+  `detail` TEXT COMMENT '筛选条件/备注',
+  `file_path` VARCHAR(500) DEFAULT '' COMMENT '简历附件存储路径',
+  `file_name` VARCHAR(255) DEFAULT '' COMMENT '简历附件原始文件名',
+  `file_size` INT(11) DEFAULT 0 COMMENT '简历附件大小(字节)',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '识别时间',
+  PRIMARY KEY (`id`),
+  INDEX `idx_resume_analysis_logs_user_id` (`user_id`),
+  CONSTRAINT `fk_resume_analysis_logs_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI简历识别记录表';
 
 -- ============================================
 -- 插入默认数据

@@ -1,9 +1,9 @@
-from flask import Flask
+from flask import Flask, request
 from flask_login import LoginManager
 import os
 from .config import config
 from .models import db, User, Campus, Role
-from .permissions import get_user_permissions, can_access_menu as _can_access_menu
+from .permissions import get_user_permissions, can_access_menu as _can_access_menu, validate_csrf
 
 login_manager = LoginManager()
 login_manager.login_view = 'auth.login'
@@ -21,6 +21,12 @@ def create_app(config_name='default'):
 
     db.init_app(app)
     login_manager.init_app(app)
+
+    @app.before_request
+    def csrf_protect():
+        # 全局 CSRF 校验（仅对不安全方法生效）
+        if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            return validate_csrf()
 
     @app.context_processor
     def inject_globals():
@@ -45,6 +51,7 @@ def create_app(config_name='default'):
 
     with app.app_context():
         db.create_all()
+        _add_missing_columns()
         _create_defaults()
 
     # 确保上传目录存在
@@ -53,6 +60,39 @@ def create_app(config_name='default'):
         os.makedirs(upload_dir, exist_ok=True)
 
     return app
+
+
+def _add_missing_columns():
+    """幂等迁移：为已存在的表补充新增字段（AI 权限、附件），避免老库重建丢数据。"""
+    from sqlalchemy import inspect, text
+    try:
+        insp = inspect(db.engine)
+        existing = [c['name'] for c in insp.get_columns('users')]
+        if 'can_ai_recognition' not in existing:
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE users ADD COLUMN can_ai_recognition BOOLEAN DEFAULT 0'))
+    except Exception:
+        db.session.rollback()
+
+    try:
+        insp = inspect(db.engine)
+        existing = [c['name'] for c in insp.get_columns('resume_analysis_logs')]
+        if 'file_path' not in existing:
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE resume_analysis_logs ADD COLUMN file_path VARCHAR(500) DEFAULT ""'))
+                conn.execute(text('ALTER TABLE resume_analysis_logs ADD COLUMN file_name VARCHAR(255) DEFAULT ""'))
+                conn.execute(text('ALTER TABLE resume_analysis_logs ADD COLUMN file_size INT DEFAULT 0'))
+        if 'strengths' not in existing:
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE resume_analysis_logs ADD COLUMN strengths TEXT NULL'))
+                conn.execute(text('ALTER TABLE resume_analysis_logs ADD COLUMN suggestions TEXT NULL'))
+        with db.engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE resume_analysis_logs SET detail = CONCAT('AI识别完成，评分', score, '分') "
+                "WHERE (detail IS NULL OR detail = '')"))
+    except Exception as e:
+        print('[migrate] resume_analysis_logs 迁移失败:', e)
+        db.session.rollback()
 
 
 def _create_defaults():

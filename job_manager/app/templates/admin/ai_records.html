@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+
+{% block title %}AI识别记录 - 聘安途岗推系统{% endblock %}
+
+{% block content %}
+<div style="display:flex; flex-direction:column; height:calc(100vh - 96px); height:calc(100dvh - 96px); overflow:hidden;">
+
+<!-- 筛选 -->
+<div class="card mb-3 flex-shrink-0" style="margin-top:0;">
+    <div class="card-body" style="padding-top:0;">
+        <form method="GET" class="row g-3" id="filterForm" style="padding-top:8px;">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">操作人：</label>
+                <input type="text" class="form-control" name="operator" id="operatorFilter" placeholder="按操作人搜索" onkeyup="if(event.key==='Enter')applyFilters()">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-bold">关键字：</label>
+                <input type="text" class="form-control" name="keyword" id="keywordFilter" placeholder="候选人/岗位/文件名" onkeyup="if(event.key==='Enter')applyFilters()">
+            </div>
+            <div class="d-flex align-items-center gap-2 pt-2">
+                <button type="submit" class="btn btn-primary fw-bold">
+                    <i class="bi bi-search"></i> 筛选
+                </button>
+                <a href="{{ url_for('admin.ai_records_page') }}" class="btn btn-secondary btn-reset fw-bold">重置</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 识别记录列表 -->
+<div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
+    <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <style>
+        .table.no-data { border: none !important; }
+        .table.no-data thead th { border-bottom: none !important; }
+        .table.no-data td { border: none !important; }
+        .detail-ellipsis {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 100%;
+            cursor: default;
+        }
+        </style>
+        <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
+            <colgroup>
+                <col style="width:13%;">
+                <col style="width:9%;">
+                <col style="width:9%;">
+                <col style="width:13%;">
+                <col style="width:6%;">
+                <col style="width:5%;">
+                <col style="width:37%;">
+                <col style="width:8%;">
+            </colgroup>
+            <thead class="sticky-thead">
+                <tr>
+                    <th style="padding-left:15px;">时间</th>
+                    <th>操作人</th>
+                    <th>候选人</th>
+                    <th>意向岗位</th>
+                    <th style="text-align:center;">AI打分</th>
+                    <th>评级</th>
+                    <th>筛选条件</th>
+                    <th style="text-align:center;">详情</th>
+                </tr>
+            </thead>
+            <tbody id="recordsBody"></tbody>
+        </table>
+    </div>
+    <div class="card-footer page-footer d-flex flex-wrap align-items-center gap-3 px-3 py-2" style="justify-content:flex-start;">
+        <div class="d-flex align-items-center gap-3">
+            <span class="page-total">共 <strong id="recordTotal">0</strong> 条</span>
+            <select class="form-select page-select" id="perPage" onchange="changePerPage()">
+                <option value="20" selected>20条/页</option>
+                <option value="50">50条/页</option>
+                <option value="100">100条/页</option>
+            </select>
+        </div>
+        <nav id="paginationNav"></nav>
+        <div class="d-flex align-items-center gap-1">
+            <span class="goto-text">前往</span>
+            <input type="number" class="form-control goto-input" id="gotoPage" min="1" onkeyup="if(event.key==='Enter')gotoPage()">
+            <span class="goto-text">页</span>
+            <button type="button" class="btn btn-primary btn-sm" onclick="gotoPage()">跳转</button>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- 识别详情弹窗 -->
+<div class="modal fade" id="detailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-file-earmark-text text-primary"></i> 识别详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body" id="detailBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const LEVEL_MAP = { '优': 'success', '良': 'primary', '中': 'warning', '待提升': 'danger' };
+const DOWNLOAD_URL = '{{ url_for("admin.ai_record_download", record_id=0) }}'.replace('0', '');
+const DELETE_RESUME_URL = '{{ url_for("admin.ai_record_resume_delete", record_id=0) }}'.replace('0', '');
+
+function fmtSize(bytes) {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+let currentPage = 1;
+let currentPerPage = 20;
+let currentOperator = '';
+let currentKeyword = '';
+let recordsMap = {};
+
+function buildQuery() {
+    let params = new URLSearchParams();
+    params.set('page', currentPage);
+    params.set('per_page', currentPerPage);
+    if (currentOperator) params.set('operator', currentOperator);
+    if (currentKeyword) params.set('keyword', currentKeyword);
+    return params.toString();
+}
+
+async function loadRecords() {
+    const body = document.getElementById('recordsBody');
+    body.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-5">加载中...</td></tr>';
+    try {
+        const res = await fetch('{{ url_for("admin.ai_records") }}?' + buildQuery());
+        const data = await res.json();
+        renderRecords(data.records);
+        renderPagination(data.pagination);
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-5">加载失败</td></tr>';
+    }
+}
+
+function renderRecords(records) {
+    const body = document.getElementById('recordsBody');
+    const table = document.querySelector('table');
+    if (!records || records.length === 0) {
+        table.classList.add('no-data');
+        body.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-5">暂无分析记录</td></tr>';
+        return;
+    }
+    table.classList.remove('no-data');
+    recordsMap = {};
+    records.forEach(r => { recordsMap[r.id] = r; });
+    body.innerHTML = records.map(r => {
+        const lvl = r.level;
+        const scoreColor = r.score >= 75 ? 'text-success' : (r.score >= 60 ? 'text-warning' : 'text-danger');
+        const detailText = r.detail || '';
+        const hasData = detailText || r.file_name || r.strengths || r.suggestions;
+        const detailBtn = hasData
+            ? `<button type="button" class="btn btn-sm btn-primary" onclick="showDetail(${r.id})"><i class="bi bi-eye"></i> 查看</button>`
+            : `<button type="button" class="btn btn-sm btn-secondary" disabled><i class="bi bi-eye"></i> 查看</button>`;
+        return `<tr style="height:52px;">
+            <td style="padding-left:15px;">${escapeHtml(r.created_at)}</td>
+            <td>${escapeHtml(r.user_name)}</td>
+            <td>${escapeHtml(r.candidate_name)}</td>
+            <td>${escapeHtml(r.job)}</td>
+            <td style="text-align:center;"><strong class="${scoreColor}">${r.score}</strong></td>
+            <td>${lvl && lvl !== '-' ? `<span class="badge bg-${LEVEL_MAP[lvl] || 'secondary'}">${escapeHtml(lvl)}</span>` : '-'}</td>
+            <td><span class="detail-ellipsis" title="${escapeAttr(detailText)}">${escapeHtml(detailText)}</span></td>
+            <td style="text-align:center;">${detailBtn}</td>
+        </tr>`;
+    }).join('');
+}
+
+function renderPagination(p) {
+    document.getElementById('recordTotal').textContent = p.total;
+    document.getElementById('gotoPage').max = p.pages;
+    document.getElementById('gotoPage').value = p.page;
+    const nav = document.getElementById('paginationNav');
+    if (p.pages <= 1) {
+        nav.innerHTML = '';
+        return;
+    }
+    let html = '<ul class="pagination pagination-sm mb-0">';
+    html += `<li class="page-item ${p.has_prev ? '' : 'disabled'}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.prev_num})">&lt;</a></li>`;
+    const left = Math.max(1, p.page - 3);
+    const right = Math.min(p.pages, p.page + 3);
+    if (left > 1) {
+        html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(1)">1</a></li>`;
+        if (left > 2) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+    }
+    for (let i = left; i <= right; i++) {
+        html += `<li class="page-item ${i === p.page ? 'active' : ''}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${i})">${i}</a></li>`;
+    }
+    if (right < p.pages) {
+        if (right < p.pages - 1) html += '<li class="page-item disabled ellipsis"><span class="page-link">...</span></li>';
+        html += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.pages})">${p.pages}</a></li>`;
+    }
+    html += `<li class="page-item ${p.has_next ? '' : 'disabled'}"><a class="page-link" href="javascript:void(0)" onclick="goPage(${p.next_num})">&gt;</a></li>`;
+    html += '</ul>';
+    nav.innerHTML = html;
+}
+
+function goPage(page) { currentPage = page; loadRecords(); }
+function changePerPage() { currentPerPage = parseInt(document.getElementById('perPage').value, 10); currentPage = 1; loadRecords(); }
+function gotoPage() {
+    var input = document.getElementById('gotoPage');
+    var page = parseInt(input.value, 10);
+    if (isNaN(page)) return;
+    var max = parseInt(input.max, 10) || 1;
+    if (page < 1) page = 1;
+    if (page > max) page = max;
+    if (page !== currentPage) { currentPage = page; loadRecords(); }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function escapeAttr(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function deleteResume(id, fileName) {
+    if (!confirm('确定删除该记录的简历附件吗？\n' + (fileName || ''))) return;
+    try {
+        const res = await fetch(DELETE_RESUME_URL + id, { method: 'POST', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+        const data = await res.json();
+        if (data.success) {
+            const modalEl = document.getElementById('detailModal');
+            const inst = bootstrap.Modal.getInstance(modalEl);
+            if (inst) inst.hide();
+            loadRecords();
+        } else {
+            alert(data.message || '删除失败');
+        }
+    } catch (e) {
+        alert('删除失败');
+    }
+}
+
+function showDetail(id) {
+    const r = recordsMap[id];
+    if (!r) return;
+    const lvl = r.level && r.level !== '-' ? `<span class="badge bg-${LEVEL_MAP[lvl] || 'secondary'}">${escapeHtml(lvl)}</span>` : '-';
+    const fileBtn = (r.file_name && r.file_size)
+        ? `<div class="d-flex align-items-center gap-2 flex-wrap">
+            <a href="${DOWNLOAD_URL + r.id}" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i> ${escapeHtml(r.file_name)} (${fmtSize(r.file_size)})</a>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteResume(${r.id}, '${escapeAttr(r.file_name)}')"><i class="bi bi-trash"></i> 删除</button>
+          </div>`
+        : '<span class="text-muted">-</span>';
+    const strengthsList = (r.strengths || '')
+        .split('\n').map(s => s.trim()).filter(Boolean)
+        .map(s => `<li>${escapeHtml(s)}</li>`).join('');
+    const suggestionsList = (r.suggestions || '')
+        .split('\n').map(s => s.trim()).filter(Boolean)
+        .map(s => `<li>${escapeHtml(s)}</li>`).join('');
+    document.getElementById('detailBody').innerHTML = `
+        <div class="row g-3">
+            <div class="col-md-6"><small class="text-muted d-block">候选人</small><strong>${escapeHtml(r.candidate_name)}</strong></div>
+            <div class="col-md-6"><small class="text-muted d-block">操作人</small><strong>${escapeHtml(r.user_name)}</strong></div>
+            <div class="col-md-6"><small class="text-muted d-block">意向岗位</small><strong>${escapeHtml(r.job)}</strong></div>
+            <div class="col-md-6"><small class="text-muted d-block">识别时间</small><strong>${escapeHtml(r.created_at)}</strong></div>
+            <div class="col-md-6"><small class="text-muted d-block">AI打分</small><strong class="${r.score >= 75 ? 'text-success' : (r.score >= 60 ? 'text-warning' : 'text-danger')}">${r.score}</strong></div>
+            <div class="col-md-6"><small class="text-muted d-block">评级</small>${lvl}</div>
+            <div class="col-md-6"><small class="text-muted d-block">简历</small>${fileBtn}</div>
+            <div class="col-12">
+                <small class="text-muted d-block">筛选条件</small>
+                <div style="white-space:pre-wrap;">${escapeHtml(r.detail || '暂无')}</div>
+            </div>
+            ${strengthsList ? `<div class="col-12"><small class="text-muted d-block">优势分析</small><ul class="mb-0 ps-3">${strengthsList}</ul></div>` : ''}
+            ${suggestionsList ? `<div class="col-12"><small class="text-muted d-block">修改建议</small><ul class="mb-0 ps-3">${suggestionsList}</ul></div>` : ''}
+        </div>`;
+    new bootstrap.Modal(document.getElementById('detailModal')).show();
+}
+
+document.getElementById('filterForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    applyFilters();
+});
+
+function applyFilters() {
+    currentOperator = document.getElementById('operatorFilter').value;
+    currentKeyword = document.getElementById('keywordFilter').value;
+    currentPage = 1;
+    loadRecords();
+}
+
+loadRecords();
+</script>
+{% endblock %}

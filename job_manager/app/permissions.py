@@ -1,5 +1,5 @@
 from functools import wraps
-from flask import flash, redirect, url_for, session, jsonify, request
+from flask import flash, redirect, url_for, session, jsonify, request, abort
 from flask_login import current_user
 import secrets
 
@@ -7,6 +7,7 @@ import secrets
 # ==================== 权限常量 ====================
 PERMISSION_MANAGE_STUDENTS = 'can_manage_students'
 PERMISSION_PUSH_JOBS = 'can_push_jobs'
+PERMISSION_AI_RECOGNITION = 'can_ai_recognition'
 
 
 # ==================== 角色检查装饰器 ====================
@@ -75,6 +76,22 @@ def init_csrf():
     return session['csrf_token']
 
 
+def validate_csrf():
+    """校验不安全请求（POST/PUT/PATCH/DELETE）携带的 CSRF Token 是否与会话一致。
+    返回 None 表示通过；返回 Response 表示校验失败（AJAX 返回 JSON，否则 400）。
+    """
+    token = (request.form.get('csrf_token')
+             or request.headers.get('X-CSRFToken')
+             or request.headers.get('X-CSRF-Token'))
+    if not token and request.is_json:
+        token = (request.get_json(silent=True) or {}).get('csrf_token')
+    if token and session.get('csrf_token') and token == session.get('csrf_token'):
+        return None
+    if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({'success': False, 'message': '安全校验失败，请刷新页面后重试'})
+    abort(400)
+
+
 # ==================== 权限检查函数 ====================
 def has_permission(user, permission):
     if user.is_super_admin():
@@ -84,12 +101,14 @@ def has_permission(user, permission):
 
 def get_user_permissions(user):
     if user.is_super_admin():
-        return [PERMISSION_MANAGE_STUDENTS, PERMISSION_PUSH_JOBS]
+        return [PERMISSION_MANAGE_STUDENTS, PERMISSION_PUSH_JOBS, PERMISSION_AI_RECOGNITION]
     permissions = []
     if getattr(user, 'can_manage_students', False):
         permissions.append(PERMISSION_MANAGE_STUDENTS)
     if getattr(user, 'can_push_jobs', False):
         permissions.append(PERMISSION_PUSH_JOBS)
+    if getattr(user, 'can_ai_recognition', False):
+        permissions.append(PERMISSION_AI_RECOGNITION)
     return permissions
 
 
@@ -99,6 +118,7 @@ def can_access_menu(user, menu):
         'jobs': True,
         'students': PERMISSION_MANAGE_STUDENTS,
         'push': PERMISSION_PUSH_JOBS,
+        'ai': PERMISSION_AI_RECOGNITION,
         'accounts': True,
         'logs': True,
     }

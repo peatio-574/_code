@@ -329,6 +329,19 @@
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(82,196,26,0.25);
         }
+        .btn-ai {
+            background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+            border-color: #7c3aed;
+            color: #fff !important;
+            font-weight: 700;
+        }
+        .btn-ai:hover {
+            background: linear-gradient(135deg, #6d28d9 0%, #9333ea 100%);
+            border-color: #6d28d9;
+            color: #fff !important;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(124,58,237,0.3);
+        }
         .btn-secondary {
             background: #f0f2f5;
             border-color: #e6e8eb;
@@ -712,6 +725,9 @@
             <a href="{{ url_for('admin.push_page') }}" class="menu-item {% if request.endpoint == 'admin.push_page' %}active{% endif %}">
                 <i class="bi bi-send"></i> 推荐记录
             </a>
+            <a href="{{ url_for('admin.ai_records_page') }}" class="menu-item {% if 'ai_records' in request.endpoint %}active{% endif %}">
+                <i class="bi bi-stars"></i> AI识别记录
+            </a>
         </div>
         <div class="menu-group">
             <div class="menu-title">系统管理</div>
@@ -776,6 +792,7 @@
                 <a href="{{ url_for('admin.users_page') }}" class="menu-item {% if 'user' in request.endpoint or 'import_admin' in request.endpoint %}active{% endif %}"><i class="bi bi-people"></i> 管理员管理</a>
                 <a href="{{ url_for('admin.students_page') }}" class="menu-item {% if 'student' in request.endpoint %}active{% endif %}"><i class="bi bi-person-lines-fill"></i> 学员管理</a>
                 <a href="{{ url_for('admin.push_page') }}" class="menu-item {% if request.endpoint == 'admin.push_page' %}active{% endif %}"><i class="bi bi-send"></i> 推送记录</a>
+                <a href="{{ url_for('admin.ai_records_page') }}" class="menu-item {% if 'ai_records' in request.endpoint %}active{% endif %}"><i class="bi bi-stars"></i> AI识别记录</a>
             </div>
             <div class="menu-group">
                 <div class="menu-title">系统管理</div>

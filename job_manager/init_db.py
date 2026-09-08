@@ -10,17 +10,18 @@ import os
 import sys
 import pymysql
 from werkzeug.security import generate_password_hash
+from app.config import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
 
 
-# ==================== 数据库配置（支持环境变量覆盖）====================
+# ==================== 数据库配置（统一取自 app/config.py）====================
 DB_CONFIG = {
-    'host': os.environ.get('DB_HOST', '127.0.0.1'),
-    'port': int(os.environ.get('DB_PORT', 3306)),
-    'user': os.environ.get('DB_USER', 'job_CAIQABiAB'),
-    'password': os.environ.get('DB_PASSWORD', 'BBii@BDIKCAU&QABiiBBi*JBTIH'),
+    'host': DB_HOST,
+    'port': int(DB_PORT),
+    'user': DB_USER,
+    'password': DB_PASSWORD,
     'charset': 'utf8mb4'
 }
-DATABASE_NAME = os.environ.get('DB_NAME', 'job')
+DATABASE_NAME = DB_NAME
 
 
 # ==================== DDL 建表语句 ====================
@@ -94,6 +95,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `can_push_jobs` TINYINT(1) DEFAULT 0 COMMENT '岗位推送权限',
   `can_view_jobs` TINYINT(1) DEFAULT 0 COMMENT '岗位查看权限',
   `can_manage_students` TINYINT(1) DEFAULT 0 COMMENT '学员管理权限',
+  `can_ai_recognition` TINYINT(1) DEFAULT 0 COMMENT 'AI简历识别权限',
   `is_active` TINYINT(1) DEFAULT 1 COMMENT '账号状态',
   `is_deleted` TINYINT(1) DEFAULT 0 COMMENT '是否删除',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -179,6 +181,25 @@ CREATE TABLE IF NOT EXISTS `operation_logs` (
   INDEX `idx_operation_logs_user_id` (`user_id`),
   CONSTRAINT `fk_operation_logs_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作日志表';
+
+CREATE TABLE IF NOT EXISTS `resume_analysis_logs` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT COMMENT '记录ID',
+  `user_id` INT(11) NOT NULL COMMENT '识别人ID',
+  `user_name` VARCHAR(50) DEFAULT '' COMMENT '识别人',
+  `job` VARCHAR(120) DEFAULT '' COMMENT '意向岗位/目标岗位',
+  `object_name` VARCHAR(255) DEFAULT '' COMMENT '识别对象(简历文件名)',
+  `candidate_name` VARCHAR(50) DEFAULT '' COMMENT '候选人姓名',
+  `score` INT(11) DEFAULT 0 COMMENT 'AI打分',
+  `level` VARCHAR(20) DEFAULT '' COMMENT '评级',
+  `detail` TEXT COMMENT '筛选条件/备注',
+  `file_path` VARCHAR(500) DEFAULT '' COMMENT '简历附件存储路径',
+  `file_name` VARCHAR(255) DEFAULT '' COMMENT '简历附件原始文件名',
+  `file_size` INT(11) DEFAULT 0 COMMENT '简历附件大小(字节)',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '识别时间',
+  PRIMARY KEY (`id`),
+  INDEX `idx_resume_analysis_logs_user_id` (`user_id`),
+  CONSTRAINT `fk_resume_analysis_logs_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI简历识别记录表';
 """
 
 

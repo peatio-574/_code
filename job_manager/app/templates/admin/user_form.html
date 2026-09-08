@@ -85,6 +85,12 @@
                                            {% if not user_obj or user_obj.can_view_jobs %}checked{% endif %}>
                                     <label class="form-check-label" for="can_view_jobs">岗位查看</label>
                                 </div>
+                                <div class="form-check form-check-inline mb-0">
+                                    <input type="checkbox" class="form-check-input" name="can_ai_recognition" id="can_ai_recognition"
+                                           style="width:1.2em;height:1.2em;"
+                                           {% if not user_obj or user_obj.can_ai_recognition %}checked{% endif %}>
+                                    <label class="form-check-label" for="can_ai_recognition">AI简历识别</label>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -130,7 +136,8 @@ document.getElementById('userForm').addEventListener('submit', function(e) {
     var canPush = document.getElementById('can_push_jobs').checked;
     var canView = document.getElementById('can_view_jobs').checked;
     var canManage = document.getElementById('can_manage_students').checked;
-    if (!canPush && !canView && !canManage) {
+    var canAi = document.getElementById('can_ai_recognition').checked;
+    if (!canPush && !canView && !canManage && !canAi) {
         showToast('请至少选择一项权限', 'danger');
         return;
     }
