@@ -68,26 +68,52 @@ def create_app(config_name='default'):
 
 
 def setup_logging(app):
-    """全局中文日志：同时输出到控制台与 logs/app.log"""
-    root_logger = logging.getLogger()
-    if root_logger.handlers:
-        app.logger.setLevel(logging.INFO)
-        return
+    """中文日志：输出到项目 logs/app.log（持久化，路径与之前一致）+ 标准输出（journald 采集）。
+
+    - 日志**级别保留英文**（INFO/WARNING/ERROR，便于检索），消息内容使用中文；
+    - 格式含毫秒时间、模块、行号、函数名，便于定位。
+    注意：gunicorn 会通过 --access-logfile/--error-logfile 自行写 logs/access.log、logs/error.log，
+    因此这里只接管应用 logger（root / Flask / werkzeug），不干预 gunicorn 日志。
+    """
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     log_dir = os.path.join(root, 'logs')
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, 'app.log')
+    app_log = os.path.join(log_dir, 'app.log')
+
     fmt = logging.Formatter(
-        '%(asctime)s [%(levelname)s] [%(name)s:%(lineno)d] %(message)s',
+        '%(asctime)s.%(msecs)03d [%(levelname)s] [%(name)s:%(lineno)d] %(funcName)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S')
-    for handler in (logging.FileHandler(log_file, encoding='utf-8'),
-                    logging.StreamHandler(sys.stdout)):
-        handler.setFormatter(fmt)
-        handler.setLevel(logging.INFO)
-        root_logger.addHandler(handler)
+
+    file_handler = logging.FileHandler(app_log, encoding='utf-8')
+    file_handler.setFormatter(fmt)
+    file_handler.setLevel(logging.INFO)
+
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(fmt)
+    stdout_handler.setLevel(logging.INFO)
+
+    # 强制重建 root：先清空可能由 gunicorn/默认安装的 handler，避免格式残留与重复
+    root_logger = logging.getLogger()
+    for h in root_logger.handlers[:]:
+        root_logger.removeHandler(h)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(stdout_handler)
     root_logger.setLevel(logging.INFO)
+
     app.logger.setLevel(logging.INFO)
-    root_logger.info('【日志】系统日志已初始化，日志文件：%s', log_file)
+    app.logger.propagate = True
+
+    # 接管 werkzeug（开发模式），统一为同一格式
+    for name in ('werkzeug',):
+        lg = logging.getLogger(name)
+        for h in lg.handlers[:]:
+            lg.removeHandler(h)
+        lg.addHandler(file_handler)
+        lg.addHandler(stdout_handler)
+        lg.setLevel(logging.INFO)
+        lg.propagate = False
+
+    root_logger.info('【日志】中文日志已初始化：文件 %s（持久化）+ 标准输出（journald）', app_log)
 
 
 def setup_error_handlers(app):

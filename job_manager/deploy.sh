@@ -164,8 +164,9 @@ info "服务状态 : $(systemctl is-active ${SERVICE_NAME} 2>/dev/null || echo �
 info "访问地址 : http://<服务器IP>:$APP_PORT/login"
 info "默认账号 : admin1 / admin123"
 info "          admin2 / admin123"
-echo -e "查看日志 : ${YELLOW}tail -f $APP_DIR/logs/error.log${NC}"
-echo -e "实时      : ${YELLOW}journalctl -u ${SERVICE_NAME} -f${NC}"
+echo -e "查看日志 : ${YELLOW}tail -f $APP_DIR/logs/app.log${NC}  (应用日志)"
+echo -e "          ${YELLOW}tail -f $APP_DIR/logs/error.log${NC}  (错误/访问日志)"
+echo -e "实时      : ${YELLOW}journalctl -u ${SERVICE_NAME} -f${NC}  (systemd/journald)"
 echo -e "注意      : 控制台安全组需放行 ${APP_PORT} 端口"
 echo -e "${GREEN}============================================================${NC}"
 
