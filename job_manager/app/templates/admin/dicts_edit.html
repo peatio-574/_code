@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+
+{% block title %}编辑字典 - {{ dict_type.name }}{% endblock %}
+
+{% block content %}
+<div style="display:flex; flex-direction:column; height:calc(100vh - 96px); height:calc(100dvh - 96px); overflow:hidden;">
+
+<!-- 顶部：返回 + 字段信息 -->
+<div class="card mb-3 flex-shrink-0" style="margin-top:0;">
+    <div class="card-body" style="padding-top:0;">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-2">
+            <a href="{{ url_for('admin.dicts_page') }}" class="btn btn-secondary fw-bold">
+                <i class="bi bi-arrow-left"></i> 返回列表
+            </a>
+            <span class="text-muted small">枚举值 <span id="activeCount" class="text-primary fw-bold">{{ active_count }}</span> / <span id="totalCount">{{ item_count }}</span> 项（启用/总数）</span>
+        </div>
+
+        <form id="typeForm" style="padding-top:8px;">
+            <input type="hidden" name="type_id" value="{{ dict_type.id }}">
+            <div class="d-flex align-items-end gap-3 flex-wrap">
+                <div style="flex:0 0 200px;">
+                    <label class="form-label fw-bold">字段名称：</label>
+                    <input type="text" class="form-control" name="name" value="{{ dict_type.name }}" style="height:38px;" required>
+                </div>
+                <div style="flex:0 0 200px;">
+                    <label class="form-label fw-bold">字段英文名：</label>
+                    <input type="text" class="form-control" name="code" value="{{ dict_type.code }}" style="height:38px;" required>
+                </div>
+                <div style="flex:0 0 110px;">
+                    <label class="form-label fw-bold">排序：</label>
+                    <input type="number" class="form-control" name="sort_order" value="{{ dict_type.sort_order }}" style="height:38px;">
+                </div>
+                <div style="flex:0 0 130px;">
+                    <label class="form-label fw-bold">状态：</label>
+                    <select class="form-select filter-select" name="is_active" style="height:38px;">
+                        <option value="1" {% if dict_type.is_active %}selected{% endif %}>启用</option>
+                        <option value="0" {% if not dict_type.is_active %}selected{% endif %}>禁用</option>
+                    </select>
+                </div>
+                <div class="d-flex gap-2 pb-0">
+                    <button type="submit" class="btn btn-primary fw-bold">
+                        <i class="bi bi-check-lg"></i> 保存
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 枚举值列表 -->
+<div class="card d-flex flex-column flex-grow-1" style="min-height:0; overflow:hidden;">
+    <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <span class="fw-bold"><i class="bi bi-list-ul"></i> 枚举值</span>
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-sm btn-primary fw-bold" onclick="showItemModal()">
+                <i class="bi bi-plus-lg"></i> 新增枚举值
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger fw-bold" id="batchDeleteItemBtn">
+                <i class="bi bi-trash"></i> 批量删除
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0" style="flex:1; overflow:auto; min-height:0;">
+        <style>
+        .table.no-data { border: none !important; }
+        .table.no-data thead th { border-bottom: none !important; }
+        .table.no-data td { border: none !important; }
+        </style>
+        <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
+            <colgroup>
+                <col style="width:6%;">
+                <col style="width:12%;">
+                <col style="width:42%;">
+                <col style="width:12%;">
+                <col style="width:18%;">
+                <col style="width:10%;">
+            </colgroup>
+            <thead class="sticky-thead">
+                <tr>
+                    <th style="padding-left:15px;"><input type="checkbox" id="selectAllItems"></th>
+                    <th style="text-align:center;">键</th>
+                    <th style="text-align:left;">枚举值</th>
+                    <th style="text-align:center;">状态</th>
+                    <th style="text-align:center;">更新时间</th>
+                    <th style="text-align:center;">操作</th>
+                </tr>
+            </thead>
+            <tbody id="itemsBody">
+                <tr><td colspan="6" class="text-center text-muted py-5">加载中...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer page-footer d-flex flex-wrap align-items-center gap-3 px-3 py-2" style="justify-content:flex-start;">
+        <span class="page-total">共 <strong id="itemTotal">0</strong> 条</span>
+    </div>
+</div>
+</div>
+
+<!-- 枚举值弹窗 -->
+<div class="modal fade" id="itemModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="itemModalTitle"><i class="bi bi-list-ul"></i> 新增枚举值</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="itemForm">
+                <input type="hidden" name="item_id" id="item_id">
+                <input type="hidden" name="type_id" value="{{ dict_type.id }}">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-4 mb-3">
+                            <label class="form-label">键 <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" name="key" id="item_key" min="1" required>
+                        </div>
+                        <div class="col-8 mb-3">
+                            <label class="form-label">枚举值 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="value" id="item_value" required>
+                        </div>
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label">状态</label>
+                        <select class="form-select" name="is_active" id="item_is_active">
+                            <option value="1" selected>启用</option>
+                            <option value="0">禁用</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF = '{{ csrf_token }}';
+const TYPE_ID = {{ dict_type.id }};
+const URLS = {
+    items: '{{ url_for("admin.dicts_items") }}',
+    itemAdd: '{{ url_for("admin.dict_item_add") }}',
+    itemEdit: '{{ url_for("admin.dict_item_edit") }}',
+    itemToggle: '{{ url_for("admin.dict_item_toggle_status") }}',
+    itemDelete: '{{ url_for("admin.dict_item_delete") }}',
+    typeEdit: '{{ url_for("admin.dict_type_edit") }}',
+};
+
+let itemsCache = [];
+let itemModalInstance = null;
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    const div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML;
+}
+
+async function postForm(url, formData) {
+    formData.append('csrf_token', CSRF);
+    const res = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    return res.json();
+}
+
+async function loadItems() {
+    const body = document.getElementById('itemsBody');
+    body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">加载中...</td></tr>';
+    try {
+        const res = await fetch(URLS.items + '?type_id=' + TYPE_ID);
+        const data = await res.json();
+        itemsCache = data.items || [];
+        renderItems();
+    } catch (e) {
+        body.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-5">加载失败</td></tr>';
+    }
+}
+
+function renderItems() {
+    const body = document.getElementById('itemsBody');
+    const table = document.querySelector('table');
+    document.getElementById('selectAllItems').checked = false;
+    const activeCount = itemsCache.filter(x => x.is_active).length;
+    document.getElementById('activeCount').textContent = activeCount;
+    document.getElementById('totalCount').textContent = itemsCache.length;
+    document.getElementById('itemTotal').textContent = itemsCache.length;
+    if (!itemsCache.length) {
+        table.classList.add('no-data');
+        body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">暂无枚举值，请点击“新增枚举值”</td></tr>';
+        return;
+    }
+    table.classList.remove('no-data');
+    body.innerHTML = itemsCache.map(function(it) {
+        const statusSwitch = `<div class="form-check form-switch" style="display:flex; justify-content:center;">
+            <input class="form-check-input" type="checkbox" role="switch" ${it.is_active ? 'checked' : ''}
+                   onchange="toggleItemStatus(${it.id}, this)">
+        </div>`;
+        return `<tr>
+            <td style="padding-left:15px;"><input type="checkbox" class="item-checkbox" value="${it.id}"></td>
+            <td style="text-align:center;"><span class="badge bg-secondary">${it.key}</span></td>
+            <td style="text-align:left;">${escapeHtml(it.value)}</td>
+            <td>${statusSwitch}</td>
+            <td style="text-align:center;">${escapeHtml(it.updated_at)}</td>
+            <td style="text-align:center; white-space:nowrap;">
+                <button type="button" class="btn btn-sm btn-outline-primary me-1" title="编辑"
+                        onclick="showItemModal(${it.id})"><i class="bi bi-pencil"></i></button>
+                <button type="button" class="btn btn-sm btn-outline-danger" title="删除"
+                        onclick="deleteItem(${it.id})"><i class="bi bi-trash"></i></button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function nextKey() {
+    const maxKey = itemsCache.reduce(function(m, x) { return Math.max(m, x.key || 0); }, 0);
+    return maxKey + 1;
+}
+
+function showItemModal(id) {
+    const isEdit = !!id;
+    document.getElementById('itemForm').reset();
+    document.getElementById('itemModalTitle').innerHTML = isEdit
+        ? '<i class="bi bi-pencil"></i> 编辑枚举值'
+        : '<i class="bi bi-list-ul"></i> 新增枚举值';
+    if (isEdit) {
+        const it = itemsCache.find(x => x.id === id);
+        if (!it) { showToast('枚举值不存在', 'danger'); return; }
+        document.getElementById('item_id').value = it.id;
+        document.getElementById('item_key').value = it.key;
+        document.getElementById('item_value').value = it.value;
+        document.getElementById('item_is_active').value = it.is_active ? '1' : '0';
+    } else {
+        document.getElementById('item_id').value = '';
+        document.getElementById('item_key').value = nextKey();
+        document.getElementById('item_value').value = '';
+        document.getElementById('item_is_active').value = '1';
+    }
+    itemModalInstance = new bootstrap.Modal(document.getElementById('itemModal'));
+    itemModalInstance.show();
+}
+
+document.getElementById('typeForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const data = await postForm(URLS.typeEdit, new FormData(this));
+    showToast(data.message, data.success ? 'success' : 'danger');
+    if (data.success) setTimeout(function() { window.location.reload(); }, 600);
+});
+
+document.getElementById('itemForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const isEdit = !!document.getElementById('item_id').value;
+    const url = isEdit ? URLS.itemEdit : URLS.itemAdd;
+    const data = await postForm(url, new FormData(this));
+    showToast(data.message, data.success ? 'success' : 'danger');
+    if (data.success) {
+        itemModalInstance.hide();
+        loadItems();
+    }
+});
+
+async function toggleItemStatus(id, checkbox) {
+    const formData = new FormData();
+    formData.append('item_id', id);
+    try {
+        const data = await postForm(URLS.itemToggle, formData);
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadItems();
+        } else {
+            checkbox.checked = !checkbox.checked;
+            showToast(data.message, 'danger');
+        }
+    } catch (e) {
+        checkbox.checked = !checkbox.checked;
+        showToast('操作失败', 'danger');
+    }
+}
+
+async function deleteItem(id) {
+    if (!confirm('确定删除该枚举值吗？')) return;
+    const formData = new FormData();
+    formData.append('item_id', id);
+    const data = await postForm(URLS.itemDelete, formData);
+    showToast(data.message, data.success ? 'success' : 'danger');
+    if (data.success) loadItems();
+}
+
+document.getElementById('selectAllItems').addEventListener('change', function() {
+    document.querySelectorAll('.item-checkbox').forEach(cb => cb.checked = this.checked);
+});
+
+document.getElementById('batchDeleteItemBtn').addEventListener('click', async function() {
+    const checked = document.querySelectorAll('.item-checkbox:checked');
+    if (checked.length === 0) { showToast('请选择要删除的枚举值', 'warning'); return; }
+    if (!confirm('确定删除选中的 ' + checked.length + ' 个枚举值吗？')) return;
+    const formData = new FormData();
+    checked.forEach(cb => formData.append('item_ids', cb.value));
+    const data = await postForm(URLS.itemDelete, formData);
+    showToast(data.message, data.success ? 'success' : 'danger');
+    if (data.success) loadItems();
+});
+
+loadItems();
+</script>
+{% endblock %}
