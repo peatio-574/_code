@@ -888,7 +888,8 @@ def ai_screen():
     payload = request.get_json(silent=True) or {}
     screening = payload.get('screening') or {}
     if not any((screening.get('keyword'), screening.get('province'),
-                screening.get('city'), screening.get('education'))):
+                screening.get('city'), screening.get('education'),
+                screening.get('experience'), screening.get('major'))):
         return jsonify({'success': False, 'message': '缺少有效的筛选条件'})
     jobs = screen_jobs(screening)
     return jsonify({'success': True, 'jobs': jobs, 'screening': screening})

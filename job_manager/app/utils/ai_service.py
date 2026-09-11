@@ -616,10 +616,13 @@ def analyze_resume(text: str, target_job: str = '') -> dict:
 # ==================== 5. 岗位筛选 ====================
 
 def screen_jobs(screening: dict, limit: int = 50):
-    """基于简历分析出的筛选条件，返回匹配度排序的岗位列表。"""
+    """基于简历分析出的筛选条件，返回匹配度排序的岗位列表。
+
+    条件采用“尽量匹配、无结果则逐级放宽”的策略：先按全部条件筛选；若无结果，
+    依次放宽 经验要求 → 学历要求 → 省份/专业，尽量给出可推荐的岗位。
+    """
     from ..models import Job, db
 
-    query = Job.query.filter_by(is_deleted=False)
     keyword = (screening.get('keyword') or '').strip()
     province = (screening.get('province') or '').strip()
     city = (screening.get('city') or '').strip()
@@ -627,37 +630,51 @@ def screen_jobs(screening: dict, limit: int = 50):
     experience = (screening.get('experience') or '').strip()
     major = (screening.get('major') or '').strip()
 
-    if keyword:
-        ors = [Job.job_name.contains(keyword), Job.company_name.contains(keyword),
-               Job.job_category.contains(keyword), Job.major_req.contains(keyword)]
-        query = query.filter(db.or_(*ors))
-    if province:
-        query = query.filter(db.or_(Job.province == province, Job.province.like(province + '%')))
-    if city:
-        query = query.filter(db.or_(Job.city == city, Job.city.like(city + '%')))
-    if education:
-        if education == '不限':
-            query = query.filter(db.or_(Job.education_req == '', Job.education_req == None, Job.education_req == '不限'))
-        else:
-            query = query.filter(Job.education_req == education)
-    if experience and experience != '不限':
-        _exp = experience.replace('年', '').strip()
-        if _exp in ('应届生', '1年以内'):
+    def build(use_province=True, use_education=True, use_experience=True, use_major=True):
+        query = Job.query.filter_by(is_deleted=False, status='active')
+        if keyword:
             query = query.filter(db.or_(
-                Job.experience_req.in_(['应届生', '1年以内']),
-                Job.experience_req.in_(['', None]),
+                Job.job_name.contains(keyword), Job.company_name.contains(keyword),
+                Job.job_category.contains(keyword), Job.major_req.contains(keyword),
+                Job.work_location.contains(keyword),
             ))
-        elif _exp in ('1-3', '3-5'):
+        if province and use_province:
+            query = query.filter(db.or_(Job.province == province, Job.province.like(province + '%')))
+        if city:
+            query = query.filter(db.or_(Job.city == city, Job.city.like(city + '%')))
+        if education and education != '不限' and use_education:
+            # 兼容“本科 / 本科学历 / 本科及以上”等写法；无学历要求的岗位也匹配
             query = query.filter(db.or_(
-                Job.experience_req == experience,
-                Job.experience_req == '',
-                Job.experience_req == None,
-                Job.experience_req == '不限',
+                Job.education_req == education,
+                Job.education_req.contains(education),
+                Job.education_req == '', Job.education_req == None,
             ))
-    if major:
-        query = query.filter(db.or_(Job.major_req.contains(major), Job.major_req == ''))
+        if experience and experience != '不限' and use_experience:
+            _exp = experience.replace('年', '').strip()
+            if _exp in ('应届生', '1年以内'):
+                query = query.filter(db.or_(
+                    Job.experience_req.in_(['应届生', '1年以内']),
+                    Job.experience_req.in_(['', None]),
+                ))
+            else:
+                query = query.filter(db.or_(
+                    Job.experience_req == experience,
+                    Job.experience_req.contains(_exp),
+                    Job.experience_req == '', Job.experience_req == None,
+                    Job.experience_req == '不限',
+                ))
+        if major and use_major:
+            query = query.filter(db.or_(Job.major_req.contains(major), Job.major_req == ''))
+        return query
 
-    jobs = query.limit(limit).all()
+    jobs = build().order_by(Job.updated_at.desc()).limit(limit).all()
+    if not jobs:
+        jobs = build(use_experience=False).limit(limit).all()
+    if not jobs:
+        jobs = build(use_experience=False, use_education=False).limit(limit).all()
+    if not jobs:
+        jobs = build(use_experience=False, use_education=False,
+                     use_major=False, use_province=False).limit(limit).all()
 
     def match_score(job):
         s = 50
