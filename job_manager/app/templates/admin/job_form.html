@@ -122,11 +122,11 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">学历要求</label>
-                            <select class="form-select" name="education_req" data-dict="education_req" data-placeholder="不限"></select>
+                            <select class="form-select" name="education_req" data-dict="education_req" data-placeholder="请选择"></select>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">经验要求</label>
-                            <select class="form-select" name="experience_req" data-dict="experience_req" data-placeholder="不限"></select>
+                            <select class="form-select" name="experience_req" data-dict="experience_req" data-placeholder="请选择"></select>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">专业要求</label>
@@ -306,8 +306,8 @@ function setField(name, val, fallback) {
     if (el.tagName === 'SELECT') {
         var target = String(val == null ? '' : val);
         var has = Array.prototype.some.call(el.options, function(o) { return o.value === target; });
-        if (!has && target) {
-            // 历史值可能对应已禁用/删除的字典项，追加以便编辑时不丢失
+        // 字典下拉只允许选择字典里的枚举值：历史值若不在字典中，不追加为选项，回落到占位/默认项
+        if (!has && target && !el.dataset.dict) {
             var opt = document.createElement('option');
             opt.value = target; opt.textContent = target;
             el.appendChild(opt);
@@ -330,7 +330,7 @@ function populateJob(d) {
     setField('company_type', d.company_type);
     setField('company_size', d.company_size);
     setField('company_industry', d.company_industry);
-    setField('recruit_type', d.recruit_type, '社招');
+    setField('recruit_type', d.recruit_type, '社会招聘');
     setField('job_name', d.job_name);
     setField('job_nature', d.job_nature, '全职');
     setField('job_category', d.job_category);
