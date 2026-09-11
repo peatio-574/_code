@@ -200,6 +200,37 @@ CREATE TABLE IF NOT EXISTS `resume_analysis_logs` (
   INDEX `idx_resume_analysis_logs_user_id` (`user_id`),
   CONSTRAINT `fk_resume_analysis_logs_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI简历识别记录表';
+
+-- 字典类型表
+CREATE TABLE IF NOT EXISTS `dict_types` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT COMMENT '类型ID',
+  `code` VARCHAR(50) NOT NULL COMMENT '类型编码，如 company_type',
+  `name` VARCHAR(50) NOT NULL COMMENT '类型名称，如 公司性质',
+  `sort_order` INT(11) DEFAULT 0 COMMENT '排序值',
+  `is_active` TINYINT(1) DEFAULT 1 COMMENT '是否启用',
+  `is_deleted` TINYINT(1) DEFAULT 0 COMMENT '是否删除',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_dict_types_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据字典类型表';
+
+-- 字典项表
+CREATE TABLE IF NOT EXISTS `dict_items` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT COMMENT '字典项ID',
+  `type_id` INT(11) NOT NULL COMMENT '所属类型ID',
+  `dict_key` INT(11) DEFAULT 1 COMMENT '键（每个类型内从1自增）',
+  `label` VARCHAR(100) NOT NULL COMMENT '显示名称',
+  `value` VARCHAR(100) NOT NULL COMMENT '枚举值',
+  `sort_order` INT(11) DEFAULT 0 COMMENT '排序值',
+  `is_active` TINYINT(1) DEFAULT 1 COMMENT '是否启用',
+  `is_deleted` TINYINT(1) DEFAULT 0 COMMENT '是否删除',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  INDEX `idx_dict_items_type_id` (`type_id`),
+  CONSTRAINT `fk_dict_items_type` FOREIGN KEY (`type_id`) REFERENCES `dict_types` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据字典项表';
 """
 
 
@@ -273,6 +304,38 @@ def insert_defaults():
         "VALUES (%s, %s, %s, 'super_admin', %s, 1)",
         ('admin2', admin_pwd, 'admin123', '超级管理员2')
     )
+
+    # 默认字典：字段 + 枚举值（类型/枚举已存在则跳过，不覆盖超管的增删改）
+    default_dicts = [
+        ('company_type', '公司性质', ['国企', '民企', '外企', '合资', '事业单位', '政府机关', '上市公司']),
+        ('company_size', '公司规模', ['0-20人', '20-99人', '100-499人', '500-999人', '1000-9999人', '10000人以上']),
+        ('recruit_type', '招聘类型', ['校园招聘', '社会招聘', '实习']),
+        ('education_req', '学历要求', ['不限', '大专', '本科', '硕士', '博士']),
+        ('experience_req', '经验要求', ['不限', '应届生', '1年以内', '1-3年', '3-5年', '5-10年', '10年以上']),
+        ('source', '来源', ['国聘', '智联招聘']),
+        ('job_nature', '职位性质', ['全职', '兼职']),
+    ]
+    for sort_idx, (code, name, values) in enumerate(default_dicts, start=1):
+        cursor.execute("SELECT id FROM `dict_types` WHERE `code` = %s", (code,))
+        row = cursor.fetchone()
+        if row:
+            type_id = row[0]
+        else:
+            cursor.execute(
+                "INSERT INTO `dict_types` (`code`, `name`, `sort_order`, `is_active`, `is_deleted`) "
+                "VALUES (%s, %s, %s, 1, 0)",
+                (code, name, sort_idx)
+            )
+            type_id = cursor.lastrowid
+        cursor.execute("SELECT COUNT(*) FROM `dict_items` WHERE `type_id` = %s", (type_id,))
+        if cursor.fetchone()[0] == 0:
+            for i, v in enumerate(values, start=1):
+                cursor.execute(
+                    "INSERT INTO `dict_items` "
+                    "(`type_id`, `dict_key`, `label`, `value`, `sort_order`, `is_active`, `is_deleted`) "
+                    "VALUES (%s, %s, %s, %s, %s, 1, 0)",
+                    (type_id, i, v, v, i)
+                )
 
     conn.commit()
     cursor.close()

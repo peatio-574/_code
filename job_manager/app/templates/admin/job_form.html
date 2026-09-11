@@ -71,27 +71,11 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">公司性质</label>
-                            <select class="form-select" name="company_type">
-                                <option value="">请选择</option>
-                                <option value="国企">国企</option>
-                                <option value="民企">民企</option>
-                                <option value="外企">外企</option>
-                                <option value="合资">合资</option>
-                                <option value="事业单位">事业单位</option>
-                                <option value="政府机关">政府机关</option>
-                            </select>
+                            <select class="form-select" name="company_type" data-dict="company_type" data-placeholder="请选择"></select>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">公司规模</label>
-                            <select class="form-select" name="company_size">
-                                <option value="">请选择</option>
-                                <option value="0-20人">0-20人</option>
-                                <option value="20-99人">20-99人</option>
-                                <option value="100-499人">100-499人</option>
-                                <option value="500-999人">500-999人</option>
-                                <option value="1000-9999人">1000-9999人</option>
-                                <option value="10000人以上">10000人以上</option>
-                            </select>
+                            <select class="form-select" name="company_size" data-dict="company_size" data-placeholder="请选择"></select>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">公司行业</label>
@@ -99,12 +83,7 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">招聘类型</label>
-                            <select class="form-select" name="recruit_type">
-                                <option value="">请选择</option>
-                                <option value="校园招聘">校园招聘</option>
-                                <option value="社会招聘">社会招聘</option>
-                                <option value="实习">实习</option>
-                            </select>
+                            <select class="form-select" name="recruit_type" data-dict="recruit_type" data-placeholder="请选择"></select>
                         </div>
                     </div>
 
@@ -116,10 +95,7 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">职位性质</label>
-                            <select class="form-select" name="job_nature">
-                                <option value="全职" selected>全职</option>
-                                <option value="兼职">兼职</option>
-                            </select>
+                            <select class="form-select" name="job_nature" data-dict="job_nature" data-placeholder="请选择" data-default="全职"></select>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">职位类别</label>
@@ -127,15 +103,7 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">来源 <span class="text-danger">*</span></label>
-                            <select class="form-select" name="source">
-                                <option value="">请选择</option>
-                                <option value="企业官网">企业官网</option>
-                                <option value="招聘网站">招聘网站</option>
-                                <option value="内部推荐">内部推荐</option>
-                                <option value="校园招聘">校园招聘</option>
-                                <option value="猎头">猎头</option>
-                                <option value="其他">其他</option>
-                            </select>
+                            <select class="form-select" name="source" data-dict="source" data-placeholder="请选择"></select>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">薪资范围</label>
@@ -154,25 +122,11 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">学历要求</label>
-                            <select class="form-select" name="education_req">
-                                <option value="">不限</option>
-                                <option value="大专">大专</option>
-                                <option value="本科">本科</option>
-                                <option value="硕士">硕士</option>
-                                <option value="博士">博士</option>
-                            </select>
+                            <select class="form-select" name="education_req" data-dict="education_req" data-placeholder="不限"></select>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">经验要求</label>
-                            <select class="form-select" name="experience_req">
-                                <option value="">不限</option>
-                                <option value="应届生">应届生</option>
-                                <option value="1年以内">1年以内</option>
-                                <option value="1-3年">1-3年</option>
-                                <option value="3-5年">3-5年</option>
-                                <option value="5-10年">5-10年</option>
-                                <option value="10年以上">10年以上</option>
-                            </select>
+                            <select class="form-select" name="experience_req" data-dict="experience_req" data-placeholder="不限"></select>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">专业要求</label>
@@ -231,6 +185,7 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
 <script>
 const JOB_ID = {{ job_id|default(0) }};
 const JOB_DATA_URL = '{{ url_for("admin.job_data", id=0) }}';
+const DICT_OPTIONS_URL = '{{ url_for("admin.dict_options") }}';
 const csrfToken = '{{ csrf_token }}';
 
 const REGION_FALLBACK = {
@@ -349,9 +304,17 @@ function setField(name, val, fallback) {
     var el = document.querySelector('[name="' + name + '"]');
     if (!el) return;
     if (el.tagName === 'SELECT') {
-        var has = Array.prototype.some.call(el.options, function(o) { return o.value === String(val == null ? '' : val); });
+        var target = String(val == null ? '' : val);
+        var has = Array.prototype.some.call(el.options, function(o) { return o.value === target; });
+        if (!has && target) {
+            // 历史值可能对应已禁用/删除的字典项，追加以便编辑时不丢失
+            var opt = document.createElement('option');
+            opt.value = target; opt.textContent = target;
+            el.appendChild(opt);
+            has = true;
+        }
         if (has) {
-            el.value = String(val == null ? '' : val);
+            el.value = target;
         } else if (fallback != null) {
             el.value = fallback;
         } else {
@@ -395,7 +358,44 @@ function loadJobData() {
         .catch(function() { showToast('加载岗位数据失败', 'danger'); });
 }
 
-loadRegions().then(function() {
+// 从字典管理加载各下拉选项（仅启用中的字典项）
+var dictSelects = Array.prototype.slice.call(document.querySelectorAll('select[data-dict]'));
+var DICT_CODES = dictSelects.map(function(el) { return el.dataset.dict; })
+    .filter(function(v, i, a) { return a.indexOf(v) === i; });
+
+function fillDictSelect(el, items) {
+    var placeholder = el.dataset.placeholder || '请选择';
+    el.innerHTML = '';
+    var ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = placeholder;
+    el.appendChild(ph);
+    (items || []).forEach(function(item) {
+        var opt = document.createElement('option');
+        opt.value = item.value;
+        opt.textContent = item.value;
+        el.appendChild(opt);
+    });
+    if (JOB_ID === 0 && el.dataset.default) {
+        var match = (items || []).find(function(x) { return x.value === el.dataset.default; });
+        if (match) el.value = match.value;
+    }
+}
+
+function loadDictOptions() {
+    if (!dictSelects.length || !DICT_CODES.length) return Promise.resolve();
+    return fetch(DICT_OPTIONS_URL + '?codes=' + encodeURIComponent(DICT_CODES.join(',')))
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            var data = res.data || {};
+            dictSelects.forEach(function(el) { fillDictSelect(el, data[el.dataset.dict] || []); });
+        })
+        .catch(function() {
+            dictSelects.forEach(function(el) { fillDictSelect(el, []); });
+        });
+}
+
+Promise.all([loadRegions(), loadDictOptions()]).then(function() {
     fillProvince('');
     fillCity('', '');
     if (JOB_ID > 0) loadJobData();

@@ -1,7 +1,7 @@
 from flask import render_template, redirect, url_for, flash, request, jsonify, send_file, session
 from flask_login import login_required, current_user
 from sqlalchemy.orm import aliased
-from ..models import db, User, Job, PushRecord, OperationLog, Campus, Role, ResumeAnalysisLog
+from ..models import db, User, Job, PushRecord, OperationLog, Campus, Role, ResumeAnalysisLog, DictType, DictItem
 from ..utils.ai_service import (
     analyze_resume, analyze_resume_image, extract_resume_text,
     extract_candidate_name, screen_jobs, IMAGE_EXTS,
@@ -385,6 +385,306 @@ def role_edit():
     return jsonify({'success': True, 'message': '角色更新成功'})
 
 
+# ==================== 字典管理（超管） ====================
+@admin_bp.route('/dicts/page')
+@admin_required
+@super_admin_required
+def dicts_page():
+    """字典管理列表页（展示所有字段）"""
+    ctx = get_template_context()
+    return render_template('admin/dicts_list.html', **ctx)
+
+
+@admin_bp.route('/dicts/<int:type_id>/edit')
+@admin_required
+@super_admin_required
+def dict_edit_page(type_id):
+    """字段编辑页：维护该字段下的枚举值（键值对）"""
+    dtype = DictType.query.filter_by(id=type_id, is_deleted=False).first_or_404()
+    ctx = get_template_context()
+    ctx['dict_type'] = dtype
+    ctx['item_count'] = DictItem.query.filter_by(type_id=dtype.id, is_deleted=False).count()
+    ctx['active_count'] = DictItem.query.filter_by(type_id=dtype.id, is_deleted=False, is_active=True).count()
+    return render_template('admin/dicts_edit.html', **ctx)
+
+
+@admin_bp.route('/dicts/types')
+@admin_required
+@super_admin_required
+def dicts_types():
+    """字段列表：返回JSON数据，前端负责渲染（支持搜索+分页）"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    keyword = request.args.get('keyword', '')
+
+    if per_page not in [20, 50, 100]:
+        per_page = 20
+
+    query = DictType.query.filter_by(is_deleted=False)
+    if keyword:
+        query = query.filter(db.or_(DictType.name.contains(keyword),
+                                    DictType.code.contains(keyword)))
+
+    pagination = query.order_by(DictType.sort_order.asc(), DictType.id.asc()) \
+        .paginate(page=page, per_page=per_page, error_out=False)
+
+    data = []
+    for t in pagination.items:
+        items = DictItem.query.filter_by(type_id=t.id, is_deleted=False) \
+            .order_by(DictItem.key.asc(), DictItem.id.asc()).all()
+        active_values = [it.value for it in items if it.is_active]
+        data.append({
+            'id': t.id,
+            'code': t.code,
+            'name': t.name,
+            'sort_order': t.sort_order,
+            'is_active': t.is_active,
+            'item_count': len(items),
+            'active_count': len(active_values),
+            'values': active_values,
+            'updated_at': t.updated_at.strftime('%Y-%m-%d %H:%M') if t.updated_at else '-',
+        })
+
+    max_sort = db.session.query(db.func.max(DictType.sort_order)) \
+        .filter(DictType.is_deleted == False).scalar() or 0
+    return jsonify({
+        'success': True,
+        'types': data,
+        'next_sort': max_sort + 1,
+        'pagination': {
+            'page': pagination.page,
+            'pages': pagination.pages,
+            'total': pagination.total,
+            'per_page': pagination.per_page,
+            'has_prev': pagination.has_prev,
+            'has_next': pagination.has_next,
+            'prev_num': pagination.prev_num,
+            'next_num': pagination.next_num,
+        }
+    })
+
+
+@admin_bp.route('/dicts/items')
+@admin_required
+@super_admin_required
+def dicts_items():
+    """指定字段下的枚举值列表"""
+    type_id = request.args.get('type_id', type=int)
+    if not type_id:
+        return jsonify({'success': False, 'message': '缺少字段参数'})
+    dtype = DictType.query.filter_by(id=type_id, is_deleted=False).first_or_404()
+    items = DictItem.query.filter_by(type_id=type_id, is_deleted=False) \
+        .order_by(DictItem.key.asc(), DictItem.id.asc()).all()
+    data = [{
+        'id': it.id,
+        'key': it.key,
+        'label': it.label,
+        'value': it.value,
+        'sort_order': it.sort_order,
+        'is_active': it.is_active,
+        'updated_at': it.updated_at.strftime('%Y-%m-%d %H:%M') if it.updated_at else '-',
+    } for it in items]
+    return jsonify({
+        'success': True,
+        'type': {'id': dtype.id, 'code': dtype.code, 'name': dtype.name},
+        'items': data,
+    })
+
+
+@admin_bp.route('/dicts/type/add', methods=['POST'])
+@admin_required
+@super_admin_required
+def dict_type_add():
+    code = (request.form.get('code') or '').strip()
+    name = (request.form.get('name') or '').strip()
+    sort_order = safe_int(request.form.get('sort_order', 0), 0)
+    if not name:
+        return jsonify({'success': False, 'message': '字段名称不能为空'})
+    if not code:
+        return jsonify({'success': False, 'message': '字段英文名不能为空'})
+    if DictType.query.filter_by(code=code).first():
+        return jsonify({'success': False, 'message': '字段英文名已存在'})
+    if sort_order <= 0:
+        max_sort = db.session.query(db.func.max(DictType.sort_order)) \
+            .filter(DictType.is_deleted == False).scalar() or 0
+        sort_order = max_sort + 1
+    dtype = DictType(code=code, name=name, sort_order=sort_order,
+                     is_active=request.form.get('is_active', '1') == '1')
+    db.session.add(dtype)
+    log_operation('add_dict_type', 'dict_type', 0, f'新增字段：{name}({code})')
+    db.session.commit()
+    return jsonify({'success': True, 'message': '字段添加成功', 'id': dtype.id})
+
+
+@admin_bp.route('/dicts/type/edit', methods=['POST'])
+@admin_required
+@super_admin_required
+def dict_type_edit():
+    type_id = request.form.get('type_id')
+    dtype = DictType.query.get_or_404(type_id)
+    code = (request.form.get('code') or '').strip()
+    name = (request.form.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'message': '字段名称不能为空'})
+    if not code:
+        return jsonify({'success': False, 'message': '字段英文名不能为空'})
+    exists = DictType.query.filter(DictType.code == code, DictType.id != dtype.id).first()
+    if exists:
+        return jsonify({'success': False, 'message': '字段英文名已存在'})
+    dtype.code = code
+    dtype.name = name
+    if request.form.get('sort_order') is not None:
+        dtype.sort_order = safe_int(request.form.get('sort_order'), dtype.sort_order)
+    if request.form.get('is_active') is not None:
+        dtype.is_active = request.form.get('is_active') == '1'
+    log_operation('edit_dict_type', 'dict_type', dtype.id, f'编辑字段：{name}({code})')
+    db.session.commit()
+    return jsonify({'success': True, 'message': '字段更新成功'})
+
+
+@admin_bp.route('/dicts/type/toggle-status', methods=['POST'])
+@admin_required
+@super_admin_required
+def dict_type_toggle_status():
+    type_id = request.form.get('type_id')
+    dtype = DictType.query.get_or_404(type_id)
+    dtype.is_active = not dtype.is_active
+    status_text = '启用' if dtype.is_active else '禁用'
+    log_operation('toggle_dict_type', 'dict_type', dtype.id, f'字段{status_text}：{dtype.name}')
+    db.session.commit()
+    return jsonify({'success': True, 'message': f'字段已{status_text}'})
+
+
+@admin_bp.route('/dicts/type/delete', methods=['POST'])
+@admin_required
+@super_admin_required
+def dict_type_delete():
+    type_id = request.form.get('type_id')
+    dtype = DictType.query.get_or_404(type_id)
+    dtype.is_deleted = True
+    DictItem.query.filter_by(type_id=dtype.id).update({'is_deleted': True})
+    log_operation('delete_dict_type', 'dict_type', dtype.id, f'删除字段：{dtype.name}')
+    db.session.commit()
+    return jsonify({'success': True, 'message': '字段删除成功'})
+
+
+@admin_bp.route('/dicts/item/add', methods=['POST'])
+@admin_required
+@super_admin_required
+def dict_item_add():
+    type_id = request.form.get('type_id', type=int)
+    dtype = DictType.query.filter_by(id=type_id, is_deleted=False).first()
+    if not dtype:
+        return jsonify({'success': False, 'message': '字段不存在'})
+    value = (request.form.get('value') or request.form.get('label') or '').strip()
+    if not value:
+        return jsonify({'success': False, 'message': '枚举值不能为空'})
+    key = safe_int(request.form.get('key', 0), 0)
+    if key <= 0:
+        max_key = db.session.query(db.func.max(DictItem.key)) \
+            .filter(DictItem.type_id == dtype.id, DictItem.is_deleted == False).scalar() or 0
+        key = max_key + 1
+    if DictItem.query.filter_by(type_id=dtype.id, key=key, is_deleted=False).first():
+        return jsonify({'success': False, 'message': f'键 {key} 已存在'})
+    if DictItem.query.filter_by(type_id=dtype.id, value=value, is_deleted=False).first():
+        return jsonify({'success': False, 'message': '该枚举值已存在'})
+    item = DictItem(
+        type_id=dtype.id, key=key, label=value, value=value, sort_order=key,
+        is_active=request.form.get('is_active', '1') == '1',
+    )
+    db.session.add(item)
+    log_operation('add_dict_item', 'dict_item', 0, f'新增枚举值：{dtype.name} / {value}')
+    db.session.commit()
+    return jsonify({'success': True, 'message': '枚举值添加成功'})
+
+
+@admin_bp.route('/dicts/item/edit', methods=['POST'])
+@admin_required
+@super_admin_required
+def dict_item_edit():
+    item_id = request.form.get('item_id')
+    item = DictItem.query.get_or_404(item_id)
+    value = (request.form.get('value') or request.form.get('label') or '').strip()
+    if not value:
+        return jsonify({'success': False, 'message': '枚举值不能为空'})
+    key = safe_int(request.form.get('key', item.key), item.key)
+    if key <= 0:
+        key = item.key
+    dup_key = DictItem.query.filter(
+        DictItem.type_id == item.type_id, DictItem.key == key,
+        DictItem.id != item.id, DictItem.is_deleted == False).first()
+    if dup_key:
+        return jsonify({'success': False, 'message': f'键 {key} 已存在'})
+    dup_val = DictItem.query.filter(
+        DictItem.type_id == item.type_id, DictItem.value == value,
+        DictItem.id != item.id, DictItem.is_deleted == False).first()
+    if dup_val:
+        return jsonify({'success': False, 'message': '该枚举值已存在'})
+    item.key = key
+    item.label = value
+    item.value = value
+    item.sort_order = key
+    if request.form.get('is_active') is not None:
+        item.is_active = request.form.get('is_active') == '1'
+    log_operation('edit_dict_item', 'dict_item', item.id, f'编辑枚举值：{value}')
+    db.session.commit()
+    return jsonify({'success': True, 'message': '枚举值更新成功'})
+
+
+@admin_bp.route('/dicts/item/toggle-status', methods=['POST'])
+@admin_required
+@super_admin_required
+def dict_item_toggle_status():
+    item_id = request.form.get('item_id')
+    item = DictItem.query.get_or_404(item_id)
+    item.is_active = not item.is_active
+    status_text = '启用' if item.is_active else '禁用'
+    log_operation('toggle_dict_item', 'dict_item', item.id, f'枚举值{status_text}：{item.label}')
+    db.session.commit()
+    return jsonify({'success': True, 'message': f'枚举值已{status_text}'})
+
+
+@admin_bp.route('/dicts/item/delete', methods=['POST'])
+@admin_required
+@super_admin_required
+def dict_item_delete():
+    item_ids = request.form.getlist('item_ids')
+    if item_ids:
+        for iid in item_ids:
+            item = DictItem.query.get(iid)
+            if item:
+                item.is_deleted = True
+                log_operation('delete_dict_item', 'dict_item', item.id, f'删除枚举值：{item.label}')
+    else:
+        item_id = request.form.get('item_id')
+        item = DictItem.query.get_or_404(item_id)
+        item.is_deleted = True
+        log_operation('delete_dict_item', 'dict_item', item.id, f'删除枚举值：{item.label}')
+    db.session.commit()
+    return jsonify({'success': True, 'message': '枚举值删除成功'})
+
+
+@admin_bp.route('/dicts/options')
+@admin_required
+def dict_options():
+    """按字段英文名批量获取“启用中”的枚举值，用于岗位表单/筛选下拉。"""
+    codes = (request.args.get('codes') or '').strip()
+    if not codes:
+        return jsonify({'success': True, 'data': {}})
+    code_list = [c.strip() for c in codes.split(',') if c.strip()]
+    types = DictType.query.filter(DictType.code.in_(code_list),
+                                  DictType.is_deleted == False,
+                                  DictType.is_active == True).all()
+    data = {}
+    for t in types:
+        items = DictItem.query.filter_by(type_id=t.id, is_deleted=False, is_active=True) \
+            .order_by(DictItem.key.asc(), DictItem.id.asc()).all()
+        data[t.code] = [{'key': it.key, 'value': it.value} for it in items]
+    for c in code_list:
+        data.setdefault(c, [])
+    return jsonify({'success': True, 'data': data})
+
+
 # ==================== 岗位管理 ====================
 @admin_bp.route('/jobs/page')
 @admin_required
@@ -420,13 +720,14 @@ def jobs_list():
         query = query.filter(db.or_(Job.city == city, Job.city.like(city + '%')))
     if education:
         if education == '不限':
-            query = query.filter(db.or_(Job.education_req == '', Job.education_req == None, Job.education_req == '不限'))
+            query = query.filter(db.or_(Job.education_req == '不限',
+                                        Job.education_req == '', Job.education_req == None))
         else:
             query = query.filter(Job.education_req == education)
     if company_type:
         query = query.filter(Job.company_type == company_type)
     if recruit_type:
-        query = query.filter(Job.recruit_type.contains(recruit_type))
+        query = query.filter(Job.recruit_type == recruit_type)
     if status_filter == 'active':
         query = query.filter(db.or_(Job.deadline == None, Job.deadline >= datetime.now()))
     elif status_filter == 'expired':
@@ -957,17 +1258,17 @@ def job_import():
                         city=str(val(row, '城市') or ''),
                         job_name=v_job_name,
                         company_name=v_company,
-                        company_type=str(val(row, '公司性质') or ''),
-                        company_size=str(val(row, '公司规模') or ''),
+                        company_type=str(val(row, '公司性质') or '').strip(),
+                        company_size=str(val(row, '公司规模') or '').strip(),
                         company_industry=str(val(row, '公司行业') or ''),
-                        recruit_type=str(val(row, '招聘类型') or '社会招聘'),
-                        job_nature=str(val(row, '职位性质') or ''),
+                        recruit_type=str(val(row, '招聘类型') or '社会招聘').strip(),
+                        job_nature=str(val(row, '职位性质') or '').strip(),
                         job_category=str(val(row, '职位类别') or ''),
                         source=v_source,
                         salary_range=v_salary,
                         recruit_count=safe_int(v_count or '1', 1),
-                        education_req=str(val(row, '学历要求') or ''),
-                        experience_req=str(val(row, '经验要求') or ''),
+                        education_req=str(val(row, '学历要求') or '').strip(),
+                        experience_req=str(val(row, '经验要求') or '').strip(),
                         major_req=str(val(row, '专业要求') or ''),
                         work_location=str(val(row, '工作地点') or ''),
                         address=str(val(row, '详细地址') or ''),
@@ -1015,10 +1316,10 @@ def job_template():
     ws.append(['来源', '省份', '城市', '职位名称', '公司名称', '公司性质', '公司规模', '公司行业',
                '招聘类型', '职位性质', '职位类别', '薪资范围', '招聘人数', '学历要求',
                '经验要求', '专业要求', '工作地点', '详细地址', '报名截止(YYYY-MM-DD HH:MM:SS)', '职位描述'])
-    ws.append(['企业官网', '新疆', '阿勒泰地区',
+    ws.append(['国聘', '新疆', '阿勒泰地区',
                '北屯 供应链组织者（应届本科，财务/统计相关专业）',
-               '国药集团新疆新特药业有限公司', '国企', '1000-2000人', '批发业',
-               '校园招聘', '校招', '渠道专员/助理', '5600~7000 元/月', 1,
+               '国药集团新疆新特药业有限公司', '国企', '1000-9999人', '批发业',
+               '社会招聘', '全职', '渠道专员/助理', '5600~7000 元/月', 1,
                '本科', '应届生', '财务会计类, 统计学类', '阿勒泰', '',
                '2026-11-09 23:59:59',
                '负责资质证照的备案、盯计划、反馈缺货、协调配送、调价、退货、对账、回款核销等全链路运营操作'])
@@ -1133,6 +1434,13 @@ def user_add():
         
         if User.query.filter_by(username=phone, is_deleted=False).first():
             msg = f'手机号"{phone}"已注册'
+            if ajax:
+                return jsonify({'success': False, 'message': msg})
+            flash(msg, 'danger')
+            return render_template('admin/user_form.html', **ctx)
+
+        if User.query.filter_by(phone=phone, is_deleted=False).first():
+            msg = f'手机号"{phone}"已被使用'
             if ajax:
                 return jsonify({'success': False, 'message': msg})
             flash(msg, 'danger')
@@ -1495,6 +1803,13 @@ def student_add():
                 return jsonify({'success': False, 'message': msg})
             flash(msg, 'danger')
             return render_template('admin/student_form.html', **ctx)
+
+        if User.query.filter_by(id_card=id_card, is_deleted=False).first():
+            msg = '该身份证号已被其他学员使用'
+            if ajax:
+                return jsonify({'success': False, 'message': msg})
+            flash(msg, 'danger')
+            return render_template('admin/student_form.html', **ctx)
         
         gender, birth_date, age = User.parse_id_card(id_card)
         if not password:
@@ -1751,9 +2066,9 @@ def push_list():
             'id': push.id,
             'job_name': push.job.job_name if push.job else '',
             'company_name': push.job.company_name if push.job else '',
-            'student': push.student.real_name or push.student.username,
-            'campus': push.student.campus.name if push.student.campus else '-',
-            'pusher': push.pusher.real_name or push.pusher.username,
+            'student': (push.student.real_name or push.student.username) if push.student else '-',
+            'campus': push.student.campus.name if (push.student and push.student.campus) else '-',
+            'pusher': (push.pusher.real_name or push.pusher.username) if push.pusher else '-',
             'pushed_at': push.pushed_at.strftime('%Y-%m-%d %H:%M'),
             'updated_at': push.updated_at.strftime('%Y-%m-%d %H:%M') if push.updated_at else '-',
             'is_read': push.is_read,
@@ -1830,6 +2145,10 @@ def push_toggle_revoke():
     push = PushRecord.query.filter_by(id=push_id, is_deleted=False).first()
     if not push:
         return jsonify({'success': False, 'message': '推送记录不存在'})
+    # 非超管仅能操作本校区学员的推送
+    campus_filter = get_campus_filter()
+    if campus_filter is not None and (not push.student or push.student.campus_id != campus_filter):
+        return jsonify({'success': False, 'message': '无权操作其他校区的推送记录'})
     push.is_revoked = not push.is_revoked
     status_text = '撤销' if push.is_revoked else '恢复'
     log_operation('toggle_push_revoke', 'push', push.id,
@@ -1883,7 +2202,7 @@ def logs_list():
         logs.append({
             'id': log.id,
             'created_at': log.created_at.strftime('%Y-%m-%d %H:%M:%S') if log.created_at else '-',
-            'operator': log.user.real_name or log.user.username,
+            'operator': (log.user.real_name or log.user.username) if log.user else '-',
             'action': log.action,
             'details': log.details or '-',
             'ip_address': log.ip_address
@@ -2132,6 +2451,10 @@ def import_students():
 
                 if User.query.filter_by(username=phone, is_deleted=False).first():
                     errors.append(f'第{idx}行：手机号{phone}已注册')
+                    continue
+
+                if User.query.filter_by(id_card=id_card, is_deleted=False).first():
+                    errors.append(f'第{idx}行：身份证号已存在')
                     continue
 
                 auto_gender, birth_date, age = User.parse_id_card(id_card)

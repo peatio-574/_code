@@ -28,31 +28,15 @@
                 </div>
                 <div class="col-md">
                     <label class="form-label fw-bold">公司性质：</label>
-                    <select class="form-select filter-select" name="company_type" onchange="applyFilters()">
-                        <option value="">全部</option>
-                        {% for ct in ['国企','民企','外企','合资','事业单位','政府机关','上市公司'] %}
-                        <option value="{{ ct }}">{{ ct }}</option>
-                        {% endfor %}
-                    </select>
+                    <select class="form-select filter-select" name="company_type" data-dict="company_type" data-placeholder="全部" onchange="applyFilters()"></select>
                 </div>
                 <div class="col-md">
                     <label class="form-label fw-bold">招聘类型：</label>
-                    <select class="form-select filter-select" name="recruit_type" onchange="applyFilters()">
-                        <option value="">全部</option>
-                        {% for rt in ['校园招聘','社会招聘','实习'] %}
-                        <option value="{{ rt }}">{{ rt }}</option>
-                        {% endfor %}
-                    </select>
+                    <select class="form-select filter-select" name="recruit_type" data-dict="recruit_type" data-placeholder="全部" onchange="applyFilters()"></select>
                 </div>
                 <div class="col-md">
                     <label class="form-label fw-bold">学历要求：</label>
-                    <select class="form-select filter-select" name="education" onchange="applyFilters()">
-                        <option value="">全部</option>
-                        <option value="不限">不限</option>
-                        {% for e in ['大专','本科','硕士','博士'] %}
-                        <option value="{{ e }}">{{ e }}</option>
-                        {% endfor %}
-                    </select>
+                    <select class="form-select filter-select" name="education" data-dict="education_req" data-placeholder="全部" onchange="applyFilters()"></select>
                 </div>
                 <div class="col-md">
                     <label class="form-label fw-bold">状态：</label>
@@ -549,6 +533,38 @@ function applyFiltersFromUrl() {
     if (params.has('per_page')) { const pp = parseInt(params.get('per_page'), 10); if ([20,50,100].includes(pp)) currentPerPage = pp; }
 }
 
+// 从字典管理加载筛选下拉（仅启用中的字典项；禁用后不再出现在筛选中）
+function fillFilterDictSelect(el, items) {
+    var placeholder = el.dataset.placeholder || '全部';
+    el.innerHTML = '';
+    var ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = placeholder;
+    el.appendChild(ph);
+    (items || []).forEach(function(item) {
+        var opt = document.createElement('option');
+        opt.value = item.value;
+        opt.textContent = item.value;
+        el.appendChild(opt);
+    });
+}
+
+function loadFilterDicts() {
+    var selects = Array.prototype.slice.call(document.querySelectorAll('#searchForm select[data-dict]'));
+    if (!selects.length) return Promise.resolve();
+    var codes = selects.map(function(el) { return el.dataset.dict; })
+        .filter(function(v, i, a) { return a.indexOf(v) === i; });
+    return fetch('{{ url_for("admin.dict_options") }}?codes=' + encodeURIComponent(codes.join(',')))
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            var data = res.data || {};
+            selects.forEach(function(el) { fillFilterDictSelect(el, data[el.dataset.dict] || []); });
+        })
+        .catch(function() {
+            selects.forEach(function(el) { fillFilterDictSelect(el, []); });
+        });
+}
+
 function syncFormToFilters() {
     const kw = document.querySelector('#searchForm [name="keyword"]');
     if (kw) kw.value = filters.keyword || '';
@@ -842,9 +858,11 @@ function loadRegions() {
     });
 }
 
-syncFormToFilters();
-loadRegions();
-loadJobs();
+loadFilterDicts().then(function() {
+    syncFormToFilters();
+    loadRegions();
+    loadJobs();
+});
 </script>
 
 <script>

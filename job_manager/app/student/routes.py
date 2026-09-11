@@ -91,13 +91,17 @@ def my_pushes():
         ))
 
     if education:
-        query = query.filter(Job.education_req == education)
+        if education == '不限':
+            query = query.filter(db.or_(Job.education_req == '不限',
+                                        Job.education_req == '', Job.education_req == None))
+        else:
+            query = query.filter(Job.education_req == education)
 
     if city:
         query = query.filter(Job.city.contains(city))
 
     if company_type:
-        query = query.filter(Job.company_type.contains(company_type))
+        query = query.filter(Job.company_type == company_type)
 
     if deadline_filter:
         try:
@@ -108,11 +112,15 @@ def my_pushes():
             pass
 
     if salary:
-        matched_ids = [jid for jid, sr in db.session.query(Job.id, Job.salary_range).all() if _salary_match(sr, salary)]
+        # 薪资为自由文本，仅在候选（本学员已推送且满足其他条件）范围内解析匹配，避免全表扫描
+        candidate_rows = query.with_entities(Job.id, Job.salary_range).all()
+        matched_ids = [jid for jid, sr in candidate_rows if _salary_match(sr, salary)]
         query = query.filter(Job.id.in_(matched_ids or [-1]))
 
     if company_size:
-        matched_ids = [jid for jid, cs in db.session.query(Job.id, Job.company_size).all() if _size_match(cs, company_size)]
+        # 公司规模为文本，仅在候选（本学员已推送且满足其他条件）范围内解析匹配，避免全表扫描
+        size_rows = query.with_entities(Job.id, Job.company_size).all()
+        matched_ids = [jid for jid, cs in size_rows if _size_match(cs, company_size)]
         query = query.filter(Job.id.in_(matched_ids or [-1]))
 
     if sort == 'newest':
@@ -204,13 +212,17 @@ def my_pushes_api():
         ))
 
     if education:
-        query = query.filter(Job.education_req == education)
+        if education == '不限':
+            query = query.filter(db.or_(Job.education_req == '不限',
+                                        Job.education_req == '', Job.education_req == None))
+        else:
+            query = query.filter(Job.education_req == education)
 
     if city:
         query = query.filter(Job.city.contains(city))
 
     if company_type:
-        query = query.filter(Job.company_type.contains(company_type))
+        query = query.filter(Job.company_type == company_type)
 
     if deadline_filter:
         try:
@@ -221,11 +233,15 @@ def my_pushes_api():
             pass
 
     if salary:
-        matched_ids = [jid for jid, sr in db.session.query(Job.id, Job.salary_range).all() if _salary_match(sr, salary)]
+        # 薪资为自由文本，仅在候选（本学员已推送且满足其他条件）范围内解析匹配，避免全表扫描
+        candidate_rows = query.with_entities(Job.id, Job.salary_range).all()
+        matched_ids = [jid for jid, sr in candidate_rows if _salary_match(sr, salary)]
         query = query.filter(Job.id.in_(matched_ids or [-1]))
 
     if company_size:
-        matched_ids = [jid for jid, cs in db.session.query(Job.id, Job.company_size).all() if _size_match(cs, company_size)]
+        # 公司规模为文本，仅在候选（本学员已推送且满足其他条件）范围内解析匹配，避免全表扫描
+        size_rows = query.with_entities(Job.id, Job.company_size).all()
+        matched_ids = [jid for jid, cs in size_rows if _size_match(cs, company_size)]
         query = query.filter(Job.id.in_(matched_ids or [-1]))
 
     if sort == 'newest':
@@ -322,7 +338,7 @@ def logs_data():
         logs.append({
             'id': log.id,
             'created_at': log.created_at.strftime('%Y-%m-%d %H:%M:%S') if log.created_at else '-',
-            'operator': log.user.real_name or log.user.username,
+            'operator': (log.user.real_name or log.user.username) if log.user else '-',
             'action': log.action,
             'details': log.details or '-',
             'ip_address': log.ip_address,

@@ -48,11 +48,9 @@
         </select>
         <select class="form-select form-select-sm filter-item" name="education" onchange="applyFilter('education', this.value)">
             <option value="">学历</option>
-            <option value="不限" {% if education == '不限' %}selected{% endif %}>不限</option>
-            <option value="大专" {% if education == '大专' %}selected{% endif %}>大专</option>
-            <option value="本科" {% if education == '本科' %}selected{% endif %}>本科</option>
-            <option value="硕士" {% if education == '硕士' %}selected{% endif %}>硕士</option>
-            <option value="博士" {% if education == '博士' %}selected{% endif %}>博士</option>
+            {% for item in dict_options('education_req') %}
+            <option value="{{ item.value }}" {% if education == item.value %}selected{% endif %}>{{ item.value }}</option>
+            {% endfor %}
         </select>
         <select class="form-select form-select-sm filter-item" name="company_size" onchange="applyFilter('company_size', this.value)">
             <option value="">公司规模</option>

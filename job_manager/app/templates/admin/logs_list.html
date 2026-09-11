@@ -16,6 +16,9 @@
                     <option value="login">登录</option>
                     <option value="logout">登出</option>
                     <option value="change_password">修改密码</option>
+                    {% if current_user.is_student() %}
+                    <option value="edit_profile">修改资料</option>
+                    {% else %}
                     <optgroup label="校区管理">
                         <option value="add_campus">新增校区</option>
                         <option value="edit_campus">编辑校区</option>
@@ -49,6 +52,20 @@
                         <option value="push_jobs">推送岗位</option>
                         <option value="toggle_push_revoke">撤销/恢复推送</option>
                     </optgroup>
+                    <optgroup label="字典管理">
+                        <option value="add_dict_type">新增字段</option>
+                        <option value="edit_dict_type">编辑字段</option>
+                        <option value="toggle_dict_type">启用/禁用字段</option>
+                        <option value="delete_dict_type">删除字段</option>
+                        <option value="add_dict_item">新增枚举值</option>
+                        <option value="edit_dict_item">编辑枚举值</option>
+                        <option value="toggle_dict_item">启用/禁用枚举值</option>
+                        <option value="delete_dict_item">删除枚举值</option>
+                    </optgroup>
+                    <optgroup label="AI识别">
+                        <option value="AI_ANALYZE">AI简历识别</option>
+                    </optgroup>
+                    {% endif %}
                 </select>
             </div>
             {% if current_user.is_super_admin() %}
@@ -120,7 +137,7 @@
 <script>
 // 操作类型映射
 const ACTION_MAP = {
-    login: '登录', logout: '登出', change_password: '修改密码',
+    login: '登录', logout: '登出', change_password: '修改密码', edit_profile: '修改资料',
     add_campus: '新增校区', edit_campus: '编辑校区',
     toggle_campus_status: '启用/禁用校区', delete_campus: '删除校区',
     add_role: '新增角色', edit_role: '编辑角色',
@@ -130,7 +147,12 @@ const ACTION_MAP = {
     import_admins: '导入管理员',
     toggle_student_status: '启用/禁用学员', import_students: '导入学员',
     add_job: '新增岗位', edit_job: '编辑岗位', delete_job: '删除岗位',
-    import_jobs: '导入岗位', push_jobs: '推送岗位', toggle_push_revoke: '撤销/恢复推送'
+    import_jobs: '导入岗位', push_jobs: '推送岗位', toggle_push_revoke: '撤销/恢复推送',
+    add_dict_type: '新增字段', edit_dict_type: '编辑字段',
+    toggle_dict_type: '启用/禁用字段', delete_dict_type: '删除字段',
+    add_dict_item: '新增枚举值', edit_dict_item: '编辑枚举值',
+    toggle_dict_item: '启用/禁用枚举值', delete_dict_item: '删除枚举值',
+    AI_ANALYZE: 'AI简历识别'
 };
 
 let currentPage = 1;

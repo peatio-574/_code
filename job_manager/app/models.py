@@ -245,6 +245,53 @@ class OperationLog(db.Model):
     user = db.relationship('User', backref='operation_logs')
 
 
+class DictType(db.Model):
+    """
+    数据字典类型表
+    用于存储可自定义的字段字典（如：公司性质、公司规模、招聘类型、学历要求、经验要求、来源、职位性质等）
+    """
+    __tablename__ = 'dict_types'
+    __table_args__ = {'comment': '数据字典类型表'}
+
+    id = db.Column(db.Integer, primary_key=True, comment='类型ID')
+    code = db.Column(db.String(50), unique=True, nullable=False, index=True, comment='类型编码，如 company_type')
+    name = db.Column(db.String(50), nullable=False, comment='类型名称，如 公司性质')
+    sort_order = db.Column(db.Integer, default=0, comment='排序值')
+    is_active = db.Column(db.Boolean, default=True, comment='是否启用：1=启用，0=禁用')
+    is_deleted = db.Column(db.Boolean, default=False, comment='是否删除：1=已删除，0=正常')
+    created_at = db.Column(db.DateTime, default=datetime.now, comment='创建时间')
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+    items = db.relationship('DictItem', backref='dict_type', lazy='dynamic',
+                            cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<DictType {self.code}>'
+
+
+class DictItem(db.Model):
+    """
+    数据字典项表（键值对）
+    禁用后，在岗位等业务下拉中不再可见
+    """
+    __tablename__ = 'dict_items'
+    __table_args__ = {'comment': '数据字典项表'}
+
+    id = db.Column(db.Integer, primary_key=True, comment='字典项ID')
+    type_id = db.Column(db.Integer, db.ForeignKey('dict_types.id'), nullable=False, index=True, comment='所属类型ID')
+    key = db.Column('dict_key', db.Integer, default=1, comment='键（每个类型内从1自增，业务字段存储键）')
+    label = db.Column(db.String(100), nullable=False, comment='显示名称（与 value 一致）')
+    value = db.Column(db.String(100), nullable=False, comment='枚举值（业务展示值）')
+    sort_order = db.Column(db.Integer, default=0, comment='排序值')
+    is_active = db.Column(db.Boolean, default=True, comment='是否启用：1=启用，0=禁用')
+    is_deleted = db.Column(db.Boolean, default=False, comment='是否删除：1=已删除，0=正常')
+    created_at = db.Column(db.DateTime, default=datetime.now, comment='创建时间')
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+    def __repr__(self):
+        return f'<DictItem {self.label}>'
+
+
 class ResumeAnalysisLog(db.Model):
     """
     AI 简历识别记录表

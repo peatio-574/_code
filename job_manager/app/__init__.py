@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify
 from flask_login import LoginManager
 import os
 from . import config as config_module
-from .models import db, User, Campus, Role
+from .models import db, User, Campus, Role, DictType, DictItem
 from .permissions import get_user_permissions, can_access_menu as _can_access_menu, validate_csrf
 
 login_manager = LoginManager()
@@ -26,6 +26,9 @@ def create_app(config_name='default'):
 
     db.init_app(app)
     login_manager.init_app(app)
+
+    from . import dict_service
+    app.jinja_env.globals['dict_options'] = dict_service.options
 
     @app.before_request
     def csrf_protect():
@@ -57,6 +60,8 @@ def create_app(config_name='default'):
     with app.app_context():
         db.create_all()
         _add_missing_columns()
+        _normalize_dict_sort()
+        _ensure_dict_keys()
         _create_defaults()
 
     # 确保上传目录存在
@@ -172,6 +177,60 @@ def _add_missing_columns():
         db.session.rollback()
 
 
+def _normalize_dict_sort():
+    """把历史从 0 起算的字典排序规范为从 1 起算（幂等，仅当存在 0 时整体 +1）。"""
+    try:
+        if DictType.query.filter(DictType.is_deleted == False, DictType.sort_order == 0).first():
+            db.session.query(DictType).filter(DictType.is_deleted == False).update(
+                {DictType.sort_order: DictType.sort_order + 1}, synchronize_session=False)
+        for dtype in DictType.query.filter_by(is_deleted=False).all():
+            has_zero = DictItem.query.filter_by(
+                type_id=dtype.id, is_deleted=False, sort_order=0).first()
+            if has_zero:
+                db.session.query(DictItem).filter(
+                    DictItem.type_id == dtype.id, DictItem.is_deleted == False).update(
+                    {DictItem.sort_order: DictItem.sort_order + 1}, synchronize_session=False)
+        db.session.commit()
+    except Exception as e:
+        print('[migrate] 字典排序规范化失败:', e)
+        db.session.rollback()
+
+
+def _ensure_dict_keys():
+    """为 dict_items 增加 dict_key 列（若缺失），并保证每个类型内的键唯一、从 1 起。
+
+    历史数据没有键时（列刚新增为 NULL，或被默认值填成同一个数），按排序重新编号 1..n。
+    """
+    from sqlalchemy import inspect, text
+    try:
+        insp = inspect(db.engine)
+        cols = [c['name'] for c in insp.get_columns('dict_items')]
+        if 'dict_key' not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE dict_items ADD COLUMN dict_key INT NULL'))
+    except Exception as e:
+        print('[migrate] 新增 dict_key 列失败:', e)
+        db.session.rollback()
+
+    try:
+        for dtype in DictType.query.filter_by(is_deleted=False).all():
+            items = DictItem.query.filter_by(type_id=dtype.id, is_deleted=False) \
+                .order_by(DictItem.sort_order.asc(), DictItem.id.asc()).all()
+            if not items:
+                continue
+            keys = [it.key for it in items]
+            unique_keys = {k for k in keys if k}
+            valid = all(k and k > 0 for k in keys) and len(unique_keys) == len(keys)
+            if not valid:
+                for idx, it in enumerate(items, start=1):
+                    it.key = idx
+                    it.sort_order = idx
+        db.session.commit()
+    except Exception as e:
+        print('[migrate] 归一化 dict_key 失败:', e)
+        db.session.rollback()
+
+
 def _create_defaults():
     # 默认数据初始化：表里已有则跳过（含软删的复活），无则创建，保证幂等不报错。
 
@@ -203,5 +262,28 @@ def _create_defaults():
             admin = User(username=uname, user_type='super_admin', real_name=rname)
             admin.set_password('admin123')
             db.session.add(admin)
+
+    # 默认字典（键值对）：类型不存在则创建；类型下从未配置过字典项时才写入默认值，
+    # 避免覆盖超管后续的增删改。
+    default_dicts = [
+        ('company_type', '公司性质', ['国企', '民企', '外企', '合资', '事业单位', '政府机关', '上市公司']),
+        ('company_size', '公司规模', ['0-20人', '20-99人', '100-499人', '500-999人', '1000-9999人', '10000人以上']),
+        ('recruit_type', '招聘类型', ['校园招聘', '社会招聘', '实习']),
+        ('education_req', '学历要求', ['不限', '大专', '本科', '硕士', '博士']),
+        ('experience_req', '经验要求', ['不限', '应届生', '1年以内', '1-3年', '3-5年', '5-10年', '10年以上']),
+        ('source', '来源', ['国聘', '智联招聘']),
+        ('job_nature', '职位性质', ['全职', '兼职']),
+    ]
+    for idx, (code, name, values) in enumerate(default_dicts):
+        dtype = DictType.query.filter_by(code=code).first()
+        if dtype is None:
+            dtype = DictType(code=code, name=name, sort_order=idx + 1)
+            db.session.add(dtype)
+            db.session.flush()  # 立即拿到 dtype.id
+        # 该字段下尚无任何枚举值时才写入默认值（已有则尊重超管的增删改，不覆盖）
+        has_items = DictItem.query.filter_by(type_id=dtype.id).count() > 0
+        if not has_items:
+            for i, v in enumerate(values):
+                db.session.add(DictItem(type_id=dtype.id, key=i + 1, label=v, value=v, sort_order=i + 1))
 
     db.session.commit()

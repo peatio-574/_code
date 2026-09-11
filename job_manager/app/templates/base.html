@@ -737,6 +737,9 @@
             <a href="{{ url_for('admin.roles_page') }}" class="menu-item {% if 'role' in request.endpoint %}active{% endif %}">
                 <i class="bi bi-person-badge"></i> 角色管理
             </a>
+            <a href="{{ url_for('admin.dicts_page') }}" class="menu-item {% if 'dict' in request.endpoint %}active{% endif %}">
+                <i class="bi bi-diagram-3"></i> 字典管理
+            </a>
             <a href="{{ url_for('admin.logs_page') }}" class="menu-item {% if request.endpoint == 'admin.logs_page' %}active{% endif %}">
                 <i class="bi bi-journal-text"></i> 操作日志
             </a>
@@ -801,6 +804,7 @@
                 <div class="menu-title">系统管理</div>
                 <a href="{{ url_for('admin.campuses_page') }}" class="menu-item {% if 'campus' in request.endpoint %}active{% endif %}"><i class="bi bi-building"></i> 校区管理</a>
                 <a href="{{ url_for('admin.roles_page') }}" class="menu-item {% if 'role' in request.endpoint %}active{% endif %}"><i class="bi bi-person-badge"></i> 角色管理</a>
+                <a href="{{ url_for('admin.dicts_page') }}" class="menu-item {% if 'dict' in request.endpoint %}active{% endif %}"><i class="bi bi-diagram-3"></i> 字典管理</a>
                 <a href="{{ url_for('admin.logs_page') }}" class="menu-item {% if request.endpoint == 'admin.logs_page' %}active{% endif %}"><i class="bi bi-journal-text"></i> 操作日志</a>
             </div>
             {% elif current_user.is_admin() %}
