@@ -1384,7 +1384,8 @@ class DouDian(object):
                 PlayWright.click(know_ele)
                 time.sleep(1)
 
-        PlayWright.click('//input[@placeholder="开始时间"]')
+        PlayWright.click('//span[text()="展开"]/span')
+        PlayWright.click('//input[@placeholder="开始范围"]')
         PlayWright.click(f'//button[text()="{startMonth}月"]/../../../div[2]//td[contains(@class, "view")]/div[text()="{startDay}"]')
         PlayWright.click(f'//button[text()="{endMonth}月"]/../../../div[2]//td[contains(@class, "view")]/div[text()="{endDay}"]')
         PlayWright.click('//span[text()="确定"]')
@@ -1399,8 +1400,9 @@ class DouDian(object):
         try:
             # 勾选对应字段
             timeFlag = time.time()
-            PlayWright.click('//span[text()="导出订单"]')
             PlayWright.click('//span[text()="导出"]')
+            PlayWright.click('//span[text()="导出订单"]')
+            PlayWright.click('(//span[text()="导出"])[2]')
             PlayWright.click('//span[text()="确认"]')
 
             time.sleep(10)
