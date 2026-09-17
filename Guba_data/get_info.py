@@ -161,6 +161,7 @@ def get_guba_info(url, text):
         content = BeautifulSoup(content_html, 'html.parser').get_text(separator='\n', strip=True)
         content = re.sub(r'\[.*?]', '', content)
         content = re.sub(r'\$.*?\$', '', content)
+        content = content if content else '帖子暂无可用内容'
 
         publish_time = content_json.get('post_publish_time', '')
 
