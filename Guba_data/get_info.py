@@ -211,6 +211,7 @@ def get_caifuhao_info(url, text):
 def get_detail(url):
     """根据链接，获取帖子详情"""
     try:
+        time.sleep(0.2)
         response = requests.get(url, headers=HEADERS, timeout=30)
         response.encoding = 'utf-8'
         text = response.text
