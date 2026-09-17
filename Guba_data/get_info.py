@@ -83,6 +83,8 @@ def get_page_info(page_id):
             link = title_a.get('href')
             if not link:
                 continue
+            if link.startswith('//'):
+                continue
             link = 'https://guba.eastmoney.com' + link if not link.startswith('//') else 'https:' + link
 
             read_num = tr.select_one('div.read').get_text(strip=True) if tr.select_one('div.read') else ''
@@ -157,6 +159,8 @@ def get_guba_info(url, text):
     try:
         content_html = content_json.get('post_content') or ''
         content = BeautifulSoup(content_html, 'html.parser').get_text(separator='\n', strip=True)
+        content = re.sub(r'\[.*?]', '', content)
+        content = re.sub(r'\$.*?\$', '', content)
 
         publish_time = content_json.get('post_publish_time', '')
 
@@ -251,7 +255,6 @@ def get_all_contents(file):
         flag += 1
         if flag % 5 == 0:
             wb.save(file)
-            exit()
     wb.save(file)
 
 
