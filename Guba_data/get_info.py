@@ -118,6 +118,7 @@ def save_base_info(file):
                 logger.info(f'{row[0]}数据已存在')
                 continue  # 去重
             ws.append(row)
+            exists_link.append(row[0])
         wb.save(file)
 
 
