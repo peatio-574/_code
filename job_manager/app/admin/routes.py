@@ -1012,6 +1012,7 @@ def ai_record_resume_delete(record_id):
 
 @admin_bp.route('/jobs/add', methods=['GET', 'POST'])
 @admin_required
+@super_admin_required
 def job_add():
     ctx = get_template_context()
     if request.method == 'POST':
@@ -1057,6 +1058,7 @@ def job_add():
 
 @admin_bp.route('/jobs/edit/<int:id>', methods=['GET', 'POST'])
 @admin_required
+@super_admin_required
 def job_edit(id):
     ctx = get_template_context()
     job = Job.query.filter_by(id=id, is_deleted=False).first_or_404()
@@ -1129,6 +1131,7 @@ def job_data(id):
 
 @admin_bp.route('/jobs/delete', methods=['POST'])
 @admin_required
+@super_admin_required
 def job_delete():
     ids = request.form.getlist('job_ids')
     if not ids:

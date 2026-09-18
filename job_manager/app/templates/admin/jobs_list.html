@@ -52,6 +52,7 @@
                     <i class="bi bi-search"></i> 搜索
                 </button>
                 <a href="{{ url_for('admin.jobs_page') }}" class="btn btn-secondary btn-reset fw-bold">重置</a>
+                {% if current_user.is_super_admin() %}
                 <a href="{{ url_for('admin.job_add') }}{% if request.query_string %}?{{ request.query_string.decode() }}{% endif %}" class="btn btn-primary fw-bold">
                     <i class="bi bi-plus-lg"></i> 新增岗位
                 </a>
@@ -61,6 +62,7 @@
                 <button type="button" class="btn btn-primary fw-bold" id="batchDeleteBtn">
                     <i class="bi bi-trash"></i> 批量删除
                 </button>
+                {% endif %}
                 <button type="button" class="btn btn-warning fw-bold" id="refreshBtn" title="刷新">
                     <i class="bi bi-arrow-clockwise"></i> 刷新
                 </button>
@@ -623,6 +625,10 @@ function renderJobs(jobs) {
         const recruitColorMap = {'校园招聘': 'success', '社会招聘': 'primary', '实习': 'warning'};
         const rc = recruitColorMap[job.recruit_type] || 'secondary';
         const editUrl = JOB_EDIT_URL + job.id + (window.location.search || '');
+        const actionHtml = IS_SUPER_ADMIN
+            ? `<a href="${editUrl}" class="btn btn-sm btn-outline-primary me-1" title="编辑"><i class="bi bi-pencil"></i></a>
+               <button type="button" class="btn btn-sm btn-outline-danger" title="删除" onclick="showJobDeleteModal('${job.id}','${escapeAttr(job.job_name)}')"><i class="bi bi-trash"></i></button>`
+            : `<button type="button" class="btn btn-sm btn-outline-primary" title="查看详情" onclick="showJobDetail(${job.id})"><i class="bi bi-eye"></i> 查看详情</button>`;
         return `<tr style="height:50px;" class="${job.is_expired ? 'table-danger' : ''}">
             <td style="padding-left:15px;"><input type="checkbox" name="job_ids" value="${job.id}" class="job-checkbox"></td>
             <td><span class="text-primary fw-normal">${escapeHtml(job.job_name)}</span></td>
@@ -636,10 +642,7 @@ function renderJobs(jobs) {
             <td style="text-align:center;">${job.recruit_count}</td>
             <td>${deadlineHtml}</td>
             <td>${escapeHtml(job.updated_at) || '-'}</td>
-            <td style="text-align:center; white-space:nowrap;">
-                <a href="${editUrl}" class="btn btn-sm btn-outline-primary me-1" title="编辑"><i class="bi bi-pencil"></i></a>
-                <button type="button" class="btn btn-sm btn-outline-danger" title="删除" onclick="showJobDeleteModal('${job.id}','${escapeAttr(job.job_name)}')"><i class="bi bi-trash"></i></button>
-            </td>
+            <td style="text-align:center; white-space:nowrap;">${actionHtml}</td>
         </tr>`;
     }).join('');
     // 全选联动
@@ -752,7 +755,8 @@ document.getElementById('selectAll').addEventListener('change', function() {
     document.querySelectorAll('.job-checkbox').forEach(cb => cb.checked = this.checked);
 });
 
-document.getElementById('batchDeleteBtn').addEventListener('click', async function() {
+const batchDeleteBtnEl = document.getElementById('batchDeleteBtn');
+if (batchDeleteBtnEl) batchDeleteBtnEl.addEventListener('click', async function() {
     var checked = document.querySelectorAll('.job-checkbox:checked');
     if (checked.length === 0) { showToast('请选择要删除的岗位', 'warning'); return; }
     if (!confirm('确定删除选中的' + checked.length + ' 个岗位吗？')) return;
