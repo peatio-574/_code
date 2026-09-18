@@ -615,11 +615,44 @@ def analyze_resume(text: str, target_job: str = '') -> dict:
 
 # ==================== 5. 岗位筛选 ====================
 
+# 行政级别后缀：用于省市名称归一化（成都市 ↔ 成都，四川省 ↔ 四川）
+_ADMIN_SUFFIXES = ('特别行政区', '维吾尔自治区', '壮族自治区', '回族自治区', '自治区',
+                   '自治州', '地区', '省', '市', '盟')
+
+
+def _norm_region(name: str) -> str:
+    """去掉末尾行政级别后缀，便于“成都市/成都”“四川省/四川”互相匹配。"""
+    name = (name or '').strip()
+    for suf in _ADMIN_SUFFIXES:
+        if name.endswith(suf) and len(name) > len(suf):
+            return name[:-len(suf)]
+    return name
+
+
+def _keyword_tokens(keyword: str):
+    """把关键词按空白/常见分隔符拆成词元，用于放宽后的模糊匹配。"""
+    if not keyword:
+        return []
+    parts = re.split(r'[\s,，、;；/|]+', keyword)
+    return [p for p in (x.strip() for x in parts) if p]
+
+
+def _place_hit(db_value: str, target: str, norm_target: str) -> bool:
+    """判断岗位的省份/城市是否命中目标（兼容带/不带行政后缀，双向包含）。"""
+    if not target:
+        return False
+    v = _norm_region(db_value)
+    if not v:
+        return False
+    return v == norm_target or norm_target in v or v in norm_target
+
+
 def screen_jobs(screening: dict, limit: int = 50):
     """基于简历分析出的筛选条件，返回匹配度排序的岗位列表。
 
-    条件采用“尽量匹配、无结果则逐级放宽”的策略：先按全部条件筛选；若无结果，
-    依次放宽 经验要求 → 学历要求 → 省份/专业，尽量给出可推荐的岗位。
+    条件采用“尽量匹配、无结果则逐级放宽”的策略，放宽顺序：
+      经验 → 学历 → 专业 → 省份 → 城市 → 关键词。
+    最后一档仅保留“启用中”的岗位兜底，尽量给出可推荐结果。
     """
     from ..models import Job, db
 
@@ -630,26 +663,44 @@ def screen_jobs(screening: dict, limit: int = 50):
     experience = (screening.get('experience') or '').strip()
     major = (screening.get('major') or '').strip()
 
-    def build(use_province=True, use_education=True, use_experience=True, use_major=True):
-        query = Job.query.filter_by(is_deleted=False, status='active')
-        if keyword:
+    tokens = _keyword_tokens(keyword)
+    n_province = _norm_region(province)
+    n_city = _norm_region(city)
+
+    def build(use_keyword=True, use_city=True, use_province=True,
+              use_education=True, use_experience=True, use_major=True):
+        # 只推荐未删除且启用中的岗位（status 为空视为启用，兼容历史数据）
+        query = Job.query.filter(
+            Job.is_deleted == False,
+            db.or_(Job.status == 'active', Job.status == None, Job.status == ''),
+        )
+        if use_keyword and keyword:
+            ors = []
+            for tok in (tokens or [keyword]):
+                ors.extend([
+                    Job.job_name.contains(tok), Job.company_name.contains(tok),
+                    Job.job_category.contains(tok), Job.major_req.contains(tok),
+                    Job.work_location.contains(tok),
+                ])
+            query = query.filter(db.or_(*ors))
+        if use_province and province:
             query = query.filter(db.or_(
-                Job.job_name.contains(keyword), Job.company_name.contains(keyword),
-                Job.job_category.contains(keyword), Job.major_req.contains(keyword),
-                Job.work_location.contains(keyword),
+                Job.province == province, Job.province.like(province + '%'),
+                Job.province == n_province, Job.province.like(n_province + '%'),
             ))
-        if province and use_province:
-            query = query.filter(db.or_(Job.province == province, Job.province.like(province + '%')))
-        if city:
-            query = query.filter(db.or_(Job.city == city, Job.city.like(city + '%')))
-        if education and education != '不限' and use_education:
+        if use_city and city:
+            query = query.filter(db.or_(
+                Job.city == city, Job.city.like(city + '%'),
+                Job.city == n_city, Job.city.like(n_city + '%'),
+            ))
+        if use_education and education and education != '不限':
             # 兼容“本科 / 本科学历 / 本科及以上”等写法；无学历要求的岗位也匹配
             query = query.filter(db.or_(
                 Job.education_req == education,
                 Job.education_req.contains(education),
                 Job.education_req == '', Job.education_req == None,
             ))
-        if experience and experience != '不限' and use_experience:
+        if use_experience and experience and experience != '不限':
             _exp = experience.replace('年', '').strip()
             if _exp in ('应届生', '1年以内'):
                 query = query.filter(db.or_(
@@ -663,28 +714,40 @@ def screen_jobs(screening: dict, limit: int = 50):
                     Job.experience_req == '', Job.experience_req == None,
                     Job.experience_req == '不限',
                 ))
-        if major and use_major:
+        if use_major and major:
             query = query.filter(db.or_(Job.major_req.contains(major), Job.major_req == ''))
         return query
 
-    jobs = build().order_by(Job.updated_at.desc()).limit(limit).all()
-    if not jobs:
-        jobs = build(use_experience=False).limit(limit).all()
-    if not jobs:
-        jobs = build(use_experience=False, use_education=False).limit(limit).all()
-    if not jobs:
-        jobs = build(use_experience=False, use_education=False,
-                     use_major=False, use_province=False).limit(limit).all()
+    # 逐级放宽：任一档命中即返回
+    ladder = [
+        build(),
+        build(use_experience=False),
+        build(use_experience=False, use_education=False),
+        build(use_experience=False, use_education=False, use_major=False),
+        build(use_experience=False, use_education=False, use_major=False, use_province=False),
+        build(use_experience=False, use_education=False, use_major=False,
+              use_province=False, use_city=False),
+        build(use_experience=False, use_education=False, use_major=False,
+              use_province=False, use_city=False, use_keyword=False),
+    ]
+    jobs = []
+    for q in ladder:
+        jobs = q.order_by(Job.updated_at.desc()).limit(limit).all()
+        if jobs:
+            break
 
     def match_score(job):
         s = 50
-        text = f"{job.job_name}{job.job_category}{job.company_name}{job.major_req}{job.work_location}"
-        if keyword and keyword.lower() in text.lower():
-            s += 30
-        else:
-            s -= 10
-        if city and (city in text or city == job.city):
+        text = (f"{job.job_name}{job.job_category}{job.company_name}"
+                f"{job.major_req}{job.work_location}{job.province}{job.city}")
+        if keyword:
+            _toks = tokens or [keyword]
+            hit = any(tok.lower() in text.lower() for tok in _toks)
+            s += 30 if hit else -10
+        if _place_hit(job.city, city, n_city):
             s += 10
+        if _place_hit(job.province, province, n_province):
+            s += 5
         if education and (education in (job.education_req or '')):
             s += 10
         if experience and (experience in (job.experience_req or '')):
