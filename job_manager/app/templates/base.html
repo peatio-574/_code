@@ -98,6 +98,14 @@
             align-items: center;
             justify-content: center;
             color: white;
+            overflow: hidden;
+        }
+        .header-user .user-avatar img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+            display: block;
         }
         .header-user .user-name {
             color: white;
@@ -683,7 +691,11 @@
             <div class="header-welcome-wrap"><span class="header-welcome">你好，{% if current_user.is_super_admin() %}超级管理员{% elif current_user.is_admin() %}{{ current_user.real_name or current_user.username }}{{ current_user.role }}{% else %}{{ current_user.real_name or current_user.username }}{% endif %}！</span></div>
             <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle" data-bs-toggle="dropdown">
                 <div class="user-avatar">
+                    {% if current_user.avatar %}
+                    <img src="{{ current_user.avatar }}" alt="头像">
+                    {% else %}
                     <i class="bi bi-person-fill"></i>
+                    {% endif %}
                 </div>
                 <span class="user-name ms-2">{{ current_user.real_name or current_user.username }}</span>
             </a>
@@ -928,6 +940,24 @@
         new bootstrap.Modal(document.getElementById('myInfoModal')).show();
     }
 
+    function previewMyAvatar(input) {
+        if (!input.files || !input.files[0]) return;
+        var f = input.files[0];
+        if (!/^image\//.test(f.type)) { showToast('请选择图片文件', 'warning'); input.value = ''; return; }
+        if (f.size > 5 * 1024 * 1024) { showToast('头像不能超过 5MB', 'warning'); input.value = ''; return; }
+        var wrap = document.getElementById('pf_avatarWrap');
+        var img = document.getElementById('pf_avatarImg');
+        if (!img) {
+            var icon = document.getElementById('pf_avatarIcon');
+            if (icon) icon.remove();
+            img = document.createElement('img');
+            img.id = 'pf_avatarImg';
+            img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+            wrap.appendChild(img);
+        }
+        img.src = URL.createObjectURL(f);
+    }
+
     async function saveMyProfile() {
         var fd = new FormData();
         fd.append('csrf_token', '{{ csrf_token }}');
@@ -935,6 +965,9 @@
             var el = document.getElementById('pf_' + name);
             if (el) fd.append(name, el.value);
         });
+        var avatarInput = document.getElementById('pf_avatarInput');
+        var avatarFile = (avatarInput && avatarInput.files && avatarInput.files[0]) ? avatarInput.files[0] : null;
+        if (avatarFile) fd.append('avatar', avatarFile);
         try {
             var res = await fetch('{{ url_for("auth.update_profile") }}', {
                 method: 'POST',
@@ -944,6 +977,7 @@
             var data = await res.json();
             showToast(data.message || '保存成功', data.success ? 'success' : 'danger');
             if (data.success) {
+                if (avatarFile) { window.location.reload(); return; }
                 bootstrap.Modal.getInstance(document.getElementById('myInfoModal')).hide();
             }
         } catch (e) {
@@ -962,9 +996,17 @@
                 </div>
                 <div class="modal-body">
                     <div class="text-center mb-4">
-                        <div style="width:80px;height:80px;border-radius:50%;background:#e3f2fd;display:flex;align-items:center;justify-content:center;margin:0 auto;">
-                            <i class="bi bi-person-fill text-primary" style="font-size:40px;"></i>
+                        <div id="pf_avatarWrap" title="点击上传/更换头像"
+                             onclick="document.getElementById('pf_avatarInput').click()"
+                             style="width:80px;height:80px;border-radius:50%;background:#e3f2fd;display:flex;align-items:center;justify-content:center;margin:0 auto;overflow:hidden;cursor:pointer;">
+                            {% if current_user.avatar %}
+                            <img id="pf_avatarImg" src="{{ current_user.avatar }}" alt="头像" style="width:100%;height:100%;object-fit:cover;">
+                            {% else %}
+                            <i id="pf_avatarIcon" class="bi bi-person-fill text-primary" style="font-size:40px;"></i>
+                            {% endif %}
                         </div>
+                        <input type="file" id="pf_avatarInput" accept="image/*" style="display:none;" onchange="previewMyAvatar(this)">
+                        <div class="text-muted" style="font-size:12px;margin-top:6px;">点击头像上传/更换</div>
                         <h5 id="myInfo_name" class="mt-3 mb-1"></h5>
                         <span class="badge bg-info" id="myInfo_role"></span>
                     </div>

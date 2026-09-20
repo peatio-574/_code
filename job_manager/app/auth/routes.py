@@ -4,6 +4,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from datetime import datetime
 from ..models import db, User, OperationLog
 from ..permissions import init_csrf
+from ..utils.uploads import save_avatar
 from . import auth_bp
 
 
@@ -211,6 +212,16 @@ def update_profile():
             current_user.graduation_date = datetime.strptime(graduation_date, '%Y-%m-%d').date() if graduation_date else None
         except ValueError:
             pass
+
+    # 头像上传（可选）：上传到固定目录并更新链接
+    avatar_file = request.files.get('avatar')
+    if avatar_file and avatar_file.filename:
+        try:
+            new_avatar = save_avatar(avatar_file, current_user.avatar)
+            if new_avatar:
+                current_user.avatar = new_avatar
+        except ValueError as e:
+            return jsonify({'success': False, 'message': str(e)})
 
     db.session.commit()
 

@@ -57,6 +57,13 @@ def create_app(config_name='default'):
     app.register_blueprint(admin_bp, url_prefix='/admin')
     app.register_blueprint(student_bp, url_prefix='/student')
 
+    from flask import send_from_directory
+
+    @app.route('/uploads/<path:filename>')
+    def serve_upload(filename):
+        """提供 uploads 目录下的文件访问（头像、附件等）。"""
+        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
     with app.app_context():
         db.create_all()
         _add_missing_columns()

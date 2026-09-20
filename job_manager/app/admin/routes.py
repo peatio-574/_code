@@ -12,6 +12,7 @@ from ..permissions import (
     get_user_permissions, can_access_menu,
     get_campus_filter, validate_object_campus
 )
+from ..utils.uploads import save_avatar
 from . import admin_bp
 from datetime import datetime
 import openpyxl
@@ -1453,7 +1454,19 @@ def user_add():
         password = request.form.get('password', '')
         if not password:
             password = phone[-6:] if len(phone) >= 6 else '123456'
-        
+
+        # 头像：优先上传文件，其次保留表单里的文本值
+        avatar_path = request.form.get('avatar', '')
+        _avatar_file = request.files.get('avatar')
+        if _avatar_file and _avatar_file.filename:
+            try:
+                avatar_path = save_avatar(_avatar_file, '') or avatar_path
+            except ValueError as e:
+                if ajax:
+                    return jsonify({'success': False, 'message': str(e)})
+                flash(str(e), 'danger')
+                return render_template('admin/user_form.html', **ctx)
+
         user = User(
             username=phone,
             user_type='admin',
@@ -1465,7 +1478,7 @@ def user_add():
             can_view_jobs=bool(request.form.get('can_view_jobs')),
             can_manage_students=bool(request.form.get('can_manage_students')),
             can_ai_recognition=bool(request.form.get('can_ai_recognition')),
-            avatar=request.form.get('avatar', ''),
+            avatar=avatar_path,
             is_active=request.form.get('is_active') == '1',
             created_by=current_user.id
         )
@@ -1519,7 +1532,16 @@ def user_edit(id):
         user.can_view_jobs = bool(request.form.get('can_view_jobs'))
         user.can_manage_students = bool(request.form.get('can_manage_students'))
         user.can_ai_recognition = bool(request.form.get('can_ai_recognition'))
-        user.avatar = request.form.get('avatar', '')
+        # 头像：优先上传文件；未上传则保留原头像
+        _avatar_file = request.files.get('avatar')
+        if _avatar_file and _avatar_file.filename:
+            try:
+                user.avatar = save_avatar(_avatar_file, user.avatar)
+            except ValueError as e:
+                if _is_ajax():
+                    return jsonify({'success': False, 'message': str(e)})
+                flash(str(e), 'danger')
+                return render_template('admin/user_form.html', **ctx)
         user.is_active = request.form.get('is_active') == '1'
         
         if new_password != user.password_plain:
@@ -1825,6 +1847,18 @@ def student_add():
             if _parsed:
                 _gdate = _parsed.date()
 
+        # 头像：优先上传文件，其次保留表单里的文本值
+        avatar_path = request.form.get('avatar', '')
+        _avatar_file = request.files.get('avatar')
+        if _avatar_file and _avatar_file.filename:
+            try:
+                avatar_path = save_avatar(_avatar_file, '') or avatar_path
+            except ValueError as e:
+                if ajax:
+                    return jsonify({'success': False, 'message': str(e)})
+                flash(str(e), 'danger')
+                return render_template('admin/student_form.html', **ctx)
+
         user = User(
             username=phone,
             user_type='student',
@@ -1844,7 +1878,7 @@ def student_add():
             remark=request.form.get('remark', ''),
             graduation_date=_gdate,
             origin_place=request.form.get('origin_place', ''),
-            avatar=request.form.get('avatar', ''),
+            avatar=avatar_path,
             campus_id=current_user.campus_id,
             created_by=current_user.id
         )
@@ -1895,7 +1929,16 @@ def student_edit(id):
         _parsed = safe_strptime(_gdate_str, '%Y-%m-%d') if _gdate_str else None
         student.graduation_date = _parsed.date() if _parsed else None
         student.origin_place = request.form.get('origin_place', '')
-        student.avatar = request.form.get('avatar', '')
+        # 头像：优先上传文件；未上传则保留原头像
+        _avatar_file = request.files.get('avatar')
+        if _avatar_file and _avatar_file.filename:
+            try:
+                student.avatar = save_avatar(_avatar_file, student.avatar)
+            except ValueError as e:
+                if _is_ajax():
+                    return jsonify({'success': False, 'message': str(e)})
+                flash(str(e), 'danger')
+                return render_template('admin/student_form.html', student=student, **ctx)
         
         new_password = request.form.get('password', '')
         if not new_password:

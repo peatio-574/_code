@@ -97,8 +97,18 @@
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">管理员头像</label>
-                            <input type="text" class="form-control" name="avatar"
-                                   value="{{ user_obj.avatar if user_obj else '' }}" placeholder="头像URL">
+                            <div class="d-flex align-items-center gap-2">
+                                <div style="width:48px;height:48px;border-radius:50%;background:#e3f2fd;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
+                                    {% if user_obj and user_obj.avatar %}
+                                    <img id="avatarPreview" src="{{ user_obj.avatar }}" alt="头像" style="width:100%;height:100%;object-fit:cover;">
+                                    {% else %}
+                                    <i id="avatarPreviewIcon" class="bi bi-person-fill text-primary" style="font-size:24px;"></i>
+                                    {% endif %}
+                                </div>
+                                <input type="file" class="form-control" name="avatar" id="avatarInput"
+                                       accept="image/*" onchange="previewAvatar(this)">
+                            </div>
+                            <div class="form-text">支持 png/jpg/jpeg/gif/webp/bmp，不选则保持不变</div>
                         </div>
                     </div>
 
@@ -122,6 +132,24 @@
 
 {% block extra_js %}
 <script>
+function previewAvatar(input) {
+    if (!input.files || !input.files[0]) return;
+    var f = input.files[0];
+    if (!/^image\//.test(f.type)) { showToast('请选择图片文件', 'warning'); input.value = ''; return; }
+    if (f.size > 5 * 1024 * 1024) { showToast('头像不能超过 5MB', 'warning'); input.value = ''; return; }
+    var wrap = input.parentNode.querySelector('div');
+    var img = document.getElementById('avatarPreview');
+    if (!img) {
+        var icon = document.getElementById('avatarPreviewIcon');
+        if (icon) icon.remove();
+        img = document.createElement('img');
+        img.id = 'avatarPreview';
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+        wrap.appendChild(img);
+    }
+    img.src = URL.createObjectURL(f);
+}
+
 document.getElementById('userForm').addEventListener('submit', function(e) {
     e.preventDefault();
     // 校验手机号格式
