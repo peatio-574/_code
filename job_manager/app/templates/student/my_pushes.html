@@ -86,111 +86,8 @@
 </div>
 
 <!-- Right Panel - Job Detail -->
-<div class="job-detail-panel">
-    {% if selected_job %}
-    <div class="detail-card">
-        <div class="detail-header">
-            <div class="detail-title-row">
-                <div>
-                    <h1 class="detail-title">{{ selected_job.job_name }}</h1>
-                    <div class="detail-subtitle">
-                        {{ selected_job.city or selected_job.work_location or '不限' }} · {{ selected_job.experience_req or '经验不限' }} · {{ selected_job.education_req or '学历不限' }}
-                    </div>
-                </div>
-                {% if selected_job.salary_range %}
-                <div class="detail-salary">{{ selected_job.salary_display }}</div>
-                {% else %}
-                <div class="detail-salary">面议</div>
-                {% endif %}
-            </div>
-            <div class="detail-tags">
-                {% if selected_job.recruit_type %}
-                <span class="detail-tag"><i class="bi bi-briefcase"></i> {{ selected_job.recruit_type }}</span>
-                {% endif %}
-                {% if selected_job.job_nature %}
-                <span class="detail-tag"><i class="bi bi-kanban"></i> {{ selected_job.job_nature }}</span>
-                {% endif %}
-                {% if selected_job.deadline %}
-                {% set days_left = (selected_job.deadline - now).days if selected_job.deadline > now else 0 %}
-                {% if days_left > 0 %}
-                <span class="detail-tag"><i class="bi bi-clock"></i> {{ selected_job.deadline.strftime('%Y-%m-%d') }}截止</span>
-                {% else %}
-                <span class="detail-tag" style="background: #fef2f2; color: #dc2626; border-color: #fecaca;"><i class="bi bi-clock"></i> 已截止</span>
-                {% endif %}
-                {% endif %}
-            </div>
-        </div>
-
-        <div class="detail-company">
-            <div class="detail-company-logo"><i class="bi bi-building"></i></div>
-            <div class="detail-company-info">
-                <div class="detail-company-name">{{ selected_job.company_name }}</div>
-                <div class="detail-company-meta">
-                    {% if selected_job.company_size %}{{ selected_job.company_size }}{% endif %}
-                    {% if selected_job.company_industry %} · {{ selected_job.company_industry }}{% endif %}
-                    {% if selected_job.company_type %} · {{ selected_job.company_type }}{% endif %}
-                </div>
-            </div>
-        </div>
-
-        <div class="detail-body">
-            <div class="detail-section">
-                <h3 class="detail-section-title">职位信息</h3>
-                <div class="info-grid">
-                    <div class="info-item"><span class="info-label">招聘类型</span><span class="info-value">{{ selected_job.recruit_type or '-' }}</span></div>
-                    <div class="info-item"><span class="info-label">职位性质</span><span class="info-value">{{ selected_job.job_nature or '-' }}</span></div>
-                    <div class="info-item"><span class="info-label">职位类别</span><span class="info-value">{{ selected_job.job_category or '-' }}</span></div>
-                    <div class="info-item"><span class="info-label">招聘人数</span><span class="info-value">{{ selected_job.recruit_count or '-' }}人</span></div>
-                    <div class="info-item"><span class="info-label">学历要求</span><span class="info-value">{{ selected_job.education_req or '不限' }}</span></div>
-                    <div class="info-item"><span class="info-label">经验要求</span><span class="info-value">{{ selected_job.experience_req or '不限' }}</span></div>
-                    <div class="info-item"><span class="info-label">专业要求</span><span class="info-value">{{ selected_job.major_req or '不限' }}</span></div>
-                    <div class="info-item"><span class="info-label">工作地点</span><span class="info-value">{{ selected_job.work_location or '-' }}</span></div>
-                    <div class="info-item"><span class="info-label">公司性质</span><span class="info-value">{{ selected_job.company_type or '-' }}</span></div>
-                    <div class="info-item"><span class="info-label">公司规模</span><span class="info-value">{{ selected_job.company_size or '-' }}</span></div>
-                    <div class="info-item"><span class="info-label">公司行业</span><span class="info-value">{{ selected_job.company_industry or '-' }}</span></div>
-                    <div class="info-item"><span class="info-label">报名截止</span><span class="info-value">{{ selected_job.deadline.strftime('%Y-%m-%d') if selected_job.deadline else '-' }}</span></div>
-                </div>
-            </div>
-
-            {% if selected_job.job_category or selected_job.major_req %}
-            <div class="detail-section">
-                <h3 class="detail-section-title">岗位标签</h3>
-                <div class="skill-tags">
-                    {% if selected_job.job_category %}
-                    {% for tag in selected_job.job_category.split(',') %}
-                    <span class="skill-tag">{{ tag.strip() }}</span>
-                    {% endfor %}
-                    {% endif %}
-                    {% if selected_job.major_req %}
-                    {% for tag in selected_job.major_req.split(',') %}
-                    <span class="skill-tag">{{ tag.strip() }}</span>
-                    {% endfor %}
-                    {% endif %}
-                </div>
-            </div>
-            {% endif %}
-
-            <div class="detail-section">
-                <h3 class="detail-section-title">职位描述</h3>
-                <div class="detail-content">{{ selected_job.job_detail or '暂无详情' }}</div>
-            </div>
-
-            {% if selected_job.address %}
-            <div class="detail-section">
-                <h3 class="detail-section-title">工作地点</h3>
-                <div class="detail-address">
-                    <i class="bi bi-geo-alt text-primary"></i><span>{{ selected_job.address }}</span>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-    {% else %}
-    <div class="empty-state">
-        <i class="bi bi-arrow-left-circle"></i>
-        <p>请从左侧选择查看岗位详情</p>
-    </div>
-    {% endif %}
+<div class="job-detail-panel" id="jobDetailPanel">
+    {% include "student/_job_detail_panel.html" %}
 </div>
 {% endblock %}
 
@@ -203,10 +100,34 @@ const listEl = document.getElementById('jobList');
 const loadMoreWrap = document.getElementById('loadMoreWrap');
 const noMoreText = document.getElementById('noMoreText');
 
-function selectJob(jobId) {
+const JOB_PANEL_URL = '{{ url_for("student.job_detail_panel", id=0) }}';
+
+async function selectJob(jobId) {
+    // 1) 高亮当前选中的岗位卡片（不刷新左侧列表）
+    document.querySelectorAll('.job-card').forEach(function(card) {
+        card.classList.toggle('active', String(card.dataset.jobId) === String(jobId));
+    });
+    // 2) 地址栏更新 job_id，便于刷新/分享（replaceState 不触发页面刷新）
     const url = new URL(window.location);
     url.searchParams.set('job_id', jobId);
-    window.location.href = url.toString();
+    history.replaceState(null, '', url.toString());
+    // 3) 仅异步加载右侧详情，左侧列表数据与滚动位置保持不变
+    const panel = document.getElementById('jobDetailPanel');
+    if (!panel) return;
+    panel.style.opacity = '0.5';
+    try {
+        const res = await fetch(JOB_PANEL_URL.replace('/0/', '/' + jobId + '/'), {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (res.ok) {
+            panel.innerHTML = await res.text();
+            panel.scrollTop = 0;
+        }
+    } catch (e) {
+        // 加载失败时保留原详情，不打断左侧列表
+    } finally {
+        panel.style.opacity = '';
+    }
 }
 
 function changeSort(value) {
@@ -285,7 +206,7 @@ function buildJobCard(job) {
 
     const companyMetaline = (job.company_size || '') + (job.company_industry ? ' · ' + job.company_industry : '');
 
-    return `<div class="job-card" onclick="selectJob(${job.id})">
+    return `<div class="job-card" data-job-id="${job.id}" onclick="selectJob(${job.id})">
         <div class="job-card-header">
             <div class="job-title"><a href="javascript:void(0)">${esc(job.job_name)}</a>${job.is_new ? '<span class="tag-new">New</span>' : ''}</div>
             <div class="job-salary">${esc(job.salary_display)}</div>

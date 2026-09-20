@@ -1,8 +1,9 @@
 <div class="job-card {% if selected_job and selected_job.id == push.job.id %}active{% endif %}"
+     data-job-id="{{ push.job.id }}"
      onclick="selectJob({{ push.job.id }})">
     <div class="job-card-header">
         <div class="job-title">
-            <a href="{{ url_for('student.job_detail', id=push.job.id) }}">{{ push.job.job_name }}</a>{% if push.job.created_at and (now - push.job.created_at).days <= 3 %}<span class="tag-new">New</span>{% endif %}
+            <a href="javascript:void(0)">{{ push.job.job_name }}</a>{% if push.job.created_at and (now - push.job.created_at).days <= 3 %}<span class="tag-new">New</span>{% endif %}
         </div>
         <div class="job-salary">{{ push.job.salary_display }}</div>
     </div>

@@ -308,6 +308,27 @@ def job_detail(id):
     return render_template('student/job_detail.html', job=job, push=push, now=datetime.now())
 
 
+@student_bp.route('/job/<int:id>/panel')
+@student_required
+def job_detail_panel(id):
+    """岗位详情右侧面板（HTML 片段）。
+
+    供左侧岗位列表点击时异步加载，避免整页刷新导致左侧列表重新拉取/滚动位置丢失。
+    """
+    job = Job.query.filter_by(id=id, is_deleted=False).first_or_404()
+    if job.is_expired():
+        return '', 410
+    push = PushRecord.query.filter_by(
+        job_id=id, student_id=current_user.id, is_deleted=False, is_revoked=False
+    ).first()
+    if not push:
+        return '', 403
+    if not push.is_read:
+        push.is_read = True
+        db.session.commit()
+    return render_template('student/_job_detail_panel.html', selected_job=job, now=datetime.now())
+
+
 # ==================== 我的操作日志（仅本人可见） ====================
 @student_bp.route('/logs')
 @student_required
