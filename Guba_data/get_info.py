@@ -125,11 +125,22 @@ def save_base_info(file):
 def html_get_json(url, html, var_name='post_article'):
     """取页面里 var <var_name>={...} 的值并解析为 dict"""
     try:
-        prefix = f'var {var_name}='
-        i = html.find(prefix) + len(prefix)
+        # 允许 var name = { 之间有空格
+        m = re.search(r'var\s+' + re.escape(var_name) + r'\s*=\s*', html)
+        if not m:
+            logger.error(f'【{url}】未找到 "var {var_name}=..."，'
+                         f'可能被反爬拦截或页面结构已变化（HTML长度={len(html)}）')
+            return {}
+
+        # 定位对象起始的 '{'
+        i = html.find('{', m.end())
+        if i < 0:
+            logger.error(f'【{url}】var {var_name}= 后未找到 "{{"')
+            return {}
 
         depth = 0
         in_str = False
+        quote = ''
         esc = False
         for k in range(i, len(html)):
             ch = html[k]
@@ -138,17 +149,24 @@ def html_get_json(url, html, var_name='post_article'):
                     esc = False
                 elif ch == '\\':
                     esc = True
-                elif ch == '"':
+                elif ch == quote:
                     in_str = False
                 continue
-            if ch == '"':
+            if ch in ('"', "'"):
                 in_str = True
+                quote = ch
             elif ch == '{':
                 depth += 1
             elif ch == '}':
                 depth -= 1
                 if depth == 0:
-                    return json.loads(html[i:k + 1])
+                    raw = html[i:k + 1]
+                    try:
+                        return json.loads(raw)
+                    except json.JSONDecodeError as e:
+                        logger.error(f'【{url}】JSON 解析失败：{e}；片段：{raw[:200]}...')
+                        return {}
+        logger.error(f'【{url}】未找到与 "{{" 配对的 "}}"，页面可能被截断（长度为 {len(html)}）')
         return {}
     except Exception as e:
         logger.error(f'【{url}】数据解析异常：{e}')
@@ -201,9 +219,9 @@ def get_caifuhao_info(url, text):
 
         is_repost = '否'
 
-        has_video = '是' if re.search(r'<img', content_html, re.I) else '否'
+        has_pic = '是' if re.search(r'<img', content_html, re.I) else '否'
 
-        has_pic = '是' if re.search(r'<video', content_html, re.I) else '否'
+        has_video = '是' if re.search(r'<video', content_html, re.I) else '否'
 
         publish_time_str = re.findall(r'"ArtCode":"(\d*)",', text)[0][:14]
         publish_time = time.strftime('%Y-%m-%d %H:%M:%S', time.strptime(str(publish_time_str)[:14], '%Y%m%d%H%M%S'))
