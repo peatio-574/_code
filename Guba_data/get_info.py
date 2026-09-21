@@ -83,7 +83,7 @@ def get_page_info(page_id):
             link = title_a.get('href')
             if not link:
                 continue
-            if link.startswith('//'):
+            if 'caifuhao' in link:
                 continue
             link = 'https://guba.eastmoney.com' + link if not link.startswith('//') else 'https:' + link
 
