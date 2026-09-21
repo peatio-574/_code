@@ -1,0 +1,148 @@
+{% extends 'admin/base.html' %}
+{% block title %}证书管理{% endblock %}
+{% block crumb %}证书管理{% endblock %}
+
+{% block content %}
+<div class="list-page">
+
+    <!-- 搜索筛选 -->
+    <div class="filter-card">
+        <form id="searchForm" onsubmit="return false;">
+            <div class="filter-row">
+                <div class="filter-field filter-field-keyword">
+                    <label class="form-label">关键词：</label>
+                    <input class="form-input" type="text" id="search_q"
+                           placeholder="搜索姓名/证书编号/证件号">
+                </div>
+                <div class="filter-field filter-field-sm">
+                    <label class="form-label">类型：</label>
+                    <select class="form-input filter-select" id="search_major">
+                        <option value="">全部</option>
+                        {% for m in majors %}
+                        <option value="{{ m }}">{{ m }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="filter-actions">
+                    <button type="button" class="btn btn-primary" id="btn_search">搜索</button>
+                    <button type="button" class="btn btn-reset" id="btn_reset">重置</button>
+                    <button type="button" class="btn btn-primary" id="btn_new">新增证书</button>
+                    <button type="button" class="btn" id="btn_import">导入</button>
+                    <a class="btn" href="{{ url_for('admin.certificates_template') }}">模板下载</a>
+                    <button type="button" class="btn" id="btn_export" data-label="导出数据">导出数据</button>
+                    <button type="button" class="btn btn-danger" id="btn_batch_delete" data-label="批量删除">批量删除</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- 列表 -->
+    <div class="list-card">
+        <div class="list-scroll">
+            <table class="data-table">
+                <thead class="sticky-thead">
+                <tr>
+                    <th class="check"><input type="checkbox" id="check_all" title="全选"></th>
+                    <th>姓名</th>
+                    <th>发证日期</th>
+                    <th>考级专业</th>
+                    <th>等级</th>
+                    <th>报考考级机构</th>
+                    <th>证件号</th>
+                    <th>证书编号</th>
+                    <th>更新时间</th>
+                    <th class="op">操作</th>
+                </tr>
+                </thead>
+                <tbody id="cert_tbody">
+                <tr><td colspan="10" class="empty">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="list-footer">
+            <span class="page-total">共 <strong id="total">0</strong> 条</span>
+            <select class="page-select" id="perPage">
+                <option value="20" selected>20条/页</option>
+                <option value="50">50条/页</option>
+                <option value="100">100条/页</option>
+            </select>
+            <nav id="pagination"></nav>
+            <span class="goto-text">前往</span>
+            <input type="number" class="goto-input" id="gotoPage" min="1">
+            <span class="goto-text">页</span>
+            <button type="button" class="btn btn-primary btn-sm" id="btn_goto">跳转</button>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑弹窗 -->
+<div class="modal-mask" id="edit_modal" style="display:none;">
+    <div class="modal-box">
+        <div class="modal-head">
+            <span id="edit_modal_title">编辑证书</span>
+            <button type="button" class="modal-close" id="edit_modal_close">&times;</button>
+        </div>
+        <form id="edit_form" onsubmit="return false;">
+            <div class="modal-body">
+                <div class="modal-grid">
+                    <div class="form-field"><label>姓名 <em>*</em></label>
+                        <input class="form-input" name="name"></div>
+                    <div class="form-field"><label>发证日期 <em>*</em></label>
+                        <input class="form-input" name="issue_date"></div>
+                    <div class="form-field"><label>考级专业 <em>*</em></label>
+                        <input class="form-input" name="major"></div>
+                    <div class="form-field"><label>起止级</label>
+                        <input class="form-input" name="level_range"></div>
+                    <div class="form-field"><label>等级 <em>*</em></label>
+                        <input class="form-input" name="level"></div>
+                    <div class="form-field"><label>报考考级机构</label>
+                        <input class="form-input" name="org"></div>
+                    <div class="form-field"><label>证件号 <em>*</em></label>
+                        <input class="form-input" name="id_card"></div>
+                    <div class="form-field"><label>国籍</label>
+                        <input class="form-input" name="nationality"></div>
+                    <div class="form-field"><label>民族</label>
+                        <input class="form-input" name="ethnicity"></div>
+                    <div class="form-field"><label>出生日期</label>
+                        <input class="form-input" name="birth_date"></div>
+                    <div class="form-field"><label>姓名全拼</label>
+                        <input class="form-input" name="name_pinyin"></div>
+                    <div class="form-field"><label>证书编号 <em>*</em></label>
+                        <input class="form-input" name="cert_no"></div>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button type="button" class="btn" id="edit_cancel">取消</button>
+                <button type="button" class="btn btn-primary" id="edit_save">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 导入弹窗 -->
+<div class="modal-mask" id="import_modal" style="display:none;">
+    <div class="modal-box import-box">
+        <div class="modal-head">
+            <span>导入证书</span>
+            <button type="button" class="modal-close" id="import_modal_close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="tips">
+                <p>1. 请先下载 <a href="{{ url_for('admin.certificates_template') }}">导入模板</a>，按模板填写数据（带 * 为必填项）。</p>
+                <p>2. 证件号、证书编号、出生日期请在 Excel 中设置为“文本”格式，避免前导 0 丢失。</p>
+                <p>3. 系统会逐行校验必填字段，并对“证书编号”去重，缺失或重复的数据将跳过并提示。</p>
+            </div>
+            <div class="import-row">
+                <input class="form-input" type="file" id="import_file" accept=".xlsx">
+                <button type="button" class="btn btn-primary" id="btn_do_import">开始导入</button>
+            </div>
+            <div id="import_result"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/admin_certificates.js') }}"></script>
+{% endblock %}

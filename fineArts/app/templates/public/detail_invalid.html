@@ -1,0 +1,15 @@
+{% extends 'public/base.html' %}
+{% block title %}证书详情-{{ SITE_TITLE }}{% endblock %}
+
+{% block content %}
+<div class="query certificate-query">
+    <div class="container">
+        <div class="notify-error">
+            <p>查询链接已失效，请重新查询。</p>
+        </div>
+        <div class="clear-wrap">
+            <a class="clear" href="{{ url_for('public.index') }}">返回查询</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

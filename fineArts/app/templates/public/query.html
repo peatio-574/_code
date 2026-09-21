@@ -1,0 +1,83 @@
+{% extends 'public/base.html' %}
+{% block title %}证书查询-{{ SITE_TITLE }}{% endblock %}
+
+{% block content %}
+<div class="query certificate-query">
+    <div class="container">
+        <div class="tabs hidden-xs-only">
+            <div class="tabs-item disabled"><span>考场查询</span></div>
+            <div class="tabs-item active"><span>证书查询</span></div>
+            <div class="tabs-item disabled"><span>监考证查询</span></div>
+        </div>
+
+        <div class="form-container">
+            <form id="queryForm" class="public-big-form" onsubmit="return false;">
+                <input type="hidden" name="captcha_key" id="captcha_key" value="{{ captcha_key }}">
+                <input type="hidden" name="type" id="query_type" value="1">
+
+                <div class="form-item">
+                    <input class="form-input" type="text" name="student_name" id="student_name"
+                           placeholder="请输入姓名" autocomplete="off" maxlength="50">
+                </div>
+
+                <div class="form-item">
+                    <div class="radio-group">
+                        <label class="radio-button active" data-type="1">
+                            <input type="radio" name="_type" value="1" checked>证件号
+                        </label>
+                        <label class="radio-button" data-type="2">
+                            <input type="radio" name="_type" value="2">证书编号
+                        </label>
+                    </div>
+                    <span class="form-error" id="form_error"></span>
+                </div>
+
+                <div class="form-item">
+                    <input class="form-input" type="text" name="id_num" id="id_num"
+                           placeholder="请输入证件号" autocomplete="off" maxlength="50">
+                    <input class="form-input hidden" type="text" name="certificate_code" id="certificate_code"
+                           placeholder="请输入证书编号" autocomplete="off" maxlength="50">
+                </div>
+
+                <div class="form-item">
+                    <div class="captcha-row">
+                        <input class="form-input captcha-input" type="text" name="captcha_value" id="captcha_value"
+                               placeholder="请输入计算结果" autocomplete="off" maxlength="10">
+                        <div class="captcha-wrapper">
+                            <img id="captcha_img" src="{{ url_for('public.captcha_image', key=captcha_key) }}"
+                                 alt="验证码" title="点击更换验证码">
+                        </div>
+                        <span class="captcha-change" id="captcha_change">更换</span>
+                    </div>
+                </div>
+
+                <div class="form-item">
+                    <button type="button" class="btn btn-primary" id="btn_query">查询</button>
+                </div>
+            </form>
+
+            <div class="result" id="result" style="display:none;">
+                <table class="result-table" id="multi_table" style="display:none;">
+                    <thead>
+                    <tr>
+                        <th>发证时间</th>
+                        <th>证书编号</th>
+                        <th>报考科目/等级</th>
+                        <th class="op">操作</th>
+                    </tr>
+                    </thead>
+                    <tbody id="multi_body"></tbody>
+                </table>
+
+                <div class="clear-wrap">
+                    <span class="clear" id="clear_result">清除</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/public.js') }}"></script>
+{% endblock %}

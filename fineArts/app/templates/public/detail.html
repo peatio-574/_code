@@ -1,0 +1,91 @@
+{% extends 'public/base.html' %}
+{% block title %}证书详情-{{ SITE_TITLE }}{% endblock %}
+
+{% block content %}
+<div class="certificate-detail">
+    <div class="container">
+        <img class="logo" src="{{ asset('img/logo.jpg') }}" alt="中国美术学院">
+        <p class="c-title zh">中国美术学院社会美术水平考级</p>
+        <p class="c-title en">Graded Examination for Fine Art in Society</p>
+        <p class="c-title en">China Academy of Art</p>
+
+        <p class="apply-title">考生信息</p>
+        <ul class="a-list">
+            <li class="item clearfix">
+                <span class="a-title">姓名：</span>
+                <span class="a-info">{{ cert.name }}</span>
+            </li>
+            {% if cert.name_pinyin %}
+            <li class="item clearfix">
+                <span class="a-title">姓名全拼：</span>
+                <span class="a-info">{{ cert.name_pinyin }}</span>
+            </li>
+            {% endif %}
+            {% if cert.birth_date %}
+            <li class="item clearfix">
+                <span class="a-title">出生日期：</span>
+                <span class="a-info">{{ cert.birth_date }}</span>
+            </li>
+            {% endif %}
+            {% if cert.ethnicity %}
+            <li class="item clearfix">
+                <span class="a-title">民族：</span>
+                <span class="a-info">{{ cert.ethnicity }}</span>
+            </li>
+            {% endif %}
+            {% if cert.nationality %}
+            <li class="item clearfix">
+                <span class="a-title">国籍：</span>
+                <span class="a-info">{{ cert.nationality }}</span>
+            </li>
+            {% endif %}
+            {% if cert.id_card %}
+            <li class="item clearfix">
+                <span class="a-title">身份证 / 护照：</span>
+                <span class="a-info">{{ cert.id_card }}</span>
+            </li>
+            {% endif %}
+        </ul>
+
+        <p class="apply-title">考级信息</p>
+        <ul class="a-list">
+            <li class="item clearfix">
+                <span class="a-title">报考考级机构：</span>
+                <span class="a-info">{{ cert.org or '中国美术学院' }}</span>
+            </li>
+            <li class="item clearfix">
+                <span class="a-title">考级专业：</span>
+                <span class="a-info">{{ cert.major }}</span>
+            </li>
+            {% if cert.level_range %}
+            <li class="item clearfix">
+                <span class="a-title">起止级：</span>
+                <span class="a-info">{{ cert.level_range }}</span>
+            </li>
+            {% endif %}
+            <li class="item clearfix">
+                <span class="a-title">等级：</span>
+                <span class="a-info">{{ cert.level }}</span>
+            </li>
+            <li class="item clearfix">
+                <span class="a-title">发证日期：</span>
+                <span class="a-info">{{ cert.issue_date }}</span>
+            </li>
+            <li class="item clearfix">
+                <span class="a-title">证书编号：</span>
+                <span class="a-info">{{ cert.cert_no }}</span>
+            </li>
+            <li class="item clearfix">
+                <span class="a-title">证书官方查询网址：</span>
+                <span class="a-info">
+                    <a href="{{ OFFICIAL_SITE }}" target="_blank" rel="noopener">{{ OFFICIAL_SITE }}</a>
+                </span>
+            </li>
+        </ul>
+
+        <div class="btn-wrap">
+            <a class="btn btn-danger-plain" href="{{ url_for('public.index') }}">返回</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

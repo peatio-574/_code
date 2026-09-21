@@ -1,0 +1,219 @@
+/* 中国美术学院社会美术水平考级 - 前台样式（参考 kjzx.caa.edu.cn） */
+* { margin: 0; padding: 0; border: 0; outline: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    color: #363636;
+    background: #fff;
+    -webkit-font-smoothing: antialiased;
+}
+ul, ol { list-style: none; }
+a { text-decoration: none; color: inherit; }
+img { vertical-align: middle; max-width: 100%; }
+input, button, select { font-family: inherit; font-size: inherit; }
+.hidden { display: none !important; }
+.hidden-xs-only { display: block; }
+.clearfix { zoom: 1; }
+.clearfix:before, .clearfix:after { content: ""; display: table; }
+.clearfix:after { clear: both; }
+
+.app { display: flex; flex-direction: column; min-height: 100%; }
+.main { flex: 1; padding-bottom: 40px; }
+
+.container { width: 1200px; margin: 0 auto; }
+
+/* ---------------- Header ---------------- */
+.header {
+    height: 80px;
+    line-height: 80px;
+    background: #b60511;
+    overflow: hidden;
+}
+/* 左上角 logo（与 mskj.caa.edu.cn 一致） */
+.header .logo-container { height: 80px; overflow: hidden; float: left; }
+.header .logo-container .logo { float: left; }
+.header .logo-container .icon-shiliangzhinengduixiang {
+    color: #fff; line-height: 80px; font-size: 34px;
+}
+.header .logo-container .logo-text {
+    color: #fff; line-height: 80px; font-size: 18px;
+    letter-spacing: 1.5px; float: left;
+}
+.header .logo-container .logo-text::before {
+    content: ""; width: 1px; height: 38px; background: #fff;
+    float: left; margin: 0 28px; margin-top: 21px;
+}
+.header .nav { float: right; }
+.header .nav .item {
+    display: inline-block;
+    color: #fff; font-size: 16px; line-height: 1.4;
+    padding: 7px 16px; vertical-align: middle;
+    transition: color .3s; cursor: pointer;
+}
+.header .nav .item:hover { color: #ffd9dc; }
+
+/* ---------------- Footer ---------------- */
+.footer { background: #303030; color: #fff; }
+.footer .footer-wrap { padding: 30px 0; }
+.footer .footer-wrap .info { font-size: 12px; line-height: 24px; color: #ddd; }
+.footer .footer-line {
+    border-top: 1px solid #3d3d3d;
+    padding: 14px 0; text-align: center;
+    font-size: 12px; color: #999;
+}
+.footer .footer-line a { color: #c9c9c9; }
+
+/* ---------------- Query page ---------------- */
+.query .container { width: 60%; min-width: 1000px; }
+.query .container .tabs { display: flex; }
+.query .container .tabs .tabs-item {
+    flex: 1; text-align: center; font-size: 14px; line-height: 40px;
+    cursor: pointer; transition: border-color .3s; color: #606266;
+}
+.query .container .tabs .tabs-item.active { border-bottom: 2px solid #d8010f; color: #d8010f; }
+.query .container .tabs .tabs-item:not(.disabled):hover { color: #d8010f; }
+.query .container .tabs .tabs-item.disabled { cursor: not-allowed; color: #c0c4cc; }
+
+.form-container { border: 1px solid #eaeaea; padding: 24px 0 28px; margin-top: 10px; }
+.public-big-form { width: 60%; margin: 0 auto; }
+.form-item { margin-bottom: 22px; }
+
+.form-input {
+    width: 100%; height: 40px; line-height: 40px;
+    padding: 0 15px; font-size: 14px; color: #363636;
+    border: 1px solid #dcdfe6; border-radius: 4px;
+    background: #fff; transition: border-color .2s;
+}
+.form-input:focus { border-color: #d8010f; }
+.form-input::placeholder { color: #c0c4cc; }
+
+.radio-group { display: inline-flex; border: 1px solid #dcdfe6; border-radius: 4px; overflow: hidden; }
+.radio-button {
+    position: relative; display: inline-block; padding: 0 22px;
+    line-height: 38px; font-size: 14px; color: #606266;
+    cursor: pointer; background: #fff; user-select: none;
+}
+.radio-button + .radio-button { border-left: 1px solid #dcdfe6; }
+.radio-button input { position: absolute; opacity: 0; width: 0; height: 0; }
+.radio-button.active { background: #d8010f; color: #fff; border-color: #d8010f; }
+
+/* 表单内联提示（显示在「证书编号」文案后面） */
+.form-error { color: #f56c6c; font-size: 13px; margin-left: 12px; }
+
+.captcha-row { display: flex; align-items: center; }
+.captcha-row .captcha-input { flex: 1; }
+.captcha-wrapper { margin: 0 12px; }
+.captcha-wrapper img {
+    width: 152px; height: 44px; display: block;
+    border: 1px solid #eee; border-radius: 4px; cursor: pointer;
+}
+.captcha-change { cursor: pointer; color: #d8010f; white-space: nowrap; }
+
+.btn {
+    display: inline-block; padding: 0 20px; height: 40px; line-height: 38px;
+    border-radius: 4px; font-size: 14px; cursor: pointer; text-align: center;
+    border: 1px solid #dcdfe6; background: #fff; color: #606266;
+    transition: all .2s;
+}
+.btn:hover { border-color: #d8010f; color: #d8010f; }
+.btn-primary {
+    width: 100%; background: #d8010f; border-color: #d8010f; color: #fff;
+}
+.btn-primary:hover { background: #e0343f; border-color: #e0343f; color: #fff; }
+.btn-danger-plain { border: 1px solid #d8010f; color: #d8010f; background: #fff; }
+.btn-danger-plain:hover { background: #d8010f; color: #fff; }
+
+/* ---------------- Result ---------------- */
+/* 结果与查询表单同一框线内 */
+.result { margin-top: 20px; padding-bottom: 4px; }
+
+.result-table { width: 80%; margin: 16px auto 0; border-collapse: collapse; font-size: 14px; table-layout: fixed; }
+.result-table th, .result-table td { border: 1px solid #ebeef5; padding: 10px 12px; text-align: left; word-break: break-all; }
+.result-table th { background: #f5f7fa; color: #606266; font-weight: 500; }
+/* 前三列比例收窄，保证「操作」列一行显示 */
+.result-table th:nth-child(1), .result-table td:nth-child(1) { width: 25%; }
+.result-table th:nth-child(2), .result-table td:nth-child(2) { width: 33%; }
+.result-table th:nth-child(3), .result-table td:nth-child(3) { width: 24%; }
+.result-table td.op, .result-table th.op { width: 18%; text-align: center; white-space: nowrap; }
+.result-table .link-view { white-space: nowrap; }
+.result-table .link { color: #d8010f; }
+.result-table .link-view {
+    display: inline-block; padding: 2px 12px; border-radius: 3px;
+    background: #d8010f; color: #fff; font-size: 13px;
+    transition: background .2s;
+}
+.result-table .link-view:hover { background: #e0343f; color: #fff; }
+
+.clear-wrap { text-align: center; margin-top: 24px; }
+.clear { color: #d8010f; cursor: pointer; }
+.clear:hover { text-decoration: underline; }
+
+/* ---------------- Certificate detail ---------------- */
+.certificate-detail .container {
+    width: 750px; min-height: 362px; border: 1px solid #eaeaea;
+    margin: 30px auto 80px; overflow: hidden; background: #fffff7;
+    position: relative; padding-bottom: 50px;
+}
+.certificate-detail .logo { display: block; margin: 45px auto; width: 84px; height: 84px; border-radius: 50%; }
+.certificate-detail .c-title { font-size: 28px; text-align: center; font-weight: 600; font-family: NSimSun, STSong, SimSun; }
+.certificate-detail .c-title.en { font-size: 18px; margin-top: 8px; }
+.certificate-detail .apply-title {
+    font-size: 28px; font-weight: 700; font-family: SimSun, STSong;
+    color: #363636; margin-top: 45px; text-align: center;
+}
+.certificate-detail .a-list { width: 680px; margin: 20px auto; }
+.certificate-detail .a-list .item { width: 100%; min-height: 46px; padding-top: 12px; padding-bottom: 15px; }
+.certificate-detail .a-list .item .a-title {
+    width: 180px; font-size: 14px; font-weight: 700; color: #363636;
+    text-align: right; white-space: nowrap; float: left;
+}
+.certificate-detail .a-list .item .a-info {
+    width: 500px; padding-left: 15px; font-size: 14px; color: #7a7a7a;
+    float: right; border-bottom: 1px solid #e7e7e7; word-break: break-all;
+}
+.certificate-detail .btn-wrap { margin: 0 auto 20px; text-align: center; }
+.certificate-detail .btn-wrap .btn { width: 30%; }
+.certificate-detail .search { text-align: center; color: #909399; font-size: 13px; }
+.certificate-detail .search a { color: #d8010f; }
+
+/* ---------------- 平板 ---------------- */
+@media screen and (max-width: 1200px) {
+    .container { width: 100%; padding: 0 15px; }
+    .query .container { width: 90%; min-width: 0; }
+}
+
+/* ---------------- 移动端 ---------------- */
+@media screen and (max-width: 768px) {
+    .hidden-xs-only { display: none !important; }
+
+    .container { width: 100%; padding: 0 15px; }
+
+    .header { height: 1.5rem; line-height: 1.5rem; }
+    .header .logo-container { height: 1.5rem; }
+    .header .logo-container .icon-shiliangzhinengduixiang { font-size: .8rem; line-height: 1.5rem; }
+    .header .logo-container .logo-text { font-size: .6rem; line-height: 1.5rem; letter-spacing: 1px; }
+    .header .logo-container .logo-text::before { height: .75rem; margin: 0 .35rem; margin-top: .375rem; }
+    .header .nav .item { font-size: .6rem; padding: .2rem .6rem; }
+
+    .query .container { width: 100%; min-width: 0; padding: 0 .4rem; }
+
+    .form-container { padding: 1rem 0; }
+    .public-big-form { width: 90%; }
+
+    .certificate-detail .container { width: 95%; margin: 1rem auto 2rem; padding-bottom: 1.5rem; }
+    .certificate-detail .logo { margin: 1rem auto; width: 2.4rem; height: 2.4rem; }
+    .certificate-detail .c-title { font-size: .8rem; }
+    .certificate-detail .c-title.en { font-size: .6rem; }
+    .certificate-detail .apply-title { font-size: .8rem; margin-top: 1.2rem; }
+    .certificate-detail .a-list { width: 100%; }
+    .certificate-detail .a-list .item .a-title { width: 5.5rem; font-size: .6rem; }
+    .certificate-detail .a-list .item .a-info { width: 60%; font-size: .6rem; }
+    .certificate-detail .btn-wrap { width: 100%; }
+    .certificate-detail .search { font-size: .55rem; }
+
+    .result-table { font-size: .6rem; }
+    .result-table th, .result-table td { padding: .4rem .3rem; }
+}
+
+

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+    <meta name="format-detection" content="telephone=no">
+    <title>{% block title %}{{ SITE_TITLE }}{% endblock %}</title>
+    <meta name="description" content="中国美术学院社会美术水平考级证书查询">
+    <meta name="keywords" content="中国美术学院,社会美术水平考级,证书查询">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="中国美术学院-社会美术水平考级管理系统">
+    <meta property="og:description" content="社会美术水平考级证书查询">
+    <meta property="og:image" content="{{ asset('img/share.jpg', external=True) }}">
+    <meta property="og:url" content="{{ request.url }}">
+    <meta itemprop="name" content="中国美术学院-社会美术水平考级管理系统">
+    <meta itemprop="image" content="{{ asset('img/share.jpg', external=True) }}">
+    <link rel="icon" href="{{ asset('favicon.ico') }}">
+    <script src="{{ asset('js/hotcss.js') }}"></script>
+    <link rel="stylesheet" href="{{ asset('css/iconfont.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/public.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+<div class="app">
+    <div class="header">
+        <div class="container clearfix">
+            <div class="logo-container">
+                <a class="logo" href="{{ url_for('public.index') }}">
+                    <i class="iconfont icon-shiliangzhinengduixiang"></i>
+                </a>
+                <span class="logo-text">{{ SITE_SUBTITLE }}</span>
+            </div>
+            <div class="nav">
+                <a class="item" href="{{ HOME_URL }}">首页</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="main">
+        {% block content %}{% endblock %}
+    </div>
+
+    <div class="footer">
+        <div class="footer-wrap hidden-xs-only">
+            <div class="container clearfix">
+                <p class="info">浙江省杭州市滨江区浦沿路88号</p>
+                <p class="info">TEL：0571--86652458（考务/评务） 0571--86612129（考务/咨询）</p>
+                <p class="info">浙ICP备05014581号-1 公安备案号33010802005321</p>
+                <p class="info">Copyright © mskj.caa.edu.cn 2018 All Rights Reserved.</p>
+            </div>
+        </div>
+        <div class="footer-line">
+            证书官方查询网址：<a href="{{ OFFICIAL_SITE }}" target="_blank" rel="noopener">{{ OFFICIAL_SITE }}</a>
+        </div>
+    </div>
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>
