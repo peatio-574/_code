@@ -64,6 +64,27 @@ input, button, select { font-family: inherit; font-size: inherit; }
 }
 .footer .footer-line a { color: #c9c9c9; }
 
+/* ---------------- 底部 tab 栏 ---------------- */
+.app { padding-bottom: 56px; }
+.bottom-nav {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    height: calc(56px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: #fff; border-top: 1px solid #eaeaea;
+    display: flex; z-index: 1000;
+    box-shadow: 0 -1px 6px rgba(0, 0, 0, 0.04);
+}
+.bottom-nav .bn-item {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2px;
+    font-size: 12px; color: #909399; text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+}
+.bottom-nav .bn-item svg { width: 22px; height: 22px; }
+.bottom-nav .bn-item.active { color: #d8010f; }
+.bottom-nav .bn-item.disabled { cursor: default; }
+
 /* ---------------- Query page ---------------- */
 .query .container { width: 60%; min-width: 1000px; }
 .query .container .tabs { display: flex; }
