@@ -11,6 +11,7 @@
     var result = document.getElementById('result');
     var multiTable = document.getElementById('multi_table');
     var multiBody = document.getElementById('multi_body');
+    var notify = document.querySelector('.notify-error');   // 可选提示元素，页面没有则为 null
 
     /* ---------- 查询类型切换 ---------- */
     function switchType(type) {

@@ -38,11 +38,11 @@ input, button, select { font-family: inherit; font-size: inherit; }
 }
 .header .logo-container .logo-text {
     color: #fff; line-height: 80px; font-size: 18px;
-    letter-spacing: 1.5px; float: left;
+    letter-spacing: 1.5px; float: left; white-space: nowrap;
 }
 .header .logo-container .logo-text::before {
     content: ""; width: 1px; height: 38px; background: #fff;
-    float: left; margin: 0 28px; margin-top: 21px;
+    float: left; margin: 0 18px; margin-top: 21px;
 }
 .header .nav { float: right; }
 .header .nav .item {
@@ -192,14 +192,17 @@ input, button, select { font-family: inherit; font-size: inherit; }
     .header { height: 1.5rem; line-height: 1.5rem; }
     .header .logo-container { height: 1.5rem; }
     .header .logo-container .icon-shiliangzhinengduixiang { font-size: .8rem; line-height: 1.5rem; }
-    .header .logo-container .logo-text { font-size: .6rem; line-height: 1.5rem; letter-spacing: 1px; }
-    .header .logo-container .logo-text::before { height: .75rem; margin: 0 .35rem; margin-top: .375rem; }
+    .header .logo-container .logo-text { font-size: .6rem; line-height: 1.5rem; letter-spacing: 0; white-space: nowrap; }
+    .header .logo-container .logo-text::before { height: .75rem; margin: 0 .2rem; margin-top: .375rem; }
     .header .nav .item { font-size: .6rem; padding: .2rem .6rem; }
 
     .query .container { width: 100%; min-width: 0; padding: 0 .4rem; }
 
     .form-container { padding: 1rem 0; }
     .public-big-form { width: 90%; }
+
+    /* 表单错误提示：移动端单独一行、靠左，避免最后一个字换行 */
+    .form-error { display: block; width: 100%; margin: 6px 0 0; font-size: .6rem; }
 
     .certificate-detail .container { width: 95%; margin: 1rem auto 2rem; padding-bottom: 1.5rem; }
     .certificate-detail .logo { margin: 1rem auto; width: 2.4rem; height: 2.4rem; }
@@ -212,8 +215,14 @@ input, button, select { font-family: inherit; font-size: inherit; }
     .certificate-detail .btn-wrap { width: 100%; }
     .certificate-detail .search { font-size: .55rem; }
 
-    .result-table { font-size: .6rem; }
+    /* 结果表格自适应：占满宽度 + 重新分配列宽 + 缩小“查看”按钮，避免超出框线 */
+    .result-table { width: 100%; font-size: .6rem; }
     .result-table th, .result-table td { padding: .4rem .3rem; }
+    .result-table th:nth-child(1), .result-table td:nth-child(1) { width: 24%; }
+    .result-table th:nth-child(2), .result-table td:nth-child(2) { width: 30%; }
+    .result-table th:nth-child(3), .result-table td:nth-child(3) { width: 24%; }
+    .result-table td.op, .result-table th.op { width: 22%; }
+    .result-table .link-view { padding: 2px 6px; font-size: .5rem; }
 }
 
 

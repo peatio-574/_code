@@ -1,5 +1,26 @@
 # 中国美术学院社会美术水平考级证书查询系统 - 部署文档
 
+
+
+阿里云服务器续费地址：https://ecs.console.aliyun.com/home
+服务器：8.130.149.65
+账号密码：root/Root1234
+
+数据库：finearts    3306端口
+账号 finearts / Finearts@2026
+
+前端地址：
+http://kjzxcaaedu.cn/index.html
+
+后端地址：
+http://kjzxcaaedu.cn/admin
+
+网站登录账号
+admin / Caa@Admin2026
+
+
+
+
 ## 一、系统概述
 
 证书查询系统，含前台查询与后台管理。
