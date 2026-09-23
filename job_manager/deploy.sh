@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # ============================================================
 # 聘安途岗推系统 - 一键部署脚本 (TencentOS/CentOS8+ / AlmaLinux / Rocky)
-# 功能：装依赖 -> 建表 -> 注册systemd服务 -> 日志轮转 -> 防火墙 -> 校验
+# 功能：装依赖 -> 建表 -> 注册systemd服务 -> 日志轮转 -> nginx反代 -> 防火墙 -> 校验
 # 用法：sudo bash deploy.sh
 # 可通过环境变量覆盖默认值：
-#   DB_USER   DB_PASSWORD   DB_NAME   APP_PORT   SECRET_KEY   RUN_AS
+#   DB_USER  DB_PASSWORD  DB_NAME  APP_PORT  SECRET_KEY  RUN_AS
+#   GUNICORN_INTERNAL_PORT（有 nginx 时 gunicorn 内部端口，默认 5001）
 # ============================================================
 set -e
 
@@ -16,11 +17,28 @@ DB_USER="${DB_USER:-job_CAIQABiAB}"
 #   sudo DB_PASSWORD='你的密码' bash deploy.sh
 DB_PASSWORD="${DB_PASSWORD:-}"
 DB_NAME="${DB_NAME:-job}"
-APP_PORT="${APP_PORT:-5000}"
-SECRET_KEY="${SECRET_KEY:-$(cat /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 48)}"
+APP_PORT="${APP_PORT:-5000}"                                # 对外/健康检查端口（有 nginx 时由 nginx 监听）
+GUNICORN_INTERNAL_PORT="${GUNICORN_INTERNAL_PORT:-5001}"    # gunicorn 内部端口（仅本机）
 RUN_AS="${RUN_AS:-$(whoami)}"
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$APP_DIR/venv"
+
+# 是否使用 nginx 反向代理：存在 nginx 则 gunicorn 只绑本机，由 nginx 监听 APP_PORT；
+# 否则（无 nginx）gunicorn 直接监听 APP_PORT 对外提供访问。
+USE_NGINX=0
+command -v nginx >/dev/null 2>&1 && USE_NGINX=1
+if [ "$USE_NGINX" = "1" ]; then
+  : "${GUNICORN_BIND:=127.0.0.1:${GUNICORN_INTERNAL_PORT}}"
+else
+  : "${GUNICORN_BIND:=0.0.0.0:${APP_PORT}}"
+fi
+
+# SECRET_KEY：优先用环境变量 → 复用已有 .env 中的 → 否则生成纯 ASCII 随机串。
+# 必须为 ASCII：flask_login 生成 remember cookie 时用 latin1 编码，含中文会导致“记住登录”500。
+if [ -z "$SECRET_KEY" ] && [ -f "$APP_DIR/.env" ]; then
+  SECRET_KEY="$(grep -E '^SECRET_KEY=' "$APP_DIR/.env" | head -n1 | cut -d= -f2-)"
+fi
+SECRET_KEY="${SECRET_KEY:-$(openssl rand -hex 32 2>/dev/null || tr -dc 'A-Za-z0-9' </dev/urandom | head -c 64)}"
 
 # --------------------- 颜色输出 ---------------------
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
@@ -38,12 +56,13 @@ echo -e "${GREEN}============================================================${N
 info "聘安途岗推系统 部署开始"
 info "项目目录 : $APP_DIR"
 info "数据库   : $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME"
-info "端口     : $APP_PORT"
+info "对外端口 : $APP_PORT"
+info "gunicorn : $GUNICORN_BIND"
 info "运行用户 : $RUN_AS"
 echo -e "${GREEN}============================================================${NC}"
 
 # --------------------- 1. 安装系统依赖 ---------------------
-info "[1/8] 检查并安装系统依赖 (gcc, python-devel)"
+info "[1/9] 检查并安装系统依赖 (gcc, python-devel)"
 if ! command -v dnf >/dev/null 2>&1; then
   warn "未找到 dnf，尝试 yum"
   PM="yum"
@@ -54,7 +73,7 @@ $PM install -y gcc python3-devel which >/dev/null 2>&1 || \
   warn "部分系统依赖安装失败，继续（venv 可用即可）"
 
 # --------------------- 2. 创建虚拟环境 + 装依赖 ---------------------
-info "[2/8] 创建虚拟环境并安装 Python 依赖"
+info "[2/9] 创建虚拟环境并安装 Python 依赖"
 if [ ! -d "$VENV_DIR" ]; then
   python3 -m venv "$VENV_DIR"
 fi
@@ -64,7 +83,7 @@ pip install -r "$APP_DIR/requirements.txt" -q
 info "依赖安装完成"
 
 # --------------------- 3. 初始化数据库 ---------------------
-info "[3/8] 初始化数据库（建库+建表+默认数据）"
+info "[3/9] 初始化数据库（建库+建表+默认数据）"
 # 仅当显式传入 DB_PASSWORD 时才覆盖，否则让 init_db.py 用内置默认密码
 export DB_HOST DB_PORT DB_USER DB_NAME
 if [ -n "$DB_PASSWORD" ]; then
@@ -78,13 +97,21 @@ python "$APP_DIR/init_db.py" || {
 }
 
 # --------------------- 4. 准备日志目录 ---------------------
-info "[4/8] 创建日志目录"
+info "[4/9] 创建日志目录"
 mkdir -p "$APP_DIR/logs"
 chown -R "$RUN_AS":"$RUN_AS" "$APP_DIR/logs" 2>/dev/null || true
 
 # --------------------- 5. 写入 .env ---------------------
-info "[5/8] 写入环境变量文件 (.env)"
-if [ -n "$DB_PASSWORD" ]; then
+info "[5/9] 写入环境变量文件 (.env)"
+if [ -f "$APP_DIR/.env" ]; then
+  # 已存在：只确保/更新 SECRET_KEY，保留 DB_*/AI_* 等自定义配置，避免覆盖
+  if grep -qE '^SECRET_KEY=' "$APP_DIR/.env"; then
+    sed -i "s|^SECRET_KEY=.*|SECRET_KEY=$SECRET_KEY|" "$APP_DIR/.env"
+  else
+    printf 'SECRET_KEY=%s\n' "$SECRET_KEY" >> "$APP_DIR/.env"
+  fi
+  info "  已存在 .env：仅更新 SECRET_KEY，保留其余配置"
+elif [ -n "$DB_PASSWORD" ]; then
   # 对密码做 URL 编码（@ -> %40, & -> %26 等），避免解析出错
   if command -v python3 >/dev/null 2>&1; then
     ENC_PASS=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$DB_PASSWORD")
@@ -104,7 +131,7 @@ fi
 chown "$RUN_AS":"$RUN_AS" "$APP_DIR/.env" 2>/dev/null || true
 
 # --------------------- 6. 注册 systemd 服务 ---------------------
-info "[6/8] 注册 systemd 服务"
+info "[6/9] 注册 systemd 服务"
 SERVICE_NAME="jobmanager"
 cat > /etc/systemd/system/${SERVICE_NAME}.service <<EOF
 [Unit]
@@ -115,7 +142,7 @@ After=network.target
 User=$RUN_AS
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
-ExecStart=$VENV_DIR/bin/gunicorn -w 4 -b 0.0.0.0:$APP_PORT \
+ExecStart=$VENV_DIR/bin/gunicorn -k gthread --threads 8 -w 4 --timeout 120 -b $GUNICORN_BIND \
     --access-logfile $APP_DIR/logs/access.log \
     --error-logfile $APP_DIR/logs/error.log \
     run:app
@@ -129,7 +156,7 @@ systemctl daemon-reload
 systemctl enable ${SERVICE_NAME} >/dev/null 2>&1
 
 # --------------------- 7. 配置日志轮转 ---------------------
-info "[7/8] 配置日志轮转（每天一个文件，保留30天）"
+info "[7/9] 配置日志轮转（每天一个文件，保留30天）"
 cat > /etc/logrotate.d/${SERVICE_NAME} <<EOF
 $APP_DIR/logs/*.log {
     daily
@@ -145,8 +172,62 @@ $APP_DIR/logs/*.log {
 }
 EOF
 
-# --------------------- 8. 开放防火墙端口 ---------------------
-info "[8/8] 开放防火墙端口 $APP_PORT/tcp"
+# --------------------- 8. 配置 nginx 反向代理 ---------------------
+if [ "$USE_NGINX" = "1" ]; then
+  info "[8/9] 配置 nginx 反向代理（$APP_PORT -> $GUNICORN_BIND）"
+  NGINX_CONF="/etc/nginx/conf.d/jobmanager.conf"
+  mkdir -p /etc/nginx/conf.d
+  NGINX_BAK=""
+  if [ -f "$NGINX_CONF" ]; then
+    NGINX_BAK="${NGINX_CONF}.bak_$(date +%Y%m%d_%H%M%S)"
+    cp -a "$NGINX_CONF" "$NGINX_BAK"
+  fi
+  cat > "$NGINX_CONF" <<EOF
+# job_manager 反向代理（由 deploy.sh 生成）：nginx 监听 ${APP_PORT}，转发到 ${GUNICORN_BIND}
+server {
+    listen       ${APP_PORT};
+    listen       [::]:${APP_PORT};
+    server_name  _;
+
+    client_max_body_size 20m;
+    client_body_timeout  20s;
+    client_header_timeout 20s;
+
+    location / {
+        proxy_pass http://${GUNICORN_BIND};
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              \$host;
+        proxy_set_header X-Real-IP         \$remote_addr;
+        proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Connection        "";
+
+        proxy_connect_timeout 30s;
+        proxy_send_timeout    300s;
+        proxy_read_timeout    300s;
+    }
+}
+EOF
+  if nginx -t >/dev/null 2>&1; then
+    systemctl reload nginx 2>/dev/null || systemctl restart nginx
+    info "  nginx 配置校验通过并已重载"
+  else
+    error "  nginx 配置校验失败，已回滚本次写入"
+    if [ -n "$NGINX_BAK" ] && [ -f "$NGINX_BAK" ]; then
+      cp -a "$NGINX_BAK" "$NGINX_CONF"
+    else
+      rm -f "$NGINX_CONF"
+    fi
+    nginx -t || true
+    exit 1
+  fi
+else
+  warn "[8/9] 未检测到 nginx，跳过反向代理；gunicorn 已直接监听 $GUNICORN_BIND"
+fi
+
+# --------------------- 9. 开放防火墙端口 ---------------------
+info "[9/9] 开放防火墙端口 $APP_PORT/tcp"
 if command -v firewall-cmd >/dev/null 2>&1; then
   firewall-cmd --permanent --add-port=${APP_PORT}/tcp >/dev/null 2>&1 || true
   firewall-cmd --reload >/dev/null 2>&1 || true
