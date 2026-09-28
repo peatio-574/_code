@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from ..config import Settings, get_settings
 from ..db import get_engine, named_lock
-from ..error import conflict, invalid_credentials, rate_limited, validation
+from ..error import account_disabled, conflict, invalid_credentials, rate_limited, validation
 from ..response import ok
 from ..security import (
     SESSION_COOKIE,
@@ -61,7 +61,7 @@ def _optional(value: str) -> str | None:
 
 def _validate_registration(username: str, password: str, email: str | None, mobile: str | None) -> None:
     if not (3 <= len(username) <= 100) or not re.fullmatch(r"[A-Za-z0-9_.\-]+", username):
-        raise validation("username must be 3-100 letters, digits, dots, underscores, or hyphens")
+        raise validation("用户名需为 3-100 位字母、数字、点、下划线或连字符")
     if (
         not (8 <= len(password) <= 128)
         or not any(c.isupper() for c in password)
@@ -69,15 +69,13 @@ def _validate_registration(username: str, password: str, email: str | None, mobi
         or not any(c.isdigit() for c in password)
         or all(c.isalnum() for c in password)
     ):
-        raise validation(
-            "password must be 8-128 characters and include upper, lower, digit, and special characters"
-        )
+        raise validation("密码需为 8-128 位，且包含大写、小写、数字与特殊字符")
     if email is not None:
         parts = email.split("@")
         if len(parts) != 2 or "." not in parts[1]:
-            raise validation("email is invalid")
+            raise validation("邮箱格式不正确")
     if mobile is not None and (not (5 <= len(mobile) <= 15) or not mobile.isdigit()):
-        raise validation("mobile is invalid")
+        raise validation("手机号格式不正确")
 
 
 def _ensure_not_locked(connection, key: str) -> None:
@@ -154,13 +152,14 @@ def register(payload: RegisterRequest):
             raise conflict("username, email, or mobile already exists")
         connection.execute(
             text(
-                "INSERT INTO users(username, password_hash, display_name, email, mobile, "
-                "created_at, updated_at) VALUES(:username, :hash, :display_name, :email, "
-                ":mobile, :created_at, :updated_at)"
+                "INSERT INTO users(username, password_hash, password_plain, display_name, email, "
+                "mobile, created_at, updated_at) VALUES(:username, :hash, :plain, :display_name, "
+                ":email, :mobile, :created_at, :updated_at)"
             ),
             {
                 "username": username,
                 "hash": password_hash,
+                "plain": payload.password,
                 "display_name": payload.display_name.strip(),
                 "email": email,
                 "mobile": mobile,
@@ -190,7 +189,7 @@ def login(payload: LoginRequest, request: Request, settings: Settings = Depends(
     """
     identity = payload.username.strip().lower()
     if not identity or not payload.password:
-        raise validation("username and password are required")
+        raise validation("请输入账号和密码")
     client_ip = request.client.host if request.client else ""
     user_agent = request.headers.get("user-agent", "")[:512]
     throttle_key = digest(f"{client_ip}|{identity}")
@@ -212,6 +211,8 @@ def login(payload: LoginRequest, request: Request, settings: Settings = Depends(
             verify_password(payload.password, _dummy())
         if not valid or user is None:
             _record_failure(connection, throttle_key, identity, client_ip, user_agent, settings)
+            if user is not None and user["status"] != 1:
+                raise account_disabled()
             raise invalid_credentials()
         # 登录成功：清零失败计数
         connection.execute(
@@ -377,9 +378,14 @@ def change_password(payload: ChangePasswordRequest, request: Request):
             raise validation("密码长度不能少于6位")
         connection.execute(
             text(
-                "UPDATE users SET password_hash = :hash, updated_at = :updated_at, "
-                "session_epoch = session_epoch + 1 WHERE id = :id"
+                "UPDATE users SET password_hash = :hash, password_plain = :plain, "
+                "updated_at = :updated_at, session_epoch = session_epoch + 1 WHERE id = :id"
             ),
-            {"hash": hash_password(payload.new_password), "updated_at": now(), "id": user.id},
+            {
+                "hash": hash_password(payload.new_password),
+                "plain": payload.new_password,
+                "updated_at": now(),
+                "id": user.id,
+            },
         )
     return ok({"id": user.id})

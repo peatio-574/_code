@@ -2,24 +2,22 @@
 // 校区管理：校区 CRUD、状态联动与成员维护。
 import { Plus, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { computed, onMounted, reactive, ref } from 'vue'
+import type { FormInstance, FormRules } from 'element-plus'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 
 import {
-  addCampusMember,
   createCampus,
   deleteCampus,
   deleteCampusMember,
-  listAdmins,
   listCampusMembers,
   listCampuses,
-  listStudents,
   toggleCampus,
   updateCampus,
   updateCampusMember,
 } from '@/api/admin'
 import DataPage from '@/components/data-page.vue'
 import StatusSwitch from '@/components/status-switch.vue'
-import { MEMBER_TYPE_LABELS, formatDateTime, STATUS_FAILURE_TEXT, statusChangeMessage } from '@/lib/labels'
+import { formatDateTime, STATUS_FAILURE_TEXT, statusChangeMessage } from '@/lib/labels'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -34,18 +32,18 @@ const query = reactive({ p: 1, page_size: 20, keyword: '', status: '' })
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
 const form = reactive({ name: '', address: '', contact_name: '', contact_mobile: '', status: 1 })
+const formRef = ref<FormInstance>()
+const rules: FormRules = {
+  name: [{ required: true, message: '请填写校区名称', trigger: 'blur' }],
+}
 
 const membersVisible = ref(false)
 const activeCampus = ref<Record<string, any> | null>(null)
 const members = ref<Record<string, any>[]>([])
 const memberLoading = ref(false)
-const memberOptions = ref<Record<string, any>[]>([])
-const memberSearching = ref(false)
-const memberForm = reactive<{ user_id: number | null; member_type: string; is_primary: boolean }>({
-  user_id: null,
-  member_type: 'homeroom_teacher',
-  is_primary: true,
-})
+const memberTotal = ref(0)
+const memberQuery = reactive({ p: 1, page_size: 20, keyword: '', member_type: '' })
+const memberPageSizes = [20, 50, 100]
 
 async function load() {
   loading.value = true
@@ -70,10 +68,12 @@ function reset() {
   load()
 }
 
-function openCreate() {
+async function openCreate() {
   editingId.value = null
   Object.assign(form, { name: '', address: '', contact_name: '', contact_mobile: '', status: 1 })
   dialogVisible.value = true
+  await nextTick()
+  formRef.value?.clearValidate()
 }
 
 function openEdit(row: Record<string, any>) {
@@ -86,13 +86,12 @@ function openEdit(row: Record<string, any>) {
     status: row.status,
   })
   dialogVisible.value = true
+  nextTick(() => formRef.value?.clearValidate())
 }
 
 async function save() {
-  if (!form.name.trim()) {
-    ElMessage.warning('请填写校区名称')
-    return
-  }
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
   saving.value = true
   try {
     const result = editingId.value ? await updateCampus(editingId.value, form) : await createCampus(form)
@@ -151,10 +150,9 @@ async function remove(row: Record<string, any>) {
 
 async function openMembers(row: Record<string, any>) {
   activeCampus.value = row
-  memberForm.user_id = null
-  memberForm.member_type = 'homeroom_teacher'
-  memberForm.is_primary = true
-  memberOptions.value = []
+  memberQuery.p = 1
+  memberQuery.keyword = ''
+  memberQuery.member_type = ''
   membersVisible.value = true
   await refreshMembers()
 }
@@ -163,55 +161,35 @@ async function refreshMembers() {
   if (!activeCampus.value) return
   memberLoading.value = true
   try {
-    const data = await listCampusMembers(activeCampus.value.id)
+    const data = await listCampusMembers(activeCampus.value.id, {
+      p: memberQuery.p,
+      page_size: memberQuery.page_size,
+      keyword: memberQuery.keyword || undefined,
+      member_type: memberQuery.member_type || undefined,
+    })
     members.value = data?.items ?? []
+    memberTotal.value = data?.total ?? 0
   } finally {
     memberLoading.value = false
   }
 }
 
-/** 远程搜索候选用户：合并管理员与学员，按关键词过滤。 */
-async function searchMembers(keyword: string) {
-  if (!keyword || keyword.trim().length < 1) {
-    memberOptions.value = []
-    return
-  }
-  memberSearching.value = true
-  try {
-    const [students, admins] = await Promise.all([
-      listStudents({ keyword: keyword.trim(), page_size: 20 }),
-      listAdmins({ keyword: keyword.trim(), page_size: 20 }),
-    ])
-    const merged = [...(admins?.items ?? []), ...(students?.items ?? [])]
-    const seen = new Set<number>()
-    memberOptions.value = merged.filter((user) => {
-      if (seen.has(user.id)) return false
-      seen.add(user.id)
-      return true
-    })
-  } finally {
-    memberSearching.value = false
-  }
+function searchMembersList() {
+  memberQuery.p = 1
+  refreshMembers()
 }
 
-async function addMember() {
-  if (!activeCampus.value || !memberForm.user_id) {
-    ElMessage.warning('请选择要添加的用户')
-    return
-  }
-  const result = await addCampusMember(activeCampus.value.id, {
-    user_id: memberForm.user_id,
-    member_type: memberForm.member_type,
-    is_primary: memberForm.is_primary,
-  })
-  if (result.success) {
-    ElMessage.success('已添加成员')
-    await refreshMembers()
-    memberForm.user_id = null
-    memberOptions.value = []
-  } else {
-    ElMessage.error(result.message || '添加失败')
-  }
+function resetMembersFilter() {
+  memberQuery.keyword = ''
+  memberQuery.member_type = ''
+  memberQuery.p = 1
+  refreshMembers()
+}
+
+/** 移除/改类后若当前页已空则回退一页，避免出现空白页。 */
+function afterMemberChange() {
+  if (members.value.length === 0 && memberQuery.p > 1) memberQuery.p -= 1
+  refreshMembers()
 }
 
 async function removeMember(row: Record<string, any>) {
@@ -227,7 +205,7 @@ async function removeMember(row: Record<string, any>) {
   const result = await deleteCampusMember(activeCampus.value!.id, row.user_id)
   if (result.success) {
     ElMessage.success('已移除')
-    await refreshMembers()
+    afterMemberChange()
   } else {
     ElMessage.error(result.message || '移除失败')
   }
@@ -235,7 +213,7 @@ async function removeMember(row: Record<string, any>) {
 
 async function changeMemberType(row: Record<string, any>, type: string) {
   const result = await updateCampusMember(activeCampus.value!.id, row.user_id, { member_type: type })
-  if (result.success) await refreshMembers()
+  if (result.success) refreshMembers()
   else ElMessage.error(result.message || '更新失败')
 }
 
@@ -275,16 +253,8 @@ onMounted(load)
     </template>
 
     <el-table :data="items" row-key="id" height="100%" empty-text="暂无校区">
-      <el-table-column label="校区" min-width="220">
-        <template #default="{ row }">
-          <div class="campus-cell">
-            <span class="campus-cell__mark">{{ row.name.slice(0, 1) }}</span>
-            <div>
-              <div class="user-cell__name">{{ row.name }}</div>
-              <div class="user-cell__meta">{{ row.address || '未填写地址' }}</div>
-            </div>
-          </div>
-        </template>
+      <el-table-column label="校区" min-width="200">
+        <template #default="{ row }"><span class="cell-strong">{{ row.name }}</span></template>
       </el-table-column>
       <el-table-column label="负责人" min-width="140">
         <template #default="{ row }">{{ row.contact_name || '—' }}</template>
@@ -292,9 +262,17 @@ onMounted(load)
       <el-table-column label="联系方式" min-width="160">
         <template #default="{ row }"><span class="tabular">{{ row.contact_mobile || '—' }}</span></template>
       </el-table-column>
-      <el-table-column label="人数（管理员 / 学员）" min-width="180" align="center">
+      <el-table-column label="校区地址" min-width="220" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.address || '—' }}</template>
+      </el-table-column>
+      <el-table-column label="管理员数量" min-width="120" align="center">
         <template #default="{ row }">
-          <span class="tabular"><b>{{ row.principal_count }}</b> / <b>{{ row.student_count }}</b></span>
+          <span class="count-chip count-chip--manager tabular">{{ row.manager_count ?? 0 }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="学员数量" min-width="120" align="center">
+        <template #default="{ row }">
+          <span class="count-chip count-chip--student tabular">{{ row.student_count ?? 0 }}</span>
         </template>
       </el-table-column>
       <el-table-column label="状态" min-width="160">
@@ -318,8 +296,8 @@ onMounted(load)
   </DataPage>
 
   <el-dialog v-model="dialogVisible" :lock-scroll="false" :title="editingId ? '编辑校区' : '新增校区'" width="520px" append-to-body>
-    <el-form label-position="top">
-      <el-form-item label="校区名称" required>
+    <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
+      <el-form-item label="校区名称" prop="name">
         <el-input v-model="form.name" placeholder="请输入校区名称" />
       </el-form-item>
       <el-form-item label="校区地址">
@@ -341,99 +319,190 @@ onMounted(load)
     </template>
   </el-dialog>
 
-  <el-drawer v-model="membersVisible" :lock-scroll="false" :title="`校区成员 · ${activeCampus?.name ?? ''}`" size="680px">
-    <div class="member-add">
-      <el-select
-        v-model="memberForm.user_id"
-        filterable
-        remote
-        clearable
-        reserve-keyword
-        :remote-method="searchMembers"
-        :loading="memberSearching"
-        placeholder="输入姓名或账号搜索用户"
-        class="member-add__user"
-      >
-        <el-option
-          v-for="user in memberOptions"
-          :key="user.id"
-          :label="`${user.display_name || user.username}（${user.username}）`"
-          :value="user.id"
+  <el-drawer
+    v-model="membersVisible"
+    :lock-scroll="false"
+    :title="`校区成员 · ${activeCampus?.name ?? ''}`"
+    size="min(92vw, 1080px)"
+    class="member-drawer"
+  >
+    <section class="member-page">
+      <div class="member-toolbar">
+        <el-input
+          v-model="memberQuery.keyword"
+          placeholder="搜索姓名 / 账号"
+          clearable
+          :prefix-icon="Search"
+          class="member-toolbar__search"
+          @keyup.enter="searchMembersList"
+          @clear="searchMembersList"
         />
-      </el-select>
-      <el-select v-model="memberForm.member_type" class="member-add__type">
-        <el-option v-if="isSuper" label="校长" value="principal" />
-        <el-option label="班主任" value="homeroom_teacher" />
-        <el-option label="学员" value="student" />
-      </el-select>
-      <el-button type="primary" @click="addMember">添加成员</el-button>
-    </div>
+        <el-select
+          v-model="memberQuery.member_type"
+          placeholder="成员类型"
+          clearable
+          class="member-toolbar__type"
+          @change="searchMembersList"
+        >
+          <el-option label="校长" value="principal" />
+          <el-option label="班主任" value="homeroom_teacher" />
+          <el-option label="学员" value="student" />
+        </el-select>
+        <el-button type="primary" @click="searchMembersList">搜索</el-button>
+        <el-button @click="resetMembersFilter">重置</el-button>
+      </div>
 
-    <el-table v-loading="memberLoading" :data="members" row-key="id" empty-text="暂无成员">
-      <el-table-column label="成员" min-width="200">
-        <template #default="{ row }">
-          <div class="user-cell">
-            <el-avatar :size="34" :src="row.avatar ? `/api/image/${row.avatar}` : undefined">
-              {{ (row.display_name || row.username || '用').slice(0, 1) }}
-            </el-avatar>
-            <div>
-              <div class="user-cell__name">{{ row.display_name || '—' }}</div>
-              <div class="user-cell__meta">{{ row.username }}</div>
-            </div>
-          </div>
-        </template>
-      </el-table-column>
-      <el-table-column label="成员类型" min-width="160">
-        <template #default="{ row }">
-          <el-select :model-value="row.member_type" @change="(value: string) => changeMemberType(row, value)">
-            <el-option v-if="isSuper" label="校长" value="principal" />
-            <el-option label="班主任" value="homeroom_teacher" />
-            <el-option label="学员" value="student" />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" min-width="100">
-        <template #default="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'info'" effect="light">
-            {{ row.status === 1 ? '在籍' : '已离开' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" min-width="90">
-        <template #default="{ row }">
-          <el-button link type="danger" @click="removeMember(row)">移除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+      <div class="member-body">
+        <el-table
+          v-loading="memberLoading"
+          :data="members"
+          row-key="id"
+          height="100%"
+          empty-text="暂无成员"
+        >
+          <el-table-column label="成员" min-width="180">
+            <template #default="{ row }">
+              <span class="cell-strong">{{ row.display_name || '—' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="成员类型" min-width="160">
+            <template #default="{ row }">
+              <el-select :model-value="row.member_type" @change="(value: string) => changeMemberType(row, value)">
+                <el-option label="校长" value="principal" :disabled="!isSuper" />
+                <el-option label="班主任" value="homeroom_teacher" />
+                <el-option label="学员" value="student" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" min-width="120">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 1 ? 'success' : 'info'" effect="light">
+                {{ row.status === 1 ? '启用' : '禁用' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" min-width="90">
+            <template #default="{ row }">
+              <el-button link type="danger" @click="removeMember(row)">移除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <footer class="member-footer">
+        <span class="member-footer__total">共 {{ memberTotal }} 条记录</span>
+        <el-pagination
+          :current-page="memberQuery.p"
+          :page-size="memberQuery.page_size"
+          :page-sizes="memberPageSizes"
+          :total="memberTotal"
+          background
+          layout="sizes, prev, pager, next, jumper"
+          @current-change="(value: number) => { memberQuery.p = value; refreshMembers() }"
+          @size-change="(value: number) => { memberQuery.page_size = value; memberQuery.p = 1; refreshMembers() }"
+        />
+      </footer>
+    </section>
   </el-drawer>
 </template>
 
 <style scoped>
-.campus-cell {
-  display: flex;
+.count-chip {
+  display: inline-flex;
+  min-width: 44px;
   align-items: center;
-  gap: var(--space-3);
-}
-.campus-cell__mark {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  flex-shrink: 0;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: var(--brand-50);
-  color: var(--brand-500);
+  justify-content: center;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
   font-weight: 700;
 }
-.member-add {
+.count-chip--manager {
+  background: var(--brand-50);
+  color: var(--brand-600);
+}
+.count-chip--student {
+  background: var(--success-bg);
+  color: var(--success);
+}
+/* 成员抽屉：与外部列表页一致（卡片 + 工具栏/分页固定，仅列表滚动） */
+.member-page {
   display: flex;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  padding: var(--space-5);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.member-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  align-items: center;
   gap: var(--space-3);
   margin-bottom: var(--space-4);
 }
-.member-add__user {
-  flex: 1;
+.member-toolbar__search {
+  width: 220px;
 }
-.member-add__type {
-  width: 160px;
+.member-toolbar__type {
+  width: 150px;
+}
+.member-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.member-body > .el-table {
+  flex: 1;
+  min-height: 0;
+}
+.member-footer {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-color);
+}
+.member-footer__total {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.member-footer :deep(.el-pagination) {
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+</style>
+
+<!--
+  非 scoped：el-drawer 的 class 合并到 .el-drawer，而 scoped 属性落在 .el-overlay，
+  复合选择器 .member-drawer[data-v-x] 无法匹配，故对抽屉结构用全局选择器（类名唯一不泄漏）。
+-->
+<style>
+.member-drawer.el-drawer {
+  display: flex;
+  flex-direction: column;
+}
+.member-drawer .el-drawer__header {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+.member-drawer .el-drawer__body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 20px 24px;
 }
 </style>

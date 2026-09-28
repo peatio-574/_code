@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 
-import json
-
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from ..common import actor_id, actor_primary_campus, is_super_admin, now, page_params, page_result
+from ..common import actor_id, actor_primary_campus, now, page_params, page_result
 from ..db import get_engine, named_lock
-from ..error import forbidden, not_found, validation
+from ..error import not_found, validation
 from ..response import ok
 
 router = APIRouter(prefix="/api")
@@ -44,10 +42,6 @@ class ChapterInput(BaseModel):
     duration: float = 0
     teacher_id: int = 0
     sort_order: int = 0
-
-
-class CourseQueryParams(BaseModel):
-    pass
 
 
 def _validate_course_type(connection, codes: list[str]) -> None:
@@ -89,6 +83,7 @@ def _list(request: Request, only_published: bool):
     page, size = page_params(request)
     keyword = (request.query_params.get("keyword") or "").strip()
     status = request.query_params.get("status")
+    teacher_id = request.query_params.get("teacher_id")
     type_codes = request.query_params.getlist("course_type_code")
     single = request.query_params.get("course_type_code_single")
     if single:
@@ -103,6 +98,12 @@ def _list(request: Request, only_published: bool):
     if keyword:
         where.append("(c.name LIKE :kw OR c.short_description LIKE :kw)")
         params["kw"] = f"%{keyword}%"
+    if teacher_id and teacher_id.isdigit():
+        where.append(
+            "EXISTS (SELECT 1 FROM course_teachers ct WHERE ct.course_id = c.id "
+            "AND ct.teacher_id = :teacher_id)"
+        )
+        params["teacher_id"] = int(teacher_id)
     if type_codes:
         clauses = []
         for index, code in enumerate(type_codes):
@@ -195,8 +196,10 @@ def _course_value(connection, course_id: int, user_id: int | None = None) -> dic
     ).mappings().all()
     chapters = connection.execute(
         text(
-            "SELECT id, course_id, title, description, file, duration, teacher_id, sort_order, "
-            "created_at, updated_at FROM course_chapters WHERE course_id=:id ORDER BY sort_order, id"
+            "SELECT ch.id, ch.course_id, ch.title, ch.description, ch.file, ch.duration, "
+            "ch.teacher_id, ch.sort_order, ch.created_at, ch.updated_at, f.name file_name "
+            "FROM course_chapters ch LEFT JOIN files f ON f.id = ch.file "
+            "WHERE ch.course_id=:id ORDER BY ch.sort_order, ch.id"
         ),
         {"id": course_id},
     ).mappings().all()
@@ -256,8 +259,10 @@ def list_chapters(course_id: int):
     with get_engine().connect() as connection:
         rows = connection.execute(
             text(
-                "SELECT id, course_id, title, description, file, duration, teacher_id, sort_order, "
-                "created_at, updated_at FROM course_chapters WHERE course_id=:id ORDER BY sort_order, id"
+                "SELECT ch.id, ch.course_id, ch.title, ch.description, ch.file, ch.duration, "
+                "ch.teacher_id, ch.sort_order, ch.created_at, ch.updated_at, f.name file_name "
+                "FROM course_chapters ch LEFT JOIN files f ON f.id = ch.file "
+                "WHERE ch.course_id=:id ORDER BY ch.sort_order, ch.id"
             ),
             {"id": course_id},
         ).mappings().all()
@@ -459,8 +464,9 @@ def create_chapter(course_id: int, payload: ChapterInput):
         ).lastrowid
         result = connection.execute(
             text(
-                "SELECT id, course_id, title, description, file, duration, teacher_id, sort_order, "
-                "created_at, updated_at FROM course_chapters WHERE id=:id"
+                "SELECT ch.id, ch.course_id, ch.title, ch.description, ch.file, ch.duration, "
+                "ch.teacher_id, ch.sort_order, ch.created_at, ch.updated_at, f.name file_name "
+                "FROM course_chapters ch LEFT JOIN files f ON f.id = ch.file WHERE ch.id=:id"
             ),
             {"id": chapter_id},
         ).mappings().first()
@@ -491,18 +497,24 @@ def update_chapter(course_id: int, chapter_id: int, payload: ChapterInput):
             fields.append("title=:title")
             params["title"] = payload.title.strip()
         result = connection.execute(
-            text(f"UPDATE course_chapters SET {', '.join(fields)} WHERE id=:id"), params
+            text(
+                f"UPDATE course_chapters SET {', '.join(fields)} "
+                "WHERE id=:id AND course_id=:course_id"
+            ),
+            {**params, "course_id": course_id},
         )
         if result.rowcount == 0:
             exists = connection.execute(
-                text("SELECT COUNT(*) FROM course_chapters WHERE id=:id"), {"id": chapter_id}
+                text("SELECT COUNT(*) FROM course_chapters WHERE id=:id AND course_id=:course_id"),
+                {"id": chapter_id, "course_id": course_id},
             ).scalar()
             if not exists:
                 raise not_found("章节不存在")
         row = connection.execute(
             text(
-                "SELECT id, course_id, title, description, file, duration, teacher_id, sort_order, "
-                "created_at, updated_at FROM course_chapters WHERE id=:id"
+                "SELECT ch.id, ch.course_id, ch.title, ch.description, ch.file, ch.duration, "
+                "ch.teacher_id, ch.sort_order, ch.created_at, ch.updated_at, f.name file_name "
+                "FROM course_chapters ch LEFT JOIN files f ON f.id = ch.file WHERE ch.id=:id"
             ),
             {"id": chapter_id},
         ).mappings().first()
@@ -512,9 +524,12 @@ def update_chapter(course_id: int, chapter_id: int, payload: ChapterInput):
 @admin_router.delete("/course/{course_id}/chapter/{chapter_id}")
 def delete_chapter(course_id: int, chapter_id: int):
     with get_engine().begin() as connection:
-        connection.execute(
-            text("DELETE FROM course_chapters WHERE id=:id"), {"id": chapter_id}
+        result = connection.execute(
+            text("DELETE FROM course_chapters WHERE id=:id AND course_id=:course_id"),
+            {"id": chapter_id, "course_id": course_id},
         )
+        if result.rowcount == 0:
+            raise not_found("章节不存在")
     return ok({"id": chapter_id})
 
 

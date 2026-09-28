@@ -8,7 +8,7 @@ import { Lock, Refresh, Service } from '@element-plus/icons-vue'
 
 import { getSystemConfig } from '@/api/portal'
 import { errorMessage } from '@/lib/api'
-import { parseBackgrounds, useSystemConfig } from '@/lib/system-config'
+import { parseBackgrounds, resolveImageUrl, useSystemConfig } from '@/lib/system-config'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -37,41 +37,50 @@ interface Ripple {
   x: number
   y: number
   size: number
+  /** 波纹区域：左侧品牌区更强，右侧登录区更克制 */
+  zone: 'hero' | 'panel'
 }
 
 const ripples = ref<Ripple[]>([])
+const panelRef = ref<HTMLElement | null>(null)
 let rippleSeq = 0
 let lastSpawnAt = 0
 const MOVE_THROTTLE_MS = 70
 const RIPPLE_LIFETIME_MS = 1100
 
+/** 判断坐标是否落在右侧登录区（否则视为左侧品牌区）。 */
+function zoneAt(x: number): 'hero' | 'panel' {
+  const rect = panelRef.value?.getBoundingClientRect()
+  return rect && x >= rect.left ? 'panel' : 'hero'
+}
+
 /** 在指定坐标生成一个扩散水波纹，动画结束后自动移除。 */
 function spawnRipple(x: number, y: number, size: number) {
   const id = rippleSeq++
-  ripples.value.push({ id, x, y, size })
+  ripples.value.push({ id, x, y, size, zone: zoneAt(x) })
   window.setTimeout(() => {
     ripples.value = ripples.value.filter((item) => item.id !== id)
   }, RIPPLE_LIFETIME_MS)
 }
 
-/** 鼠标/手指移动：节流生成波纹，形成清晰的流动涟漪轨迹。 */
+/** 鼠标/手指移动：节流生成波纹，形成柔和的流动涟漪轨迹。 */
 function handlePointerMove(event: PointerEvent) {
   const now = performance.now()
   if (now - lastSpawnAt < MOVE_THROTTLE_MS) return
   lastSpawnAt = now
-  spawnRipple(event.clientX, event.clientY, 150)
+  spawnRipple(event.clientX, event.clientY, 120)
 }
 
 /** 按下：生成更大的波纹，反馈更明显。 */
 function handlePointerDown(event: PointerEvent) {
-  spawnRipple(event.clientX, event.clientY, 340)
+  spawnRipple(event.clientX, event.clientY, 240)
 }
 
 /** 点击：叠加一圈延迟扩散的外环，强化水波层叠感。 */
 function handlePointerClick(event: PointerEvent) {
   const x = event.clientX
   const y = event.clientY
-  window.setTimeout(() => spawnRipple(x, y, 260), 120)
+  window.setTimeout(() => spawnRipple(x, y, 190), 120)
 }
 
 let timer: number | undefined
@@ -135,7 +144,7 @@ async function submit() {
       <div class="hero-bg" aria-hidden="true">
         <div
           v-for="(url, index) in backgrounds"
-          :key="url"
+          :key="`${index}-${url}`"
           class="hero-bg-layer"
           :class="{ active: index === activeIndex }"
           :style="{ backgroundImage: `url(${url})` }"
@@ -158,14 +167,14 @@ async function submit() {
     </section>
 
     <!-- 右侧登录区：装饰圆 + 居中卡片 -->
-    <section class="auth-panel">
+    <section ref="panelRef" class="auth-panel">
       <div class="paper-circle paper-circle-top" aria-hidden="true" />
       <div class="paper-circle paper-circle-bottom" aria-hidden="true" />
 
       <div class="auth-card">
         <router-link to="/" class="auth-logo">
           <span class="auth-logo-mark">
-            <img v-if="logo" :src="`/api/image/${logo}`" :alt="systemName" />
+            <img v-if="logo" :src="resolveImageUrl(logo)" :alt="systemName" />
             <span v-else>{{ systemName.slice(0, 1) }}</span>
           </span>
           <span class="auth-logo-text">{{ systemName }}</span>
@@ -226,6 +235,7 @@ async function submit() {
         v-for="item in ripples"
         :key="item.id"
         class="ripple"
+        :class="`ripple--${item.zone}`"
         :style="{ left: `${item.x}px`, top: `${item.y}px`, width: `${item.size}px`, height: `${item.size}px` }"
       />
     </div>
@@ -283,7 +293,7 @@ async function submit() {
 .hero-bg-mask {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(8, 13, 22, 0.95), rgba(22, 38, 63, 0.88), rgba(10, 15, 24, 0.96));
+  background: linear-gradient(135deg, rgba(8, 13, 22, 0.62), rgba(22, 38, 63, 0.52), rgba(10, 15, 24, 0.66));
 }
 .hero-ring {
   position: absolute;
@@ -500,29 +510,62 @@ async function submit() {
 .ripple {
   position: absolute;
   border-radius: 50%;
-  border: 2px solid rgba(79, 127, 240, 0.45);
+  border: 1.5px solid rgba(79, 127, 240, 0.22);
   background: radial-gradient(
     circle,
-    rgba(79, 127, 240, 0.18) 0%,
-    rgba(79, 127, 240, 0.08) 46%,
-    rgba(79, 127, 240, 0.02) 64%,
+    rgba(79, 127, 240, 0.1) 0%,
+    rgba(79, 127, 240, 0.045) 46%,
+    rgba(79, 127, 240, 0.015) 64%,
     transparent 78%
   );
-  box-shadow: 0 0 16px rgba(79, 127, 240, 0.22);
+  box-shadow: 0 0 12px rgba(79, 127, 240, 0.1);
   transform: translate(-50%, -50%) scale(0.2);
   animation: ripple-expand 1100ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
   will-change: transform, opacity;
 }
+/* 左侧品牌区：波纹更强，与背景图形成明显层次 */
+.ripple--hero {
+  border-color: rgba(79, 127, 240, 0.5);
+  background: radial-gradient(
+    circle,
+    rgba(79, 127, 240, 0.24) 0%,
+    rgba(79, 127, 240, 0.12) 46%,
+    rgba(79, 127, 240, 0.04) 64%,
+    transparent 78%
+  );
+  box-shadow: 0 0 20px rgba(79, 127, 240, 0.3);
+}
+/* 右侧登录区：仅比基础略强一点点，保持克制 */
+.ripple--panel {
+  border-color: rgba(79, 127, 240, 0.28);
+  box-shadow: 0 0 14px rgba(79, 127, 240, 0.14);
+}
 @keyframes ripple-expand {
   0% {
     transform: translate(-50%, -50%) scale(0.2);
-    opacity: 0.75;
+    opacity: 0.42;
   }
   60% {
-    opacity: 0.4;
+    opacity: 0.24;
   }
   100% {
     transform: translate(-50%, -50%) scale(2.1);
+    opacity: 0;
+  }
+}
+.ripple--hero {
+  animation-name: ripple-expand-hero;
+}
+@keyframes ripple-expand-hero {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0.85;
+  }
+  60% {
+    opacity: 0.42;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.2);
     opacity: 0;
   }
 }

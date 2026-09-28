@@ -96,9 +96,13 @@ async function savePassword() {
         </div>
         <el-form label-width="80px" class="panel__form">
           <el-form-item label="头像">
-            <el-upload :show-file-list="false" :before-upload="() => false" :http-request="uploadAvatar">
+            <el-upload :show-file-list="false" :http-request="uploadAvatar" accept="image/*">
               <div class="avatar-upload">
-                <el-avatar :size="72" :src="profile.avatar ? `/api/image/${profile.avatar}` : undefined">
+                <el-avatar
+                  :key="profile.avatar || 'empty'"
+                  :size="72"
+                  :src="profile.avatar ? `/api/image/${profile.avatar}` : undefined"
+                >
                   {{ (profile.display_name || auth.user?.username || 'U')[0] }}
                 </el-avatar>
                 <span class="avatar-upload__hint">点击更换</span>

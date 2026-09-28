@@ -19,8 +19,3 @@ export function hasAnyPermission(
 ): boolean {
   return permissions.some((permission) => hasPermission(user, permission))
 }
-
-/** 用户是否拥有指定角色。 */
-export function hasRole(user: AuthUser | null | undefined, role: string): boolean {
-  return user?.roles?.includes(role) ?? user?.role === role
-}

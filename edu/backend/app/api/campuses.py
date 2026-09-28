@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from fastapi import APIRouter, Path, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -52,21 +52,6 @@ class IdsInput(BaseModel):
     ids: list[int]
 
 
-def _campus_row(row) -> dict:
-    return {
-        "id": row["id"],
-        "code": row["code"],
-        "name": row["name"],
-        "address": row["address"],
-        "contact_name": row["contact_name"],
-        "contact_mobile": row["contact_mobile"],
-        "manager": row["manager"] if "manager" in row else "",
-        "status": row["status"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
-    }
-
-
 @router.get("")
 def list_campuses(request: Request):
     page, size = page_params(request)
@@ -100,7 +85,8 @@ def list_campuses(request: Request):
                 "SELECT c.id, c.code, c.name, c.address, c.contact_name, c.contact_mobile, "
                 "c.status, c.created_at, c.updated_at, "
                 "(SELECT COUNT(*) FROM campus_members cm WHERE cm.campus_id=c.id AND cm.status=1) member_count, "
-                "(SELECT COUNT(*) FROM campus_members cm WHERE cm.campus_id=c.id AND cm.status=1 AND cm.member_type='principal') principal_count, "
+                "(SELECT COUNT(*) FROM campus_members cm WHERE cm.campus_id=c.id AND cm.status=1 "
+                "AND cm.member_type IN ('principal','homeroom_teacher')) manager_count, "
                 "(SELECT COUNT(*) FROM campus_members cm WHERE cm.campus_id=c.id AND cm.status=1 AND cm.member_type='student') student_count "
                 f"FROM campuses c WHERE {clause} ORDER BY c.id LIMIT :limit OFFSET :offset"
             ),
@@ -327,6 +313,11 @@ def _member_view(row) -> dict:
 
 @router.get("/{campus_id}/members")
 def list_members(campus_id: int, request: Request):
+    from ..domain.campus import VALID_MEMBER_TYPES
+
+    page, size = page_params(request)
+    keyword = (request.query_params.get("keyword") or "").strip()
+    member_type = (request.query_params.get("member_type") or "").strip()
     with get_engine().connect() as connection:
         from ..common import actor_id
 
@@ -347,17 +338,34 @@ def list_members(campus_id: int, request: Request):
             ).scalar()
             if not visible:
                 raise forbidden()
+        where = ["cm.campus_id = :id"]
+        params: dict = {"id": campus_id}
+        if keyword:
+            where.append("(u.username LIKE :kw OR u.display_name LIKE :kw)")
+            params["kw"] = f"%{keyword}%"
+        if member_type in VALID_MEMBER_TYPES:
+            where.append("cm.member_type = :member_type")
+            params["member_type"] = member_type
+        clause = " AND ".join(where)
+        total = connection.execute(
+            text(
+                "SELECT COUNT(*) FROM campus_members cm JOIN users u ON u.id = cm.user_id "
+                f"WHERE {clause}"
+            ),
+            params,
+        ).scalar()
         rows = connection.execute(
             text(
                 "SELECT cm.id, cm.campus_id, cm.user_id, u.username, u.display_name, "
                 "cm.member_type, cm.is_primary, cm.status, cm.joined_at, cm.left_at "
                 "FROM campus_members cm JOIN users u ON u.id = cm.user_id "
-                "WHERE cm.campus_id = :id ORDER BY cm.status DESC, cm.id"
+                f"WHERE {clause} ORDER BY cm.status DESC, cm.id "
+                "LIMIT :limit OFFSET :offset"
             ),
-            {"id": campus_id},
+            {**params, "limit": size, "offset": (page - 1) * size},
         ).mappings().all()
         connection.commit()
-    return ok({"items": [_member_view(row) for row in rows]})
+    return ok(page_result([_member_view(row) for row in rows], total, page, size))
 
 
 @router.post("/{campus_id}/members")

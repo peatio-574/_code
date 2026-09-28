@@ -442,13 +442,6 @@ a {
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
-.data-page__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-}
-
 .data-page__card {
   display: flex;
   flex: 1;
@@ -522,11 +515,6 @@ a {
   color: var(--text-tertiary);
 }
 
-/* 单元格次要文字 */
-.cell-sub {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
 .cell-strong {
   font-weight: 600;
   color: var(--text-strong);
@@ -693,6 +681,40 @@ a {
   z-index: 1;
 }
 
+/* 顶部书法背景图（课程中心 / 题库练习 / 冲刺考试） */
+.portal-main .data-page__header.page-hero,
+.portal-main .courses__header.page-hero {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border-color: var(--border-color);
+  background-color: #ffffff;
+  /* 左侧渐变保证标题文字可读，右侧显示 banner 场景背景图 */
+  background-image:
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.98) 0%,
+      rgba(255, 255, 255, 0.92) 32%,
+      rgba(255, 255, 255, 0) 64%
+    ),
+    var(--portal-banner-image, url('/portal-banner.png'));
+  background-repeat: no-repeat, no-repeat;
+  background-position: left center, right center;
+  background-size: 100% 100%, auto 82%;
+  box-shadow: var(--shadow-sm);
+}
+.portal-main .data-page__header.page-hero {
+  min-height: 150px;
+}
+/* 关闭原有右上角光晕，突出书法图 */
+.portal-main .data-page__header.page-hero::after,
+.portal-main .courses__header.page-hero::after {
+  display: none;
+}
+
 /* 门户内容面板 / 卡片：白色卡片（重复类名提升优先级以覆盖 scoped） */
 .portal-main .panel.panel,
 .portal-main .question-card.question-card {
@@ -756,18 +778,11 @@ a {
 .portal-main .course-card__duration {
   color: var(--brand-600);
 }
-.portal-main .course-card__chapters {
-  color: var(--text-tertiary);
-}
 .portal-main .course-card__cover {
-  background: linear-gradient(135deg, var(--brand-100), var(--brand-200)) center/cover no-repeat;
+  background-color: var(--brand-100);
 }
 .portal-main .course-card__cover-fallback {
   color: var(--brand-500);
-}
-.portal-main .course-card__badge {
-  background: linear-gradient(135deg, var(--brand-500), var(--brand-700));
-  box-shadow: 0 4px 12px -4px rgba(79, 127, 240, 0.8);
 }
 
 /* ===================== 页面切换与入场动效 ===================== */
@@ -811,12 +826,7 @@ a {
 .reveal {
   animation: fade-up var(--duration-slow) var(--ease-out) both;
 }
-.reveal-delay-1 { animation-delay: 60ms; }
 .reveal-delay-2 { animation-delay: 120ms; }
-.reveal-delay-3 { animation-delay: 180ms; }
-.reveal-delay-4 { animation-delay: 240ms; }
-.reveal-delay-5 { animation-delay: 300ms; }
-.reveal-delay-6 { animation-delay: 360ms; }
 
 @media (prefers-reduced-motion: reduce) {
   .page-enter-active,
@@ -829,16 +839,8 @@ a {
 }
 
 /* ===================== 通用工具类 ===================== */
-.text-muted {
-  color: var(--text-secondary);
-}
 .text-tertiary {
   color: var(--text-tertiary);
-}
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
 }
 .row {
   display: flex;

@@ -6,7 +6,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from sqlalchemy import text
 
-from ..common import actor_id, is_super_admin, page_params, page_result
+from ..common import actor_id, page_params, page_result
 from ..db import get_engine
 from ..response import ok
 

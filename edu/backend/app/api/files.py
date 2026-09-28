@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -295,7 +295,12 @@ def _serve(file_id: str, expect_prefix: str | None, request: Request, require_au
         actor_id(request)
     path = Path(row["storage_path"])
     if not path.exists():
-        raise not_found("文件已丢失")
+        # 数据库可能来自其他环境（绝对路径失效），回退到当前存储目录按文件 ID 查找
+        fallback = _storage_dir() / file_id
+        if fallback.exists():
+            path = fallback
+        else:
+            raise not_found("文件已丢失")
     headers = {
         "Accept-Ranges": "bytes",
         "X-Content-Type-Options": "nosniff",

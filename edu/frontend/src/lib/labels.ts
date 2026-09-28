@@ -7,19 +7,6 @@ export const ROLE_LABELS: Record<string, string> = {
   student: '学员',
 }
 
-export const ROLE_TAG_TYPE: Record<string, 'danger' | 'warning' | 'primary' | 'info'> = {
-  system_admin: 'danger',
-  principal: 'warning',
-  homeroom_teacher: 'primary',
-  student: 'info',
-}
-
-export const MEMBER_TYPE_LABELS: Record<string, string> = {
-  principal: '校长',
-  homeroom_teacher: '班主任',
-  student: '学员',
-}
-
 export function roleLabel(code: string): string {
   return ROLE_LABELS[code] ?? code
 }

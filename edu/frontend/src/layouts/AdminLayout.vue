@@ -20,7 +20,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { hasAnyPermission, PERMISSIONS } from '@/lib/rbac'
-import { useSystemConfig } from '@/lib/system-config'
+import { resolveImageUrl, useSystemConfig } from '@/lib/system-config'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -98,7 +98,7 @@ function handleCommand(command: string) {
     <aside class="admin-sidebar">
       <div class="admin-brand">
         <span class="admin-brand__mark">
-          <img v-if="logo" :src="`/api/image/${logo}`" :alt="systemName" />
+          <img v-if="logo" :src="resolveImageUrl(logo)" :alt="systemName" />
           <span v-else>{{ systemName.slice(0, 1) }}</span>
         </span>
         <span class="admin-brand__text">{{ systemName }}</span>

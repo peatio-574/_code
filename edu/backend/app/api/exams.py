@@ -9,6 +9,8 @@ from sqlalchemy import text
 
 from ..common import actor_id, actor_primary_campus, now, page_params, page_result
 from ..db import get_engine, named_lock
+from ..domain import data_scope
+from ..domain.rbac import DATA_SCOPE_ALL
 from ..error import conflict, forbidden, not_found, validation
 from ..response import ok
 
@@ -22,6 +24,7 @@ class SectionInput(BaseModel):
     type: str
     description: str
     question_ids: list[int]
+    score: int = 0
 
 
 class ExamInput(BaseModel):
@@ -33,16 +36,13 @@ class ExamInput(BaseModel):
     pass_score: int = 60
     total_score: int | None = None
     sections: list[SectionInput] = []
+    campus_ids: list[int] | None = None
     status: int = 1
 
 
 class StatusInput(BaseModel):
     id: int
     status: int
-
-
-class AttemptQuery(BaseModel):
-    pass
 
 
 class AnswerItem(BaseModel):
@@ -75,6 +75,14 @@ def _is_correct(question_type: str, expected: str, submitted: str) -> bool:
     return _normalize_text(expected) == _normalize_text(submitted)
 
 
+def _effective_end_time(row) -> int:
+    """考试截止时间：显式 end_time>0 优先，否则回退 开始时间+时长。"""
+    explicit = int(row["end_time"] or 0)
+    if explicit > 0:
+        return explicit
+    return int(row["exam_time"] or 0) + int(row["duration"] or 0) * 60
+
+
 def _exam_display_status(row) -> str:
     timestamp = now()
     if row["status"] == 0:
@@ -83,9 +91,23 @@ def _exam_display_status(row) -> str:
         return "withdrawn"
     if timestamp < row["exam_time"]:
         return "not_started"
-    if row["end_time"] and timestamp > row["end_time"]:
+    end_time = _effective_end_time(row)
+    if end_time and timestamp > end_time:
         return "ended"
     return "in_progress"
+
+
+def _scope_user_predicate(ctx, user_id_expr: str) -> str:
+    """目标用户是否在操作者数据范围内（关系范围 AND 校区范围）。
+
+    超管：全部；校长：本校区；班主任：本人名下学员。
+    """
+    if ctx.scope == DATA_SCOPE_ALL:
+        return "1 = 1"
+    return (
+        f"EXISTS (SELECT 1 FROM users su WHERE su.id = {user_id_expr} "
+        f"AND ({ctx.combined_user_predicate('su')}))"
+    )
 
 
 @admin_router.get("/exams")
@@ -99,6 +121,11 @@ def list_exams(request: Request):
         params["kw"] = f"%{keyword}%"
     clause = " AND ".join(where)
     with get_engine().connect() as connection:
+        # 按登录人身份统计：超管全部 / 校长本校区 / 班主任名下学员
+        actor = actor_id(request)
+        ctx = data_scope.context(connection, actor)
+        attempt_scope = _scope_user_predicate(ctx, "a.user_id")
+        student_scope = _scope_user_predicate(ctx, "u.id")
         total = connection.execute(
             text(f"SELECT COUNT(*) FROM exams e WHERE {clause}"), params
         ).scalar()
@@ -106,16 +133,38 @@ def list_exams(request: Request):
             text(
                 "SELECT e.id, e.title, e.exam_time, e.duration, e.status, e.pass_score, "
                 "e.created_by, e.published_at, e.created_at, e.updated_at, "
-                "(e.exam_time + e.duration*60) end_time, "
+                "COALESCE(NULLIF(e.end_time,0), e.exam_time + e.duration*60) end_time, "
                 "COALESCE(NULLIF(creator.display_name,''), creator.username) creator_name, "
                 "COUNT(DISTINCT esq.question_id) total_questions, "
                 "COUNT(DISTINCT a.id) attempt_count, "
-                "SUM(CASE WHEN a.status=1 AND a.total_score>=e.pass_score THEN 1 ELSE 0 END) pass_count, "
-                "CAST(COALESCE(AVG(CASE WHEN a.status=1 THEN a.total_score END),0) AS DOUBLE) average_score "
+                "COUNT(DISTINCT a.user_id) attempt_user_count, "
+                "COUNT(DISTINCT CASE WHEN a.status=1 AND a.total_score>=e.pass_score THEN a.id END) pass_count, "
+                "CAST(COALESCE(AVG(CASE WHEN a.status=1 THEN a.total_score END),0) AS DOUBLE) average_score, "
+                "(CASE "
+                "WHEN EXISTS (SELECT 1 FROM exam_campuses ec WHERE ec.exam_id=e.id) "
+                "THEN (SELECT COUNT(*) FROM users u JOIN user_roles ur2 ON ur2.user_id=u.id "
+                "JOIN roles r2 ON r2.id=ur2.role_id WHERE r2.code='student' AND r2.status=1 AND u.status=1 "
+                f"AND ({student_scope}) "
+                "AND EXISTS (SELECT 1 FROM campus_members cm WHERE cm.user_id=u.id AND cm.status=1 "
+                "AND cm.is_primary=1 AND cm.campus_id IN "
+                "(SELECT ec2.campus_id FROM exam_campuses ec2 WHERE ec2.exam_id=e.id))) "
+                "WHEN EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id "
+                "WHERE ur.user_id=e.created_by AND r.code='system_admin' AND r.status=1) "
+                "THEN (SELECT COUNT(*) FROM users u JOIN user_roles ur2 ON ur2.user_id=u.id "
+                "JOIN roles r2 ON r2.id=ur2.role_id WHERE r2.code='student' AND r2.status=1 AND u.status=1 "
+                f"AND ({student_scope})) "
+                "ELSE (SELECT COUNT(*) FROM users u JOIN user_roles ur2 ON ur2.user_id=u.id "
+                "JOIN roles r2 ON r2.id=ur2.role_id WHERE r2.code='student' AND r2.status=1 "
+                f"AND u.status=1 AND u.manager_id=e.created_by AND ({student_scope})) END) eligible_count "
                 "FROM exams e JOIN users creator ON creator.id=e.created_by "
                 "LEFT JOIN exam_sections es ON es.exam_id=e.id "
                 "LEFT JOIN exam_section_questions esq ON esq.exam_section_id=es.id "
-                "LEFT JOIN exam_attempts a ON a.exam_id=e.id "
+                "LEFT JOIN exam_attempts a ON a.exam_id=e.id AND ("
+                "NOT EXISTS (SELECT 1 FROM exam_campuses ec0 WHERE ec0.exam_id=e.id) "
+                "OR EXISTS (SELECT 1 FROM campus_members cm0 WHERE cm0.user_id=a.user_id "
+                "AND cm0.status=1 AND cm0.is_primary=1 AND cm0.campus_id IN "
+                "(SELECT ec1.campus_id FROM exam_campuses ec1 WHERE ec1.exam_id=e.id))) "
+                f"AND ({attempt_scope}) "
                 f"WHERE {clause} GROUP BY e.id, creator.display_name, creator.username "
                 "ORDER BY e.id DESC LIMIT :limit OFFSET :offset"
             ),
@@ -127,8 +176,12 @@ def list_exams(request: Request):
         item = dict(row)
         item["total_questions"] = int(item["total_questions"] or 0)
         item["attempt_count"] = int(item["attempt_count"] or 0)
+        item["attempt_user_count"] = int(item["attempt_user_count"] or 0)
         item["pass_count"] = int(item["pass_count"] or 0)
         item["average_score"] = float(item["average_score"] or 0)
+        item["eligible_count"] = int(item["eligible_count"] or 0)
+        # 待参考 = 应考人数 - 已参考人数
+        item["pending_count"] = max(item["eligible_count"] - item["attempt_user_count"], 0)
         item["display_status"] = _exam_display_status(row)
         items.append(item)
     return ok(page_result(items, total, page, size))
@@ -137,8 +190,9 @@ def list_exams(request: Request):
 def _exam_value(connection, exam_id: int) -> dict:
     exam = connection.execute(
         text(
-            "SELECT id, title, code, exam_time, duration, status, pass_score, created_by, "
-            "published_at, created_at, updated_at, (exam_time + duration*60) end_time "
+            "SELECT id, title, code, exam_time, end_time, duration, status, pass_score, created_by, "
+            "published_at, created_at, updated_at, "
+            "COALESCE(NULLIF(end_time,0), exam_time + duration*60) effective_end_time "
             "FROM exams WHERE id=:id AND is_mock=0"
         ),
         {"id": exam_id},
@@ -148,21 +202,49 @@ def _exam_value(connection, exam_id: int) -> dict:
     sections = []
     for section in connection.execute(
         text(
-            "SELECT id, type, description, sort_order FROM exam_sections "
+            "SELECT id, type, description, score, sort_order FROM exam_sections "
             "WHERE exam_id=:id ORDER BY sort_order"
         ),
         {"id": exam_id},
     ).mappings().all():
         questions = connection.execute(
             text(
-                "SELECT q.id, q.type, q.title, q.options, q.status, q.score "
+                "SELECT q.id, q.type, q.title, q.options, q.status, "
+                "CASE WHEN :section_score > 0 THEN :section_score ELSE q.score END score "
                 "FROM exam_section_questions esq JOIN questions q ON q.id=esq.question_id "
                 "WHERE esq.exam_section_id=:sid ORDER BY esq.sort_order"
             ),
-            {"sid": section["id"]},
+            {"sid": section["id"], "section_score": int(section["score"] or 0)},
         ).mappings().all()
         sections.append({**dict(section), "questions": [dict(q) for q in questions]})
-    return {"exam": dict(exam), "sections": sections}
+    campus_ids = [
+        row[0]
+        for row in connection.execute(
+            text("SELECT campus_id FROM exam_campuses WHERE exam_id=:id ORDER BY campus_id"),
+            {"id": exam_id},
+        ).fetchall()
+    ]
+    return {"exam": {**dict(exam), "campus_ids": campus_ids}, "sections": sections}
+
+
+def _set_exam_campuses(connection, exam_id: int, campus_ids: list[int]) -> None:
+    """替换试卷的开放校区。空列表表示不限校区。"""
+    connection.execute(
+        text("DELETE FROM exam_campuses WHERE exam_id=:id"), {"id": exam_id}
+    )
+    seen: set[int] = set()
+    timestamp = now()
+    for campus_id in campus_ids or []:
+        if campus_id <= 0 or campus_id in seen:
+            continue
+        seen.add(campus_id)
+        connection.execute(
+            text(
+                "INSERT INTO exam_campuses(exam_id, campus_id, created_at) "
+                "VALUES(:exam_id, :campus_id, :ts)"
+            ),
+            {"exam_id": exam_id, "campus_id": campus_id, "ts": timestamp},
+        )
 
 
 @admin_router.post("/exam")
@@ -170,6 +252,9 @@ def create_exam(payload: ExamInput, request: Request):
     title = payload.title.strip()
     if not title or payload.exam_time <= 0 or payload.duration <= 0 or payload.pass_score < 0 or not payload.sections:
         raise validation("试卷数据不完整")
+    exam_end_time = int(payload.end_time or 0)
+    if exam_end_time <= payload.exam_time:
+        raise validation("结束时间必须晚于开始时间")
     with named_lock("exams:code") as connection:
         actor = actor_id(request)
         timestamp = now()
@@ -178,15 +263,16 @@ def create_exam(payload: ExamInput, request: Request):
         code = f"EXAM-{uuid.uuid4()}"
         exam_id = connection.execute(
             text(
-                "INSERT INTO exams(title, code, exam_time, duration, pass_score, status, is_mock, "
-                "created_by, published_at, created_at, updated_at) VALUES(:title, :code, "
-                ":exam_time, :duration, :pass_score, :status, 0, :created_by, :published_at, "
-                ":created_at, :updated_at)"
+                "INSERT INTO exams(title, code, exam_time, end_time, duration, pass_score, status, "
+                "is_mock, created_by, published_at, created_at, updated_at) VALUES(:title, :code, "
+                ":exam_time, :end_time, :duration, :pass_score, :status, 0, :created_by, "
+                ":published_at, :created_at, :updated_at)"
             ),
             {
                 "title": title,
                 "code": code,
                 "exam_time": payload.exam_time,
+                "end_time": exam_end_time,
                 "duration": payload.duration,
                 "pass_score": payload.pass_score,
                 "status": 1 if payload.status else 0,
@@ -197,6 +283,7 @@ def create_exam(payload: ExamInput, request: Request):
             },
         ).lastrowid
         _insert_sections(connection, exam_id, payload.sections)
+        _set_exam_campuses(connection, exam_id, payload.campus_ids or [])
         value = _exam_value(connection, exam_id)
     return ok(value)
 
@@ -207,13 +294,14 @@ def _insert_sections(connection, exam_id: int, sections: list[SectionInput]) -> 
             raise validation("试卷分组不合法")
         section_id = connection.execute(
             text(
-                "INSERT INTO exam_sections(exam_id, type, description, sort_order) "
-                "VALUES(:exam_id, :type, :description, :sort_order)"
+                "INSERT INTO exam_sections(exam_id, type, description, score, sort_order) "
+                "VALUES(:exam_id, :type, :description, :score, :sort_order)"
             ),
             {
                 "exam_id": exam_id,
                 "type": section.type,
                 "description": section.description.strip(),
+                "score": max(0, int(section.score or 0)),
                 "sort_order": index,
             },
         ).lastrowid
@@ -261,9 +349,19 @@ def update_exam(exam_id: int, payload: ExamInput, request: Request):
         ).scalar()
         if attempts:
             raise conflict("已有考试记录的试卷不可修改")
-        fields = ["exam_time=:exam_time", "duration=:duration", "pass_score=:pass_score", "updated_at=:ts"]
+        exam_end_time = int(payload.end_time or 0)
+        if exam_end_time <= payload.exam_time:
+            raise validation("结束时间必须晚于开始时间")
+        fields = [
+            "exam_time=:exam_time",
+            "end_time=:end_time",
+            "duration=:duration",
+            "pass_score=:pass_score",
+            "updated_at=:ts",
+        ]
         params: dict = {
             "exam_time": payload.exam_time,
+            "end_time": exam_end_time,
             "duration": payload.duration,
             "pass_score": payload.pass_score,
             "ts": now(),
@@ -286,6 +384,8 @@ def update_exam(exam_id: int, payload: ExamInput, request: Request):
             )
             connection.execute(text("DELETE FROM exam_sections WHERE exam_id=:id"), {"id": exam_id})
             _insert_sections(connection, exam_id, payload.sections)
+        if payload.campus_ids is not None:
+            _set_exam_campuses(connection, exam_id, payload.campus_ids)
         value = _exam_value(connection, exam_id)
     return ok(value)
 
@@ -319,6 +419,7 @@ def _delete_exam(connection, exam_id: int) -> None:
     )
     connection.execute(text("DELETE FROM exam_attempts WHERE exam_id=:id"), {"id": exam_id})
     connection.execute(text("DELETE FROM exam_sections WHERE exam_id=:id"), {"id": exam_id})
+    connection.execute(text("DELETE FROM exam_campuses WHERE exam_id=:id"), {"id": exam_id})
     connection.execute(text("DELETE FROM exams WHERE id=:id"), {"id": exam_id})
 
 
@@ -408,7 +509,7 @@ def statistics(request: Request):
         user_id = actor_id(request)
         row = connection.execute(
             text(
-                "SELECT COUNT(*) attempt_count, "
+                "SELECT CAST(COALESCE(SUM(CASE WHEN a.status=1 THEN 1 ELSE 0 END),0) AS SIGNED) attempt_count, "
                 "CAST(COALESCE(SUM(CASE WHEN a.status=1 AND a.total_score>=e.pass_score THEN 1 ELSE 0 END),0) AS SIGNED) pass_count, "
                 "CAST(COALESCE(AVG(CASE WHEN a.status=1 THEN a.total_score END),0) AS DOUBLE) average_score "
                 "FROM exam_attempts a JOIN exams e ON e.id=a.exam_id "
@@ -448,11 +549,18 @@ def available(request: Request):
         rows = connection.execute(
             text(
                 "SELECT e.id exam_id, e.title, e.exam_time, e.duration, e.pass_score, "
+                "COALESCE(NULLIF(e.end_time,0), e.exam_time + e.duration*60) end_time, "
                 "(SELECT COUNT(*) FROM exam_section_questions esq JOIN exam_sections es "
                 " ON es.id=esq.exam_section_id WHERE es.exam_id=e.id) total_questions, "
                 "COALESCE((SELECT a.id FROM exam_attempts a WHERE a.exam_id=e.id AND a.user_id=:uid "
-                "AND a.status=0 ORDER BY a.id DESC LIMIT 1),0) attempt_id "
+                "AND a.status=0 ORDER BY a.id DESC LIMIT 1),0) attempt_id, "
+                "EXISTS (SELECT 1 FROM exam_attempts a WHERE a.exam_id=e.id AND a.user_id=:uid "
+                "AND a.status=1) submitted "
                 "FROM exams e WHERE e.is_mock=0 AND e.status=1 "
+                "AND (NOT EXISTS (SELECT 1 FROM exam_campuses ec WHERE ec.exam_id=e.id) "
+                "OR EXISTS (SELECT 1 FROM campus_members cm WHERE cm.user_id=:uid AND cm.status=1 "
+                "AND cm.is_primary=1 AND cm.campus_id IN "
+                "(SELECT ec2.campus_id FROM exam_campuses ec2 WHERE ec2.exam_id=e.id))) "
                 "AND (e.created_by=(SELECT manager_id FROM users WHERE id=:uid) OR EXISTS ("
                 "SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=e.created_by "
                 "AND r.code='system_admin' AND r.status=1)) ORDER BY e.exam_time DESC, e.id DESC"
@@ -464,6 +572,7 @@ def available(request: Request):
     for row in rows:
         item = dict(row)
         item["attempt_id"] = item["attempt_id"] or None
+        item["submitted"] = bool(item.get("submitted"))
         items.append(item)
     return ok({"items": items})
 
@@ -488,7 +597,12 @@ def start_attempt(exam_id: int, request: Request):
                 "SELECT COUNT(*) FROM exams e WHERE e.id=:id AND "
                 "(e.created_by=(SELECT manager_id FROM users WHERE id=:uid) OR EXISTS ("
                 "SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id "
-                "WHERE ur.user_id=e.created_by AND r.code='system_admin' AND r.status=1))"
+                "WHERE ur.user_id=e.created_by AND r.code='system_admin' AND r.status=1)) "
+                # 与可参加考试列表一致：按校区限制校验，防止绕过
+                "AND (NOT EXISTS (SELECT 1 FROM exam_campuses ec WHERE ec.exam_id=e.id) "
+                "OR EXISTS (SELECT 1 FROM campus_members cm WHERE cm.user_id=:uid AND cm.status=1 "
+                "AND cm.is_primary=1 AND cm.campus_id IN "
+                "(SELECT ec2.campus_id FROM exam_campuses ec2 WHERE ec2.exam_id=e.id)))"
             ),
             {"id": exam_id, "uid": user_id},
         ).scalar()
@@ -540,11 +654,23 @@ def _attempt_response(connection, attempt, title: str, duration: int) -> dict:
         ),
         {"eid": attempt["exam_id"]},
     ).fetchall()
+    # 已交卷：载入作答与判分，用于成绩回顾
+    submitted = attempt["status"] == 1
+    answered: dict[int, dict] = {}
+    if submitted:
+        for row in connection.execute(
+            text(
+                "SELECT question_id, answer, is_correct, score FROM exam_answers WHERE attempt_id=:aid"
+            ),
+            {"aid": attempt["id"]},
+        ).mappings().all():
+            answered[row["question_id"]] = dict(row)
     questions = []
     for (question_id,) in top_ids:
         question = connection.execute(
             text(
-                "SELECT id, type, title, options, status, score FROM questions WHERE id=:id"
+                "SELECT id, type, title, options, answer correct_answer, "
+                "COALESCE(explanation,'') explanation, status, score FROM questions WHERE id=:id"
             ),
             {"id": question_id},
         ).mappings().first()
@@ -556,12 +682,17 @@ def _attempt_response(connection, attempt, title: str, duration: int) -> dict:
                 dict(c)
                 for c in connection.execute(
                     text(
-                        "SELECT id, type, title, options, status, score FROM questions "
+                        "SELECT id, type, title, options, answer correct_answer, "
+                        "COALESCE(explanation,'') explanation, status, score FROM questions "
                         "WHERE parent_id=:id AND status=1 ORDER BY sort_order, id"
                     ),
                     {"id": question_id},
                 ).mappings().all()
             ]
+        record = answered.get(question_id)
+        item["user_answer"] = (record or {}).get("answer", "")
+        item["is_correct"] = bool((record or {}).get("is_correct", 0))
+        item["earned_score"] = int((record or {}).get("score", 0) or 0)
         questions.append(item)
     end_time = attempt["start_time"] + duration * 60
     return {
@@ -571,7 +702,7 @@ def _attempt_response(connection, attempt, title: str, duration: int) -> dict:
         "start_time": attempt["start_time"],
         "end_time": end_time,
         "duration": duration,
-        "submitted": attempt["status"] == 1,
+        "submitted": submitted,
         "remaining_seconds": max(end_time - now(), 0),
         "questions": questions,
     }
@@ -599,7 +730,8 @@ def get_attempt(request: Request):
             text("SELECT title, duration FROM exams WHERE id=:id"), {"id": attempt["exam_id"]}
         ).mappings().first()
         connection.commit()
-    return ok(_attempt_response(connection, attempt, exam["title"], exam["duration"]))
+        response = _attempt_response(connection, attempt, exam["title"], exam["duration"])
+    return ok(response)
 
 
 def _persist_answers(connection, attempt, answers: list[AnswerItem], ended: bool) -> tuple[int, bool]:
@@ -609,7 +741,12 @@ def _persist_answers(connection, attempt, answers: list[AnswerItem], ended: bool
             continue
         question = connection.execute(
             text(
-                "SELECT q.id, q.type, q.answer, q.score FROM questions q WHERE q.id=:qid AND EXISTS ("
+                "SELECT q.id, q.type, q.answer, "
+                "COALESCE(NULLIF((SELECT es2.score FROM exam_section_questions esq2 "
+                "  JOIN exam_sections es2 ON es2.id=esq2.exam_section_id "
+                "  WHERE es2.exam_id=:eid AND (esq2.question_id=q.id OR esq2.question_id=q.parent_id) "
+                "  ORDER BY es2.sort_order LIMIT 1), 0), q.score) AS score "
+                "FROM questions q WHERE q.id=:qid AND EXISTS ("
                 "SELECT 1 FROM exam_section_questions esq JOIN exam_sections es ON es.id=esq.exam_section_id "
                 "WHERE es.exam_id=:eid AND (esq.question_id=q.id OR esq.question_id=q.parent_id))"
             ),
@@ -727,6 +864,20 @@ def submit(payload: SubmitInput, request: Request):
             raise not_found("考试记录不存在")
         if attempt["user_id"] != user_id:
             raise forbidden()
+        if attempt["status"] == 1:
+            # 已交卷：不允许重复提交或修改成绩
+            total = connection.execute(
+                text("SELECT total_score FROM exam_attempts WHERE id=:id"), {"id": attempt["id"]}
+            ).scalar()
+            return ok(
+                {
+                    "saved": True,
+                    "ended": True,
+                    "submitted": True,
+                    "remaining_seconds": 0,
+                    "total_score": total,
+                }
+            )
         total_score, _ = _persist_answers(connection, attempt, payload.answers, True)
     return ok(
         {
@@ -771,6 +922,7 @@ def result(request: Request):
             row = connection.execute(
                 text(
                     "SELECT q.id, q.type, q.title, q.options, q.status, q.score, q.answer correct_answer, "
+                    "COALESCE(q.explanation,'') explanation, "
                     "ea.answer user_answer, ea.is_correct, ea.score earned_score "
                     "FROM questions q LEFT JOIN exam_answers ea ON ea.question_id=q.id AND ea.attempt_id=:aid "
                     "WHERE q.id=:qid"
@@ -928,6 +1080,7 @@ def mock_exam(request: Request):
                     ),
                     {"sid": section_id, "qid": question_id, "order": order},
                 )
+        campus_id = actor_primary_campus(connection, user_id)
         attempt_id = connection.execute(
             text(
                 "INSERT INTO exam_attempts(user_id, exam_id, start_time, end_time, status, campus_id, "

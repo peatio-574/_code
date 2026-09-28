@@ -18,14 +18,17 @@ def now() -> int:
 
 
 def page_params(request: Request) -> tuple[int, int]:
-    """解析分页参数：页码 p（默认1，最小1），每页 page_size 仅允许 20/50/100。"""
-    page = max(1, int(request.query_params.get("p", 1) or 1))
+    """解析分页参数：页码 p（最小1）与每页 page_size（1~200，默认20）。"""
+    try:
+        page = max(1, int(request.query_params.get("p", 1) or 1))
+    except ValueError:
+        page = 1
     try:
         size = int(request.query_params.get("page_size", 20) or 20)
     except ValueError:
         size = 20
-    if size not in (20, 50, 100):
-        size = 20
+    # 允许业务自定义每页条数（如课程中心 12 条/页），限定在合理范围内
+    size = max(1, min(size, 200))
     return page, size
 
 
@@ -39,18 +42,6 @@ def mask_phone(phone: str | None) -> str:
 def page_result(items: list[Any], total: int, page: int, size: int) -> dict:
     """统一分页响应结构。"""
     return {"items": items, "total": total, "page": page, "page_size": size}
-
-
-def object_campus_ok(
-    connection: Connection,
-    campus_id: int | None,
-    actor_campus_id: int | None,
-    is_super: bool,
-) -> bool:
-    """对象级校区校验：超管放行，其余要求对象校区等于操作者校区。"""
-    if is_super:
-        return True
-    return campus_id == actor_campus_id
 
 
 def actor_primary_campus(connection: Connection, user_id: int) -> int | None:

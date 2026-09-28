@@ -1,0 +1,18 @@
+[Unit]
+Description=Education FastAPI Backend (Python)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=education
+Group=education
+WorkingDirectory=/srv/edu-api/app
+EnvironmentFile=/srv/edu-api/app/.env
+ExecStart=/srv/edu-api/venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 18081
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

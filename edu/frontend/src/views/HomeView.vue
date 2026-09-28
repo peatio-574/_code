@@ -59,7 +59,8 @@ onMounted(async () => {
     // 最新课程最多展示 6 条
     latest.value = (page?.items ?? []).slice(0, 6)
     const readIds = new Set(loadReadIds())
-    announcements.value = notices.filter((item) => !readIds.has(Number(item.id)))
+    // 仅展示最新的一条公告
+    announcements.value = notices.filter((item) => !readIds.has(Number(item.id))).slice(0, 1)
     if (announcements.value.length) {
       announcementVisible.value = true
       // 弹窗展示即视为已阅读，上报服务端用于统计已读/待读人数
@@ -90,7 +91,7 @@ onBeforeUnmount(() => {
     <section class="hero reveal">
       <div
         v-for="(url, index) in backgrounds"
-        :key="url"
+        :key="`${index}-${url}`"
         class="hero__bg"
         :class="{ active: index === bannerIndex }"
         :style="{ backgroundImage: `url(${url})` }"
@@ -145,35 +146,32 @@ onBeforeUnmount(() => {
       v-model="announcementVisible"
       :lock-scroll="false"
       :close-on-click-modal="false"
-      width="760px"
+      :show-close="false"
+      width="720px"
       top="6vh"
       append-to-body
       class="notice-dialog"
+      @close="acknowledgeAnnouncements"
     >
       <template #header>
         <div class="notice-head">
           <span class="notice-head__icon"><el-icon :size="22"><BellFilled /></el-icon></span>
           <div class="notice-head__text">
             <h2 class="notice-head__title">通知公告</h2>
-            <p class="notice-head__desc">共 {{ announcements.length }} 条公告 · 请及时查阅</p>
+            <p class="notice-head__desc">最新公告 · 请及时查阅</p>
           </div>
         </div>
       </template>
 
-      <div class="notice-scroll">
-        <article v-for="item in announcements" :key="item.id" class="notice-item">
-          <div class="notice-item__head">
-            <h3 class="notice-item__title">
-              <span class="notice-item__badge">公告</span>
-              <span class="notice-item__text">{{ item.title }}</span>
-            </h3>
-            <span class="notice-item__time">
-              <el-icon><Calendar /></el-icon>{{ formatDate(item.published_at || item.created_at) }}
-            </span>
-          </div>
-          <div class="notice-item__content" v-html="item.content" />
-        </article>
-      </div>
+      <article v-for="item in announcements" :key="item.id" class="notice-item">
+        <div class="notice-item__meta">
+          <span class="notice-item__time">
+            <el-icon><Calendar /></el-icon>{{ formatDate(item.published_at || item.created_at) }}
+          </span>
+        </div>
+        <h3 class="notice-item__title">{{ item.title }}</h3>
+        <div class="notice-item__content" v-html="item.content" />
+      </article>
 
       <template #footer>
         <span class="notice-foot__hint">阅后请点击右侧按钮关闭</span>
@@ -356,11 +354,6 @@ onBeforeUnmount(() => {
 }
 
 /* ============ 公告弹窗 ============ */
-/* 顶部品牌渐变头 */
-.notice-dialog :deep(.el-dialog__header) {
-  padding: 0;
-  margin: 0;
-}
 .notice-head {
   display: flex;
   align-items: center;
@@ -389,84 +382,36 @@ onBeforeUnmount(() => {
   font-size: var(--text-sm);
   color: rgba(255, 255, 255, 0.85);
 }
-.notice-dialog :deep(.el-dialog__headerbtn) {
-  top: var(--space-4);
-  right: var(--space-4);
-}
-.notice-dialog :deep(.el-dialog__headerbtn .el-dialog__close) {
-  color: #fff;
-}
-.notice-dialog :deep(.el-dialog__headerbtn:hover .el-dialog__close) {
-  color: #fff;
-}
-/* 内容区浅灰底，衬托白色卡片 */
-.notice-dialog :deep(.el-dialog__body) {
-  padding: var(--space-5) var(--space-6);
-  background: var(--slate-50);
-}
-.notice-dialog :deep(.el-dialog__footer) {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 .notice-foot__hint {
   font-size: var(--text-sm);
   color: var(--text-tertiary);
 }
 
-.notice-scroll {
-  display: flex;
-  max-height: 56vh;
-  flex-direction: column;
-  gap: var(--space-4);
-  overflow-y: auto;
-  padding-right: var(--space-2);
-}
 .notice-item {
   position: relative;
-  padding: var(--space-5);
+  max-height: 56vh;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-6);
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-left: 4px solid var(--brand-500);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xs);
-  transition: box-shadow var(--duration-base) var(--ease-out);
 }
-.notice-item:hover {
-  box-shadow: var(--shadow-sm);
-}
-.notice-item__head {
+.notice-item__meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
+  justify-content: flex-end;
+  margin-bottom: var(--space-2);
+}
+.notice-item__title {
   padding-bottom: var(--space-3);
   margin-bottom: var(--space-4);
   border-bottom: 1px dashed var(--border-color);
-}
-.notice-item__title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-  font-size: var(--text-md);
+  font-size: var(--text-xl);
   font-weight: 700;
+  line-height: 1.5;
   color: var(--text-strong);
-}
-.notice-item__badge {
-  flex-shrink: 0;
-  padding: 2px 10px;
-  border-radius: var(--radius-pill);
-  background: var(--brand-50);
-  color: var(--brand-500);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-.notice-item__text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
 }
 .notice-item__time {
   display: inline-flex;
@@ -540,18 +485,39 @@ onBeforeUnmount(() => {
 .home :deep(.course-card__duration) {
   color: var(--brand-600);
 }
-.home :deep(.course-card__chapters) {
-  color: var(--text-tertiary);
-}
 .home :deep(.course-card__cover) {
-  background: linear-gradient(135deg, var(--brand-100), var(--brand-200)) center/cover no-repeat;
+  background-color: var(--brand-100);
 }
 .home :deep(.course-card__cover-fallback) {
   color: var(--brand-500);
 }
-.home :deep(.course-card__badge) {
-  background: linear-gradient(135deg, var(--brand-500), var(--brand-700));
-  box-shadow: 0 4px 12px -4px rgba(79, 127, 240, 0.8);
-}
 
+</style>
+
+<!--
+  非 scoped：el-dialog 的 class 合并到 .el-dialog，scoped 属性在遮罩层，
+  复合选择器无法匹配，故对公告弹窗结构样式用全局选择器（notice-dialog 类名唯一）。
+-->
+<style>
+.notice-dialog.el-dialog .el-dialog__header {
+  padding: 0;
+  margin: 0;
+}
+.notice-dialog.el-dialog .el-dialog__headerbtn {
+  top: 16px;
+  right: 16px;
+}
+.notice-dialog.el-dialog .el-dialog__headerbtn .el-dialog__close,
+.notice-dialog.el-dialog .el-dialog__headerbtn:hover .el-dialog__close {
+  color: #fff;
+}
+.notice-dialog.el-dialog .el-dialog__body {
+  padding: 20px 24px;
+  background: #f7f8fa;
+}
+.notice-dialog.el-dialog .el-dialog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 </style>

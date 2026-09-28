@@ -9,7 +9,7 @@ import { getQuestionTypes } from '@/api/portal'
 import StatusSwitch from '@/components/status-switch.vue'
 import { api, errorMessage } from '@/lib/api'
 import { STATUS_FAILURE_TEXT, statusChangeMessage } from '@/lib/labels'
-import { applySystemConfig } from '@/lib/system-config'
+import { applySystemConfig, resolveImageUrl } from '@/lib/system-config'
 
 const activeTab = ref('basic')
 
@@ -19,11 +19,22 @@ const linkDialogVisible = ref(false)
 const linkEditingIndex = ref<number | null>(null)
 const linkSaving = ref(false)
 const linkForm = reactive({ name: '', url: '', sort: 1, status: 1 })
-const backgrounds = ref<{ url: string; sort: number; status: number }[]>([])
+type BackgroundScene = 'home' | 'banner'
+const SCENE_LABELS: Record<BackgroundScene, string> = { home: '首页', banner: 'banner' }
+const backgrounds = ref<{ url: string; sort: number; status: number; scene: BackgroundScene }[]>([])
 const bgDialogVisible = ref(false)
 const bgEditingIndex = ref<number | null>(null)
 const bgSaving = ref(false)
-const bgForm = reactive({ url: '', sort: 1, status: 1 })
+const bgForm = reactive<{ url: string; sort: number; status: number; scene: BackgroundScene }>({
+  url: '',
+  sort: 1,
+  status: 1,
+  scene: 'home',
+})
+
+function sceneLabel(scene: string | undefined): string {
+  return SCENE_LABELS[(scene as BackgroundScene) || 'home'] ?? '首页'
+}
 const exam = reactive({ title: '模拟考试', total: '20', duration: '30' })
 interface ExamTypeRow {
   code: string
@@ -46,7 +57,11 @@ async function load() {
     friendLinks.value = []
   }
   try {
-    backgrounds.value = JSON.parse(config.homeBackgrounds || '[]')
+    const parsed = JSON.parse(config.homeBackgrounds || '[]')
+    // 兼容旧数据：未标注场景的背景按「首页」处理
+    backgrounds.value = Array.isArray(parsed)
+      ? parsed.map((item: any) => ({ ...item, scene: item.scene || 'home' }))
+      : []
   } catch {
     backgrounds.value = []
   }
@@ -155,9 +170,11 @@ async function removeLink(index: number) {
 }
 
 async function persistBackgrounds() {
-  const result = await saveConfig({ homeBackgrounds: JSON.stringify(backgrounds.value) })
+  const payload = JSON.stringify(backgrounds.value)
+  const result = await saveConfig({ homeBackgrounds: payload })
   if (result.success) {
-    ElMessage.success('首页背景已保存')
+    ElMessage.success('背景图已保存')
+    applySystemConfig({ homeBackgrounds: payload })
     return true
   }
   ElMessage.error(result.message || '保存失败')
@@ -166,14 +183,14 @@ async function persistBackgrounds() {
 
 function openCreateBackground() {
   bgEditingIndex.value = null
-  Object.assign(bgForm, { url: '', sort: backgrounds.value.length + 1, status: 1 })
+  Object.assign(bgForm, { url: '', sort: backgrounds.value.length + 1, status: 1, scene: 'home' })
   bgDialogVisible.value = true
 }
 
 function openEditBackground(index: number) {
   bgEditingIndex.value = index
   const row = backgrounds.value[index]
-  Object.assign(bgForm, { url: row.url, sort: row.sort, status: row.status })
+  Object.assign(bgForm, { url: row.url, sort: row.sort, status: row.status, scene: row.scene || 'home' })
   bgDialogVisible.value = true
 }
 
@@ -183,10 +200,11 @@ async function saveBackground() {
     return
   }
   const duplicated = backgrounds.value.some(
-    (item, index) => index !== bgEditingIndex.value && item.sort === bgForm.sort,
+    (item, index) =>
+      index !== bgEditingIndex.value && item.sort === bgForm.sort && (item.scene || 'home') === bgForm.scene,
   )
   if (duplicated) {
-    ElMessage.warning('排序值已存在，请使用其他序号')
+    ElMessage.warning('同一场景下排序值已存在，请使用其他序号')
     return
   }
   bgSaving.value = true
@@ -207,8 +225,10 @@ async function saveBackground() {
 async function toggleBackground(row: { status: number }, next: number) {
   const previous = row.status
   row.status = next
-  const result = await saveConfig({ homeBackgrounds: JSON.stringify(backgrounds.value) })
+  const payload = JSON.stringify(backgrounds.value)
+  const result = await saveConfig({ homeBackgrounds: payload })
   if (result.success) {
+    applySystemConfig({ homeBackgrounds: payload })
     ElMessage.success(statusChangeMessage(next))
   } else {
     row.status = previous
@@ -296,7 +316,7 @@ onMounted(load)
               <el-form-item label="系统名称"><el-input v-model="basic.systemName" placeholder="显示在页面顶部的系统名称" /></el-form-item>
               <el-form-item label="系统 Logo">
                 <div class="logo-field">
-                  <div v-if="basic.logo" class="logo-preview" :style="{ backgroundImage: `url(/api/image/${basic.logo})` }" />
+                  <div v-if="basic.logo" class="logo-preview" :style="{ backgroundImage: `url(${resolveImageUrl(basic.logo)})` }" />
                   <div v-else class="logo-placeholder">暂无 Logo</div>
                   <div class="logo-actions">
                     <el-upload :show-file-list="false" :http-request="uploadLogo" accept="image/*">
@@ -342,10 +362,18 @@ onMounted(load)
 
         <el-tab-pane label="首页背景" name="backgrounds">
           <div class="settings-section">
+            <p class="settings-section__hint">「首页」用于首页轮播背景；「banner」用于课程中心等页面顶部背景图。</p>
             <div class="section-toolbar">
               <el-button type="primary" :icon="Plus" @click="openCreateBackground">新增背景</el-button>
             </div>
             <el-table :data="backgrounds" empty-text="暂无背景图">
+              <el-table-column label="应用场景" width="120" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="(row.scene || 'home') === 'banner' ? 'warning' : 'primary'" effect="light">
+                    {{ sceneLabel(row.scene) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
               <el-table-column label="预览" width="120">
                 <template #default="{ row }">
                   <div class="bg-thumb" :style="{ backgroundImage: `url(${row.url})` }" />
@@ -401,7 +429,7 @@ onMounted(load)
                   <p v-if="examTypes.length" class="type-config__sum" :class="{ 'is-valid': examRatioSum === 100 }">
                     已选题型比例合计：{{ examRatioSum }}%（需等于 100%）
                   </p>
-                  <p v-else class="type-config__empty">暂无题型，请先在「字典管理」中维护练习类型枚举值</p>
+                  <p v-else class="type-config__empty">暂无题型，请先在「字典管理」中维护题型枚举值</p>
                 </div>
               </el-form-item>
               <el-form-item><el-button type="primary" @click="saveExam">保存模拟考试配置</el-button></el-form-item>
@@ -446,6 +474,12 @@ onMounted(load)
       append-to-body
     >
       <el-form label-position="top">
+        <el-form-item label="应用场景" required>
+          <el-select v-model="bgForm.scene" style="width: 100%">
+            <el-option label="首页" value="home" />
+            <el-option label="banner" value="banner" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="图片 URL">
           <div class="bg-url-field">
             <el-input v-model="bgForm.url" placeholder="填写图片地址，或点击右侧上传" />

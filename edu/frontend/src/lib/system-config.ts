@@ -12,6 +12,8 @@ export interface FriendLink {
 const systemName = ref('聘书云课堂')
 const logo = ref('')
 const friendLinks = ref<FriendLink[]>([])
+// banner 场景背景图地址（课程中心等页面顶部）
+const bannerBackgrounds = ref<string[]>([])
 
 let loaded = false
 let pending: Promise<void> | null = null
@@ -25,18 +27,34 @@ async function loadConfig(): Promise<void> {
     }
     logo.value = data.logo?.trim() ?? ''
     friendLinks.value = parseFriendLinks(data.friendLinks)
+    const rawBackgrounds = data.homeBackgrounds ?? (data as any).home_backgrounds
+    bannerBackgrounds.value = parseBackgrounds(rawBackgrounds, 'banner')
   } catch {
     // 读取失败时保留默认系统名称、无 Logo
   }
 }
 
-/** 解析首页背景配置，过滤停用项并按排序返回图片地址。 */
-export function parseBackgrounds(raw: string | undefined): string[] {
+/**
+ * 解析图片地址：完整 URL 或绝对路径原样返回，其余按文件 id 走 /api/image。
+ * 兼容 <img src>、背景图等场景，避免 `/api/image//logo.png` 这类拼接错误。
+ */
+export function resolveImageUrl(value: string | undefined | null): string {
+  const raw = (value || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('/') || raw.startsWith('http://') || raw.startsWith('https://')) return raw
+  return `/api/image/${raw}`
+}
+
+/**
+ * 解析背景配置，过滤停用项并按排序返回图片地址。
+ * `scene` 为应用场景：首页(home) / banner(课程中心等顶部)，未标注的场景按首页处理。
+ */
+export function parseBackgrounds(raw: string | undefined, scene: 'home' | 'banner' = 'home'): string[] {
   try {
     const parsed = JSON.parse(raw || '[]')
     if (!Array.isArray(parsed)) return []
     return parsed
-      .filter((item) => item && item.status !== 0 && item.url)
+      .filter((item) => item && item.status !== 0 && item.url && (item.scene || 'home') === scene)
       .sort((a, b) => (a.sort || 0) - (b.sort || 0))
       .map((item) => item.url)
   } catch {
@@ -70,11 +88,17 @@ export function useSystemConfig() {
     systemName,
     logo,
     friendLinks: computed(() => friendLinks.value),
+    bannerBackgrounds: computed(() => bannerBackgrounds.value),
   }
 }
 
 /** 立即应用新的系统名称与 Logo，使全站（门户顶部、控制台侧栏等）同步生效。 */
-export function applySystemConfig(next: { systemName?: string; logo?: string; friendLinks?: string }) {
+export function applySystemConfig(next: {
+  systemName?: string
+  logo?: string
+  friendLinks?: string
+  homeBackgrounds?: string
+}) {
   if (typeof next.systemName === 'string' && next.systemName.trim()) {
     systemName.value = next.systemName.trim()
   }
@@ -84,10 +108,8 @@ export function applySystemConfig(next: { systemName?: string; logo?: string; fr
   if (typeof next.friendLinks === 'string') {
     friendLinks.value = parseFriendLinks(next.friendLinks)
   }
+  if (typeof next.homeBackgrounds === 'string') {
+    bannerBackgrounds.value = parseBackgrounds(next.homeBackgrounds, 'banner')
+  }
 }
 
-/** 重新从服务端拉取系统配置并更新全站。 */
-export async function refreshSystemConfig() {
-  loaded = true
-  await loadConfig()
-}

@@ -4,7 +4,7 @@ import { Plus, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { onMounted, reactive, ref } from 'vue'
 
-import { createTeacher, deleteTeacher, listTeachers, toggleTeacher, updateTeacher } from '@/api/admin'
+import { createTeacher, deleteTeacher, listTeacherCourses, listTeachers, toggleTeacher, updateTeacher } from '@/api/admin'
 import DataPage from '@/components/data-page.vue'
 import StatusSwitch from '@/components/status-switch.vue'
 import { api, errorMessage } from '@/lib/api'
@@ -20,6 +20,25 @@ const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
 const saving = ref(false)
 const form = reactive({ name: '', description: '', avatar: '', status: 1 })
+
+const coursesVisible = ref(false)
+const coursesLoading = ref(false)
+const coursesTeacher = ref<Record<string, any> | null>(null)
+const teacherCourses = ref<Record<string, any>[]>([])
+
+/** 查看某教师当前关联的课程。 */
+async function openCourses(row: Record<string, any>) {
+  coursesTeacher.value = row
+  teacherCourses.value = []
+  coursesVisible.value = true
+  coursesLoading.value = true
+  try {
+    const data = await listTeacherCourses(row.id)
+    teacherCourses.value = data?.items ?? []
+  } finally {
+    coursesLoading.value = false
+  }
+}
 
 async function load() {
   loading.value = true
@@ -186,17 +205,34 @@ onMounted(load)
       @selection-change="(rows: any[]) => (selection = rows)"
     >
       <el-table-column type="selection" width="48" />
-      <el-table-column label="教师" min-width="220">
+      <el-table-column label="头像" width="80" align="center">
         <template #default="{ row }">
-          <div class="user-cell">
-            <el-avatar :size="38" shape="square" :src="row.avatar ? `/api/image/${row.avatar}` : undefined">
-              {{ (row.name || '师').slice(0, 1) }}
-            </el-avatar>
-            <div>
-              <div class="user-cell__name">{{ row.name }}</div>
-              <div class="user-cell__meta">ID {{ row.id }}</div>
-            </div>
-          </div>
+          <el-avatar
+            :key="row.avatar || 'empty'"
+            :size="40"
+            shape="square"
+            :src="row.avatar ? `/api/image/${row.avatar}` : undefined"
+          >
+            {{ (row.name || '师').slice(0, 1) }}
+          </el-avatar>
+        </template>
+      </el-table-column>
+      <el-table-column label="教师姓名" min-width="140">
+        <template #default="{ row }">
+          <span class="cell-strong">{{ row.name }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="关联课程" min-width="110" align="left">
+        <template #default="{ row }">
+          <el-tag
+            :type="row.course_count ? 'primary' : 'info'"
+            effect="light"
+            round
+            class="course-count"
+            @click="openCourses(row)"
+          >
+            {{ row.course_count ?? 0 }}
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="简介" min-width="240">
@@ -225,18 +261,36 @@ onMounted(load)
     </el-table>
   </DataPage>
 
-  <el-dialog v-model="dialogVisible" :lock-scroll="false" :title="editingId ? '编辑教师' : '新增教师'" width="520px" append-to-body>
-    <el-form label-position="top">
+  <el-dialog
+    v-model="dialogVisible"
+    :lock-scroll="false"
+    :title="editingId ? '编辑教师' : '新增教师'"
+    width="720px"
+    top="6vh"
+    append-to-body
+  >
+    <el-form label-position="top" class="teacher-form">
       <el-form-item label="教师姓名" required>
-        <el-input v-model="form.name" placeholder="请输入教师姓名" />
+        <el-input v-model="form.name" placeholder="请输入教师姓名" size="large" />
       </el-form-item>
       <el-form-item label="简介">
-        <el-input v-model="form.description" type="textarea" :rows="3" placeholder="用于课程详情展示的教师介绍" />
+        <el-input
+          v-model="form.description"
+          type="textarea"
+          :rows="8"
+          resize="vertical"
+          placeholder="用于课程详情展示的教师介绍"
+        />
       </el-form-item>
       <el-form-item label="头像">
         <div class="avatar-field">
           <el-upload :show-file-list="false" :http-request="uploadAvatar" accept="image/*">
-            <el-avatar :size="64" shape="square" :src="form.avatar ? `/api/image/${form.avatar}` : undefined">
+            <el-avatar
+              :key="form.avatar || 'empty'"
+              :size="88"
+              shape="square"
+              :src="form.avatar ? `/api/image/${form.avatar}` : undefined"
+            >
               {{ (form.name || '师').slice(0, 1) }}
             </el-avatar>
           </el-upload>
@@ -252,9 +306,89 @@ onMounted(load)
       <el-button type="primary" :loading="saving" @click="save">保存</el-button>
     </template>
   </el-dialog>
+
+  <el-dialog
+    v-model="coursesVisible"
+    :lock-scroll="false"
+    :title="`关联课程 · ${coursesTeacher?.name ?? ''}`"
+    width="720px"
+    append-to-body
+  >
+    <div v-loading="coursesLoading" class="course-dialog">
+      <el-table v-if="teacherCourses.length" :data="teacherCourses" row-key="id" max-height="440">
+        <el-table-column label="课程" min-width="240">
+          <template #default="{ row }">
+            <div class="course-row">
+              <div class="course-row__cover" :style="row.cover ? { backgroundImage: `url(/api/image/${row.cover})` } : {}">
+                <span v-if="!row.cover">课程</span>
+              </div>
+              <div class="course-row__info">
+                <div class="course-row__name">{{ row.name }}</div>
+                <div class="course-row__desc">{{ row.short_description || '暂无概述' }}</div>
+              </div>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="章节" min-width="90" align="center">
+          <template #default="{ row }"><span class="tabular">{{ row.chapter_count ?? 0 }}</span></template>
+        </el-table-column>
+        <el-table-column label="状态" min-width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : 'info'" effect="light">
+              {{ row.status === 1 ? '已发布' : '未发布' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else-if="!coursesLoading" description="该教师暂无关联课程" />
+    </div>
+    <template #footer>
+      <el-button type="primary" @click="coursesVisible = false">关闭</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>
+.course-count {
+  cursor: pointer;
+}
+.course-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.course-row__cover {
+  display: grid;
+  width: 56px;
+  height: 36px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--slate-100) center/cover no-repeat;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+.course-row__info {
+  min-width: 0;
+}
+.course-row__name {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.course-row__desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+.teacher-form :deep(.el-form-item) {
+  margin-bottom: var(--space-5);
+}
+.teacher-form :deep(.el-textarea__inner) {
+  min-height: 180px;
+  line-height: 1.7;
+}
 .avatar-field {
   display: flex;
   align-items: center;

@@ -18,27 +18,27 @@ class ApiError(Exception):
 
 def unauthorized() -> ApiError:
     """未登录或会话失效。"""
-    return ApiError(401, "unauthorized", "authentication required")
+    return ApiError(401, "unauthorized", "登录状态已失效，请重新登录")
 
 
 def invalid_credentials() -> ApiError:
     """用户名或密码错误。"""
-    return ApiError(401, "login_failed", "invalid username or password")
+    return ApiError(401, "login_failed", "账号或密码错误")
+
+
+def account_disabled() -> ApiError:
+    """账号已被禁用。"""
+    return ApiError(403, "account_disabled", "账号已被禁用，请联系管理员")
 
 
 def forbidden() -> ApiError:
     """权限不足（含越权访问其他校区）。"""
-    return ApiError(403, "forbidden", "permission denied")
+    return ApiError(403, "forbidden", "没有操作权限")
 
 
 def validation(message: str) -> ApiError:
     """参数或业务校验失败。"""
     return ApiError(422, "validation_error", message)
-
-
-def bad_request(message: str) -> ApiError:
-    """请求格式错误。"""
-    return ApiError(400, "bad_request", message)
 
 
 def conflict(message: str) -> ApiError:
@@ -53,7 +53,7 @@ def not_found(message: str) -> ApiError:
 
 def rate_limited() -> ApiError:
     """登录失败次数过多，稍后重试。"""
-    return ApiError(429, "login_rate_limited", "too many login attempts")
+    return ApiError(429, "login_rate_limited", "登录失败次数过多，请稍后再试")
 
 
 def internal() -> ApiError:

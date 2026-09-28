@@ -130,3 +130,13 @@ npm run dev
 ## 六、数据库
 
 沿用现有库表结构（本项目本地默认连接服务器拷贝过来的 `education_rust` 库；如需切换，修改 `backend/.env` 的 `DATABASE_URL` 即可）。迁移文件位于 `backend/migrations/`，与既有 SQL 一致；启动时若检测到库已由旧 SQLx 迁移，会跳过已应用版本，避免重复执行。
+
+## 七、服务器部署（生产）
+
+生产服务器 `118.24.15.163` 已完成部署，复用现有 Nginx 与生产库 `education_rust`（**不重建、不清库**）。完整步骤、数据库差异结论、迁移影响、验证与回滚见 **[`docs/DEPLOY_SERVER.md`](docs/DEPLOY_SERVER.md)**。
+
+- 后端：`/srv/edu-api/app`（systemd 服务 `edu-api.service`，监听 `127.0.0.1:18081`）
+- 前端：`/srv/education/frontend-current`（Nginx 静态托管，端口 80）
+- 数据库：`education_rust`，使用应用账号（服务器上 `root/root123` 不可用）
+- 上传目录：`/srv/education/shared/data/uploads`（与旧后端复用）
+- 重复部署脚本：`deploy/deploy-edu-api.sh`、`deploy/deploy-edu-web.sh`

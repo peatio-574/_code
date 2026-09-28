@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from ..common import now
 from ..db import get_engine, named_lock
-from ..error import forbidden, validation
+from ..error import forbidden
 from ..response import ok
 
 router = APIRouter(prefix="/api")

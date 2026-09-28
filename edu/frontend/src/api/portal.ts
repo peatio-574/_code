@@ -14,11 +14,6 @@ export async function getSystemConfig() {
   return response.data.data as any ?? {}
 }
 
-export async function getAbout() {
-  const response = await api.get<ApiResult<string>>('/api/about')
-  return response.data.data as any ?? ''
-}
-
 export async function getCourses(params: {
   p?: number
   page_size?: number
@@ -51,11 +46,6 @@ export async function getQuestionTypes() {
     '/api/dictionaries/question_type/items',
   )
   return response.data.data?.items ?? []
-}
-
-export async function getLearningOverview() {
-  const response = await api.get<ApiResult<Record<string, any>>>('/api/learning/overview')
-  return response.data.data as any
 }
 
 export async function startLearning(courseId: number) {
@@ -136,11 +126,6 @@ export async function submitWrongRetry(payload: { attempt_id: number; question_i
   return response.data
 }
 
-export async function restartPractice() {
-  const response = await api.post<ApiResult<Record<string, unknown>>>('/api/questions/restart')
-  return response.data
-}
-
 // ---------------- 考试 ----------------
 
 export async function getAvailableExams() {
@@ -156,6 +141,13 @@ export async function getExamStatistics() {
 export async function getExamHistory() {
   const response = await api.get<ApiResult<{ items: Record<string, any>[] }>>('/api/exams/history')
   return response.data.data?.items ?? []
+}
+
+export async function getExamAttempt(attemptId: number) {
+  const response = await api.get<ApiResult<Record<string, any>>>('/api/exams/attempt', {
+    params: { attempt_id: attemptId },
+  })
+  return response.data.data as any
 }
 
 export async function startExamAttempt(examId: number) {
@@ -176,11 +168,6 @@ export async function saveExamAnswers(payload: { attempt_id: number; answers: { 
 export async function submitExam(payload: { attempt_id: number; answers: { question_id: number; answer: string }[] }) {
   const response = await api.post<ApiResult<Record<string, any>>>('/api/exams/submit', payload)
   return response.data
-}
-
-export async function getExamResult(attemptId: number) {
-  const response = await api.get<ApiResult<Record<string, any>>>('/api/exams/result', { params: { attempt_id: attemptId } })
-  return response.data.data as any
 }
 
 // ---------------- 公告 ----------------

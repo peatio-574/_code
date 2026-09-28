@@ -36,20 +36,16 @@ export const deleteChapter = (courseId: number, chapterId: number) =>
 
 // ---------------- 题库 ----------------
 export const listQuestions = (params?: Params) => getData<PageData<any>>('/api/admin/questions', params)
-export const getQuestion = (id: number) => getData<Record<string, any>>(`/api/admin/question/${id}`)
 export const createQuestion = (body: unknown) => send('post', '/api/admin/question', body)
+export const importQuestions = (body: { items: unknown[] }) => send('post', '/api/admin/questions/import', body)
 export const updateQuestion = (body: unknown) => send('put', '/api/admin/question', body)
 export const deleteQuestion = (id: number) => send('delete', `/api/admin/question/${id}`)
 export const toggleQuestion = (id: number, status: number) =>
   send('post', '/api/admin/question/toggle-status', { id, status })
 export const batchDeleteQuestions = (ids: number[]) => send('post', '/api/admin/questions/batch-delete', { ids })
 export const listQuestionCategories = () => getData<{ items: any[] }>('/api/admin/question-categories')
-export const createQuestionCategory = (body: unknown) => send('post', '/api/admin/question-category', body)
-export const updateQuestionCategory = (body: unknown) => send('put', '/api/admin/question-category', body)
-export const deleteQuestionCategory = (id: number) => send('delete', `/api/admin/question-category/${id}`)
 
 // ---------------- 考试 ----------------
-export const listExams = (params?: Params) => getData<PageData<any>>('/api/admin/exams', params)
 export const getExam = (id: number) => getData<Record<string, any>>(`/api/admin/exam/${id}`)
 export const createExam = (body: unknown) => send('post', '/api/admin/exam', body)
 export const updateExam = (id: number, body: unknown) => send('put', `/api/admin/exam/${id}`, body)
@@ -65,6 +61,7 @@ export const createTeacher = (body: unknown) => send('post', '/api/admin/teacher
 export const updateTeacher = (body: unknown) => send('put', '/api/admin/teacher', body)
 export const deleteTeacher = (id: number) => send('delete', `/api/admin/teacher/${id}`)
 export const toggleTeacher = (id: number, status: number) => send('post', '/api/admin/teacher/toggle-status', { id, status })
+export const listTeacherCourses = (id: number) => getData<{ items: any[] }>(`/api/admin/teacher/${id}/courses`)
 
 // ---------------- 校区 ----------------
 export const listCampuses = (params?: Params) => getData<PageData<any>>('/api/admin/campuses', params)
@@ -72,8 +69,8 @@ export const createCampus = (body: unknown) => send('post', '/api/admin/campuses
 export const updateCampus = (id: number, body: unknown) => send('put', `/api/admin/campuses/${id}`, body)
 export const toggleCampus = (id: number) => send('post', `/api/admin/campuses/${id}/toggle-status`)
 export const deleteCampus = (id: number) => send('delete', `/api/admin/campuses/${id}`)
-export const listCampusMembers = (id: number) => getData<{ items: any[] }>(`/api/admin/campuses/${id}/members`)
-export const addCampusMember = (id: number, body: unknown) => send('post', `/api/admin/campuses/${id}/members`, body)
+export const listCampusMembers = (id: number, params?: Params) =>
+  getData<PageData<any>>(`/api/admin/campuses/${id}/members`, params)
 export const updateCampusMember = (id: number, userId: number, body: unknown) =>
   send('put', `/api/admin/campuses/${id}/members/${userId}`, body)
 export const deleteCampusMember = (id: number, userId: number) =>
@@ -81,10 +78,11 @@ export const deleteCampusMember = (id: number, userId: number) =>
 
 // ---------------- 管理员 / 学员 ----------------
 export const listAdmins = (params?: Params) => getData<PageData<any>>('/api/admin/users', params)
+export const getAdminDetail = (id: number) => getData<Record<string, any>>(`/api/admin/user/${id}`)
 export const createAdmin = (body: unknown) => send('post', '/api/admin/user', body)
 export const updateAdmin = (body: unknown) => send('put', '/api/admin/user', body)
-export const deleteAdmin = (id: number, verify?: { name?: string; phone?: string }) =>
-  send('delete', `/api/admin/user/${id}`, undefined)
+export const deleteAdmin = (id: number) => send('delete', `/api/admin/user/${id}`)
+export const batchDeleteAdmins = (ids: number[]) => send('post', '/api/admin/users/batch-delete', { ids })
 export const toggleAdmin = (id: number, status: number) => send('post', '/api/admin/user/toggle-status', { id, status })
 export const resetAdminPassword = (id: number, password: string) =>
   send('post', '/api/admin/user/reset-password', { id, password })
@@ -93,12 +91,14 @@ export const listStudents = (params?: Params) => getData<PageData<any>>('/api/ad
 export const createStudent = (body: unknown) => send('post', '/api/admin/student', body)
 export const updateStudent = (body: unknown) => send('put', '/api/admin/student', body)
 export const deleteStudent = (id: number) => send('delete', `/api/admin/student/${id}`)
+export const batchDeleteStudents = (ids: number[]) => send('post', '/api/admin/students/batch-delete', { ids })
 export const toggleStudent = (id: number, status: number) => send('post', '/api/admin/student/toggle-status', { id, status })
 
-export const listHierarchy = () => getData<{ items: any[]; manager_options: any[] }>('/api/admin/user-hierarchy')
-export const updateManager = (userId: number, managerId: number | null) =>
-  send('put', `/api/admin/user-hierarchy/${userId}`, { manager_id: managerId })
-
+export const listHierarchy = (optionsOnly = false) =>
+  getData<{ items: any[]; manager_options: any[] }>(
+    '/api/admin/user-hierarchy',
+    optionsOnly ? { options_only: 1 } : undefined,
+  )
 // ---------------- 公告 ----------------
 export const listAnnouncements = (params?: Params) => getData<PageData<any>>('/api/admin/announcements', params)
 export const createAnnouncement = (body: unknown) => send('post', '/api/admin/announcement', body)
@@ -124,13 +124,7 @@ export const updateDictionaryItem = (id: number, body: unknown) => send('put', `
 export const deleteDictionaryItem = (id: number) => send('delete', `/api/admin/dictionary-items/${id}`)
 export const toggleDictionaryItem = (id: number, status: number) =>
   send('post', '/api/admin/dictionary-items/toggle-status', { id, status })
-export const reorderDictionaryItems = (ids: number[]) => send('post', '/api/admin/dictionary-items/reorder', { ids })
 
 // ---------------- 系统配置 ----------------
 export const getAdminConfig = () => getData<Record<string, string>>('/api/system/config')
 export const saveConfig = (body: unknown) => send('put', '/api/admin/system/config', body)
-export const saveHomeBanners = (body: unknown[]) => send('put', '/api/admin/home-banners', body)
-
-// ---------------- 报表 ----------------
-export const listLearningRecords = (params?: Params) => getData<PageData<any>>('/api/admin/learning-records', params)
-export const getStudentStatistics = () => getData<Record<string, number>>('/api/admin/statistics/students')

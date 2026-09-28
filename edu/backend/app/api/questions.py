@@ -81,17 +81,47 @@ def _validate_type(value: str) -> None:
         raise validation("题型不合法")
 
 
+def _normalize_title(value: str) -> str:
+    """题干去重归一化：去除全部空白并转小写（全角空格一并处理）。"""
+    return "".join((value or "").split()).replace("\u3000", "").lower()
+
+
+def _question_keys(connection, exclude_id: int | None = None) -> set[tuple[str, str]]:
+    """已有题目的去重键集合（题型 + 归一化题干），仅顶层题目；可排除自身。"""
+    if exclude_id:
+        rows = connection.execute(
+            text("SELECT type, title FROM questions WHERE parent_id=0 AND id<>:id"),
+            {"id": exclude_id},
+        ).fetchall()
+    else:
+        rows = connection.execute(
+            text("SELECT type, title FROM questions WHERE parent_id=0")
+        ).fetchall()
+    return {(row[0], _normalize_title(row[1])) for row in rows}
+
+
+def _direction_items(connection, only_enabled: bool = False) -> list[dict]:
+    """题目方向统一取字典类型 question_direction 的枚举值。"""
+    where = "dt.code='question_direction'"
+    if only_enabled:
+        where += " AND di.status=1 AND dt.status=1"
+    rows = connection.execute(
+        text(
+            "SELECT di.id, di.name, di.sort_order, di.status, di.built_in, "
+            "di.created_at, di.updated_at "
+            "FROM dictionary_items di JOIN dictionary_types dt ON dt.id=di.type_id "
+            f"WHERE {where} ORDER BY di.sort_order, di.id"
+        )
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
 @router.get("/question-categories")
 def public_categories(request: Request):
     with get_engine().connect() as connection:
-        rows = connection.execute(
-            text(
-                "SELECT id, name, sort_order FROM question_categories "
-                "WHERE status=1 ORDER BY sort_order, id"
-            )
-        ).mappings().all()
+        items = _direction_items(connection, only_enabled=True)
         connection.commit()
-    return ok({"items": [dict(r) for r in rows]})
+    return ok({"items": items})
 
 
 def _stats(connection, user_id: int) -> dict:
@@ -369,7 +399,10 @@ def submit_retry(payload: RetryAnswerInput, request: Request):
         if not valid:
             raise not_found("重练批次不存在")
         question = connection.execute(
-            text("SELECT type, answer FROM questions WHERE id=:id AND status=1"),
+            text(
+                "SELECT type, answer, COALESCE(explanation,'') explanation "
+                "FROM questions WHERE id=:id AND status=1"
+            ),
             {"id": payload.question_id},
         ).mappings().first()
         if question is None:
@@ -420,6 +453,7 @@ def submit_retry(payload: RetryAnswerInput, request: Request):
         {
             "correct": correct,
             "correct_answer": question["answer"],
+            "explanation": question["explanation"],
             "answered_count": counts[0],
             "correct_count": counts[1],
             "wrong_count": counts[0] - counts[1],
@@ -463,7 +497,7 @@ def admin_list(request: Request):
             text(
                 "SELECT q.id, q.type, q.title, q.options, q.answer, COALESCE(q.explanation,'') explanation, "
                 "q.status, q.category_id, q.score, q.created_at, q.updated_at, "
-                "(SELECT qc.name FROM question_categories qc WHERE qc.id=q.category_id) category_name, "
+                "(SELECT di.name FROM dictionary_items di WHERE di.id=q.category_id) category_name, "
                 "(SELECT COUNT(*) FROM questions c WHERE c.parent_id=q.id) child_count "
                 f"FROM questions q WHERE {clause} ORDER BY q.id DESC LIMIT :limit OFFSET :offset"
             ),
@@ -562,6 +596,9 @@ def admin_create(payload: QuestionInput):
     if payload.type == "group" and not payload.children:
         raise validation("综合题至少需要一个子题")
     with named_lock("question:create") as connection:
+        # 去重：同题型 + 同题干（忽略空白/大小写）视为重复
+        if (payload.type, _normalize_title(title)) in _question_keys(connection):
+            raise conflict("该题目已存在（题型与题干重复），请勿重复添加")
         timestamp = now()
         is_group = payload.type == "group"
         question_id = connection.execute(
@@ -587,6 +624,111 @@ def admin_create(payload: QuestionInput):
     return ok({"id": question_id})
 
 
+class ImportQuestionItem(BaseModel):
+    type: str
+    title: str
+    options: str = ""
+    answer: str = ""
+    explanation: str = ""
+    status: int = 1
+    category: str = ""
+    score: int = 1
+
+
+class ImportQuestionsInput(BaseModel):
+    items: list[ImportQuestionItem] = []
+
+
+@admin_router.post("/questions/import")
+def admin_import(payload: ImportQuestionsInput):
+    """批量导入题目：单事务内按需创建分类并批量写入，避免逐条请求。"""
+    if not payload.items:
+        raise validation("没有可导入的题目")
+    timestamp = now()
+    imported = 0
+    skipped = 0
+    with named_lock("question:import") as connection:
+        # 题目方向取字典 question_direction；按名称解析/创建字典项，避免逐题查询
+        direction_type_id = connection.execute(
+            text("SELECT id FROM dictionary_types WHERE code='question_direction'")
+        ).scalar()
+        category_cache: dict[str, int] = {}
+        if direction_type_id:
+            rows = connection.execute(
+                text("SELECT id, name FROM dictionary_items WHERE type_id=:tid"),
+                {"tid": direction_type_id},
+            ).mappings().all()
+            for row in rows:
+                category_cache.setdefault(row["name"], row["id"])
+        next_sort = len(category_cache)
+
+        def resolve_category(name: str) -> int:
+            nonlocal next_sort
+            name = name.strip()
+            if not name or not direction_type_id:
+                return 0
+            if name in category_cache:
+                return category_cache[name]
+            next_sort += 1
+            category_id = connection.execute(
+                text(
+                    "INSERT INTO dictionary_items(type_id, code, name, description, status, "
+                    "sort_order, built_in, created_at, updated_at) "
+                    "VALUES(:tid, :code, :name, '', 1, :sort, 0, :ts, :ts)"
+                ),
+                {
+                    "tid": direction_type_id,
+                    "code": f"dir_import_{next_sort}",
+                    "name": name,
+                    "sort": next_sort,
+                    "ts": timestamp,
+                },
+            ).lastrowid
+            category_cache[name] = category_id
+            return category_id
+
+        # 去重键：库中已有题目 + 本批次已收录题目
+        seen_keys = _question_keys(connection)
+        insert_params = []
+        for item in payload.items:
+            item_type = (item.type or "").strip()
+            title = (item.title or "").strip()
+            if item_type not in QUESTION_TYPES or not title:
+                skipped += 1
+                continue
+            dedup_key = (item_type, _normalize_title(title))
+            if dedup_key in seen_keys:
+                skipped += 1
+                continue
+            seen_keys.add(dedup_key)
+            is_group = item_type == "group"
+            insert_params.append(
+                {
+                    "type": item_type,
+                    "title": title,
+                    "options": "" if is_group else (item.options or ""),
+                    "answer": "" if is_group else (item.answer or ""),
+                    "explanation": "" if is_group else (item.explanation or ""),
+                    "status": 1 if item.status != 0 else 0,
+                    "category_id": resolve_category(item.category),
+                    "score": 0 if is_group else max(int(item.score or 1), 1),
+                    "ts": timestamp,
+                }
+            )
+        if insert_params:
+            connection.execute(
+                text(
+                    "INSERT INTO questions(type, title, options, answer, explanation, status, "
+                    "category_id, parent_id, sort_order, score, created_at, updated_at) "
+                    "VALUES(:type, :title, :options, :answer, :explanation, :status, "
+                    ":category_id, 0, 0, :score, :ts, :ts)"
+                ),
+                insert_params,
+            )
+            imported = len(insert_params)
+    return ok({"imported": imported, "skipped": skipped})
+
+
 @admin_router.put("/question")
 def admin_update(payload: QuestionInput):
     if not payload.id:
@@ -598,6 +740,12 @@ def admin_update(payload: QuestionInput):
         ).scalar()
         if not exists:
             raise not_found("题目不存在")
+        # 去重：与其它题目（题型 + 题干）重复时拒绝（题干留空表示不修改）
+        if payload.title.strip() and (
+            payload.type,
+            _normalize_title(payload.title),
+        ) in _question_keys(connection, exclude_id=payload.id):
+            raise conflict("该题目已存在（题型与题干重复）")
         is_group = payload.type == "group"
         fields = [
             "type=:type",
@@ -676,50 +824,67 @@ def admin_delete(question_id: int):
 
 @admin_router.post("/questions/batch-delete")
 def admin_batch_delete(payload: dict):
-    ids = payload.get("ids") or []
+    raw_ids = payload.get("ids") or []
+    ids = [int(value) for value in raw_ids if str(value).lstrip("-").isdigit() and int(value) > 0]
     if not ids:
         raise validation("请选择要删除的题目")
+    deleted = 0
     with get_engine().begin() as connection:
         for question_id in ids:
-            targets = f"(SELECT {int(question_id)} UNION SELECT id FROM questions WHERE parent_id={int(question_id)})"
+            targets = f"(SELECT {question_id} UNION SELECT id FROM questions WHERE parent_id={question_id})"
             connection.execute(text(f"DELETE FROM question_retry_answers WHERE question_id IN {targets}"))
             connection.execute(text(f"DELETE FROM question_first_answers WHERE question_id IN {targets}"))
             connection.execute(text(f"DELETE FROM question_records WHERE question_id IN {targets}"))
             connection.execute(text("DELETE FROM questions WHERE parent_id=:id"), {"id": question_id})
-            connection.execute(text("DELETE FROM questions WHERE id=:id"), {"id": question_id})
-    return ok({"deleted_count": len(ids)})
+            result = connection.execute(
+                text("DELETE FROM questions WHERE id=:id"), {"id": question_id}
+            )
+            deleted += result.rowcount
+    return ok({"deleted_count": deleted})
 
 
 @admin_router.get("/question-categories")
 def admin_categories():
     with get_engine().connect() as connection:
-        rows = connection.execute(
-            text(
-                "SELECT id, name, parent_id, sort_order, status, created_at, updated_at "
-                "FROM question_categories ORDER BY parent_id, sort_order, id"
-            )
-        ).mappings().all()
+        items = _direction_items(connection)
         connection.commit()
-    return ok({"items": [dict(r) for r in rows]})
+    return ok({"items": items})
 
 
 @admin_router.post("/question-category")
 def create_category(payload: CategoryInput):
     name = payload.name.strip()
     if not name:
-        raise validation("练习类型名称不能为空")
-    with named_lock("question_category:create") as connection:
+        raise validation("题目方向名称不能为空")
+    with named_lock("question_direction:create") as connection:
+        direction_type_id = connection.execute(
+            text("SELECT id FROM dictionary_types WHERE code='question_direction'")
+        ).scalar()
+        if direction_type_id is None:
+            raise validation("字典类型「题目方向」不存在，请先在字典管理中创建")
+        if connection.execute(
+            text("SELECT COUNT(*) FROM dictionary_items WHERE type_id=:tid AND name=:name"),
+            {"tid": direction_type_id, "name": name},
+        ).scalar():
+            raise conflict("题目方向已存在")
+        timestamp = now()
+        next_sort = (connection.execute(
+            text("SELECT COALESCE(MAX(sort_order),0) FROM dictionary_items WHERE type_id=:tid"),
+            {"tid": direction_type_id},
+        ).scalar() or 0) + 1
         category_id = connection.execute(
             text(
-                "INSERT INTO question_categories(name, parent_id, sort_order, status, created_at, "
-                "updated_at) VALUES(:name, :parent_id, :sort_order, :status, :ts, :ts)"
+                "INSERT INTO dictionary_items(type_id, code, name, description, status, "
+                "sort_order, built_in, created_at, updated_at) "
+                "VALUES(:tid, :code, :name, '', :status, :sort, 0, :ts, :ts)"
             ),
             {
+                "tid": direction_type_id,
+                "code": f"dir_{timestamp}_{next_sort}",
                 "name": name,
-                "parent_id": payload.parent_id,
-                "sort_order": payload.sort_order,
                 "status": 1 if payload.status != 0 else 0,
-                "ts": now(),
+                "sort": next_sort,
+                "ts": timestamp,
             },
         ).lastrowid
     return ok({"id": category_id})
@@ -728,43 +893,52 @@ def create_category(payload: CategoryInput):
 @admin_router.put("/question-category")
 def update_category(payload: CategoryInput):
     if not payload.id:
-        raise validation("缺少练习类型 ID")
+        raise validation("缺少题目方向 ID")
     name = payload.name.strip()
     if not name:
-        raise validation("练习类型名称不能为空")
+        raise validation("题目方向名称不能为空")
     with get_engine().begin() as connection:
-        result = connection.execute(
+        owned = connection.execute(
             text(
-                "UPDATE question_categories SET name=:name, parent_id=:parent_id, "
-                "sort_order=:sort_order, status=:status, updated_at=:ts WHERE id=:id"
+                "SELECT COUNT(*) FROM dictionary_items di JOIN dictionary_types dt ON dt.id=di.type_id "
+                "WHERE di.id=:id AND dt.code='question_direction'"
+            ),
+            {"id": payload.id},
+        ).scalar()
+        if not owned:
+            raise not_found("题目方向不存在")
+        connection.execute(
+            text(
+                "UPDATE dictionary_items SET name=:name, sort_order=:sort_order, "
+                "status=:status, updated_at=:ts WHERE id=:id"
             ),
             {
                 "name": name,
-                "parent_id": payload.parent_id,
                 "sort_order": payload.sort_order,
                 "status": 1 if payload.status != 0 else 0,
                 "ts": now(),
                 "id": payload.id,
             },
         )
-        if result.rowcount == 0:
-            exists = connection.execute(
-                text("SELECT COUNT(*) FROM question_categories WHERE id=:id"), {"id": payload.id}
-            ).scalar()
-            if not exists:
-                raise not_found("练习类型不存在")
     return ok({"id": payload.id})
 
 
 @admin_router.delete("/question-category/{category_id}")
 def delete_category(category_id: int):
     with get_engine().begin() as connection:
+        owned = connection.execute(
+            text(
+                "SELECT COUNT(*) FROM dictionary_items di JOIN dictionary_types dt ON dt.id=di.type_id "
+                "WHERE di.id=:id AND dt.code='question_direction'"
+            ),
+            {"id": category_id},
+        ).scalar()
+        if not owned:
+            raise not_found("题目方向不存在")
         connection.execute(
             text("UPDATE questions SET category_id=0 WHERE category_id=:id"), {"id": category_id}
         )
-        result = connection.execute(
-            text("DELETE FROM question_categories WHERE id=:id"), {"id": category_id}
+        connection.execute(
+            text("DELETE FROM dictionary_items WHERE id=:id"), {"id": category_id}
         )
-        if result.rowcount == 0:
-            raise not_found("练习类型不存在")
     return ok({"id": category_id})

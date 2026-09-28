@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from ..common import now
 from ..db import get_engine, named_lock
-from ..error import conflict, forbidden, not_found, validation
+from ..error import conflict, not_found, validation
 from ..response import ok
 
 router = APIRouter(prefix="/api")
@@ -425,7 +425,8 @@ def delete_item(item_id: int):
                 text("SELECT code FROM dictionary_items WHERE id=:id"), {"id": item_id}
             ).scalar()
             used = connection.execute(
-                text("SELECT COUNT(*) FROM courses WHERE course_type_code=:code"), {"code": code}
+                text("SELECT COUNT(*) FROM courses WHERE FIND_IN_SET(:code, course_type_code)"),
+                {"code": code},
             ).scalar()
             if used:
                 raise conflict("该课程类型正被课程使用，无法删除")

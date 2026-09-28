@@ -30,6 +30,12 @@ const router = createRouter({
         },
         { path: 'question', name: 'questions', component: () => import('@/views/QuestionsView.vue'), meta: { requiresAuth: true } },
         { path: 'exams', name: 'exams', component: () => import('@/views/ExamsView.vue'), meta: { requiresAuth: true } },
+        {
+          path: 'exams/attempt/:attemptId',
+          name: 'exam-attempt',
+          component: () => import('@/views/ExamAttemptView.vue'),
+          meta: { requiresAuth: true },
+        },
         { path: 'profile', name: 'profile', component: () => import('@/views/ProfileView.vue'), meta: { requiresAuth: true } },
       ],
     },

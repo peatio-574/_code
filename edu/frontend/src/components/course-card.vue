@@ -25,7 +25,12 @@ const coverUrl = computed(() => (props.course.cover ? `/api/image/${props.course
 
 const coverStyle = computed(() =>
   coverUrl.value
-    ? { backgroundImage: `url(${coverUrl.value}), linear-gradient(135deg, var(--brand-100), var(--brand-200))` }
+    ? {
+        backgroundImage: `url(${coverUrl.value}), linear-gradient(135deg, var(--brand-100), var(--brand-200))`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      }
     : {},
 )
 
@@ -50,6 +55,7 @@ function open() {
     <div class="course-card__cover" :style="coverStyle">
       <span v-if="!coverUrl" class="course-card__cover-fallback">课程</span>
       <span v-if="isNew" class="course-card__badge">NEW</span>
+      <span class="course-card__chapters-on-cover">{{ course.chapter_count ?? 0 }} 章节</span>
     </div>
     <div class="course-card__body">
       <h3 class="course-card__title">{{ course.name }}</h3>
@@ -67,7 +73,6 @@ function open() {
           <span class="course-card__duration">
             <el-icon><Clock /></el-icon>{{ formatDuration(totalDuration) }}
           </span>
-          <span class="course-card__chapters">{{ course.chapter_count ?? 0 }} 章节</span>
         </span>
       </div>
     </div>
@@ -165,6 +170,20 @@ function open() {
   font-weight: 700;
   letter-spacing: 0.06em;
 }
+/* 章节数角标：置于封面左下角 */
+.course-card__chapters-on-cover {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(15, 26, 46, 0.68);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 .course-card__body {
   display: flex;
   flex: 1;
@@ -204,6 +223,10 @@ function open() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.course-card__teacher span:last-child {
+  color: var(--brand-600);
+  font-weight: 600;
+}
 .course-card__stats {
   display: flex;
   flex-shrink: 0;
@@ -219,9 +242,5 @@ function open() {
   color: var(--brand-600);
   font-size: var(--text-xs);
   font-weight: 600;
-}
-.course-card__chapters {
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
 }
 </style>

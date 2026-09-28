@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// 题库练习：统计概览、题型/练习类型筛选、一次一题、错题与重练。
-import { CircleCheck, CircleClose, Collection, EditPen, List, RefreshRight } from '@element-plus/icons-vue'
+// 题库练习：统计概览、题型/题目方向筛选、一次一题、错题与重练。
+import { CircleCheck, CircleClose, Collection, EditPen, List, RefreshLeft, RefreshRight } from '@element-plus/icons-vue'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -12,7 +12,6 @@ import {
   getRandomQuestion,
   getWrongDetail,
   getWrongQuestions,
-  restartPractice,
   startWrongRetry,
   submitPracticeAnswer,
   submitWrongRetry,
@@ -35,7 +34,7 @@ const selectedCategories = ref<number[]>([])
 
 const question = ref<Record<string, any> | null>(null)
 const children = ref<Record<string, any>[]>([])
-const answer = ref('')
+const answer = ref<string | string[]>('')
 const result = ref<Record<string, any> | null>(null)
 const loading = ref(false)
 const history = ref<Record<string, any>[]>([])
@@ -50,11 +49,42 @@ const retryVisible = ref(false)
 const retryAttemptId = ref(0)
 const retryQuestions = ref<Record<string, any>[]>([])
 const retryIndex = ref(0)
-const retryAnswer = ref('')
-const retryResult = ref<Record<string, any> | null>(null)
+// 按题号保存每题的作答与结果，支持题号跳转后回显（多选为数组，其余为字符串）
+const retryAnswers = ref<any[]>([])
+const retryResults = ref<(Record<string, any> | null)[]>([])
+const retryAnswer = computed({
+  get: () => retryAnswers.value[retryIndex.value] ?? '',
+  set: (value: any) => {
+    retryAnswers.value[retryIndex.value] = value
+  },
+})
+const retryResult = computed({
+  get: () => retryResults.value[retryIndex.value] ?? null,
+  set: (value: Record<string, any> | null) => {
+    retryResults.value[retryIndex.value] = value
+  },
+})
+
+/** 把作答值归一化为后端需要的字符串（多选数组拼接字母）。 */
+function normalizeAnswer(value: any): string {
+  if (Array.isArray(value)) return value.join('')
+  return String(value ?? '')
+}
 
 const currentType = computed(() => selectedTypes.value[0] || 'single')
 const isAnswered = computed(() => result.value !== null)
+
+/** 题干选项（判断题返回正确/错误），供错题详情与重练展示。 */
+function questionOptions(question: Record<string, any> | null): { key: string; text: string }[] {
+  if (!question) return []
+  if (question.type === 'true_false') {
+    return [
+      { key: 'A', text: '正确' },
+      { key: 'B', text: '错误' },
+    ]
+  }
+  return optionList(question.options || '')
+}
 
 function optionList(options: string): { key: string; text: string }[] {
   try {
@@ -140,14 +170,15 @@ async function prev() {
 }
 
 async function submit() {
-  if (!question.value || !answer.value.trim()) {
+  const normalized = normalizeAnswer(answer.value).trim()
+  if (!question.value || !normalized) {
     ElMessage.warning('请先作答')
     return
   }
   try {
     const response = await submitPracticeAnswer({
       question_id: question.value.id,
-      answer: answer.value,
+      answer: normalized,
       category_id: selectedCategories.value[0],
     })
     result.value = response.data as any
@@ -175,8 +206,9 @@ async function beginRetry() {
     retryAttemptId.value = response.data?.attempt_id ?? 0
     retryQuestions.value = response.data?.questions ?? []
     retryIndex.value = 0
-    retryAnswer.value = ''
-    retryResult.value = null
+    // 多选题初始为数组，其余为字符串
+    retryAnswers.value = retryQuestions.value.map((q) => (q.type === 'multiple' ? [] : ''))
+    retryResults.value = retryQuestions.value.map(() => null)
     retryVisible.value = true
     wrongVisible.value = false
   } catch (error) {
@@ -185,7 +217,8 @@ async function beginRetry() {
 }
 
 async function submitRetry() {
-  if (!retryAnswer.value.trim()) {
+  const normalized = normalizeAnswer(retryAnswer.value).trim()
+  if (!normalized) {
     ElMessage.warning('请先作答')
     return
   }
@@ -194,7 +227,7 @@ async function submitRetry() {
     const response = await submitWrongRetry({
       attempt_id: retryAttemptId.value,
       question_id: current.id,
-      answer: retryAnswer.value,
+      answer: normalized,
     })
     retryResult.value = response.data as any
   } catch (error) {
@@ -205,19 +238,32 @@ async function submitRetry() {
 function nextRetry() {
   if (retryIndex.value < retryQuestions.value.length - 1) {
     retryIndex.value += 1
-    retryAnswer.value = ''
-    retryResult.value = null
   } else {
     ElMessage.success('重练已完成')
     retryVisible.value = false
   }
 }
 
-async function restart() {
-  await restartPractice()
-  await loadStats()
+/** 跳转到指定题号（错题重练）。 */
+function jumpRetry(index: number) {
+  if (index < 0 || index >= retryQuestions.value.length) return
+  retryIndex.value = index
+}
+
+/** 开始练习：清空本轮历史与作答，按当前筛选抽取新题。 */
+async function beginPractice() {
+  history.value = []
+  historyIndex.value = -1
   await loadQuestion()
-  ElMessage.success('练习进度已重置')
+}
+
+/** 重置筛选条件：清空题型与题目方向，并重新抽题。 */
+async function resetFilters() {
+  selectedTypes.value = []
+  selectedCategories.value = []
+  history.value = []
+  historyIndex.value = -1
+  await loadQuestion()
 }
 
 onMounted(async () => {
@@ -229,15 +275,14 @@ onMounted(async () => {
 
 <template>
   <div class="practice">
-    <header class="data-page__header">
+    <header class="data-page__header page-hero">
       <div>
         <h1 class="data-page__title">题库练习</h1>
-        <p class="data-page__desc">按题型与练习类型随机抽题，答完即得解析。</p>
+        <p class="data-page__desc">按题型与题目方向随机抽题，答完即得解析。</p>
       </div>
       <div class="practice__actions">
         <el-button :icon="List" @click="openWrong">错题列表</el-button>
         <el-button type="warning" :icon="RefreshRight" @click="beginRetry">错题重练</el-button>
-        <el-button text @click="restart">重置练习</el-button>
       </div>
     </header>
 
@@ -276,10 +321,11 @@ onMounted(async () => {
       <el-select v-model="selectedTypes" multiple placeholder="题型" class="practice__select">
         <el-option v-for="type in QUESTION_TYPES" :key="type.value" :label="type.label" :value="type.value" />
       </el-select>
-      <el-select v-model="selectedCategories" multiple placeholder="练习类型" class="practice__select">
+      <el-select v-model="selectedCategories" multiple placeholder="题目方向" class="practice__select">
         <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
       </el-select>
-      <el-button type="primary" @click="() => { history = []; historyIndex = -1; loadQuestion() }">开始练习</el-button>
+      <el-button type="primary" @click="beginPractice">开始练习</el-button>
+      <el-button :icon="RefreshLeft" @click="resetFilters">重置</el-button>
     </section>
 
     <section v-loading="loading" class="question-card">
@@ -362,21 +408,74 @@ onMounted(async () => {
     <el-dialog v-model="wrongDetailVisible" :lock-scroll="false" title="错题详情" width="640px">
       <template v-if="wrongDetail">
         <p class="detail__title">{{ wrongDetail.title }}</p>
+        <ul v-if="questionOptions(wrongDetail).length" class="detail__options">
+          <li
+            v-for="option in questionOptions(wrongDetail)"
+            :key="option.key"
+            :class="{ 'is-correct': String(wrongDetail.correct_answer || '').includes(option.key) }"
+          >
+            <span class="detail__option-key">{{ option.key }}</span>{{ option.text }}
+          </li>
+        </ul>
         <p>你的答案：<span class="text-bad">{{ wrongDetail.user_answer || '未作答' }}</span></p>
         <p>正确答案：<span class="text-ok">{{ wrongDetail.correct_answer }}</span></p>
         <p v-if="wrongDetail.explanation" class="detail__explain">解析：{{ wrongDetail.explanation }}</p>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="retryVisible" :lock-scroll="false" title="错题重练" width="640px">
+    <el-dialog v-model="retryVisible" :lock-scroll="false" title="错题重练" width="680px">
       <template v-if="retryQuestions.length">
+        <div class="retry-nav">
+          <span class="retry-nav__label">题号：</span>
+          <div class="retry-nav__grid">
+            <button
+              v-for="(item, index) in retryQuestions"
+              :key="item.id"
+              type="button"
+              class="retry-nav__item"
+              :class="{
+                'is-current': index === retryIndex,
+                'is-correct': retryResults[index]?.correct === true,
+                'is-wrong': retryResults[index]?.correct === false,
+              }"
+              @click="jumpRetry(index)"
+            >
+              {{ index + 1 }}
+            </button>
+          </div>
+        </div>
+
         <div class="question-type">第 {{ retryIndex + 1 }} / {{ retryQuestions.length }} 题</div>
         <p class="detail__title">{{ retryQuestions[retryIndex].title }}</p>
-        <el-input v-model="retryAnswer" :disabled="retryResult !== null" placeholder="请输入答案" />
+        <div v-if="retryQuestions[retryIndex].type === 'single' || retryQuestions[retryIndex].type === 'true_false'" class="options">
+          <el-radio-group v-model="retryAnswer" :disabled="retryResult !== null" class="options__group">
+            <el-radio
+              v-for="option in questionOptions(retryQuestions[retryIndex])"
+              :key="option.key"
+              :value="option.key"
+              class="option"
+            >
+              {{ option.key }}. {{ option.text }}
+            </el-radio>
+          </el-radio-group>
+        </div>
+        <div v-else-if="retryQuestions[retryIndex].type === 'multiple'" class="options">
+          <el-checkbox-group v-model="retryAnswer" :disabled="retryResult !== null" class="options__group">
+            <el-checkbox v-for="option in questionOptions(retryQuestions[retryIndex])" :key="option.key" :value="option.key" class="option">
+              {{ option.key }}. {{ option.text }}
+            </el-checkbox>
+          </el-checkbox-group>
+        </div>
+        <div v-else-if="retryQuestions[retryIndex].type === 'fill'" class="options">
+          <el-input v-model="retryAnswer" :disabled="retryResult !== null" placeholder="请输入答案" />
+        </div>
+        <div v-else class="options">
+          <el-input v-model="retryAnswer" type="textarea" :rows="4" :disabled="retryResult !== null" placeholder="请输入答案" />
+        </div>
         <div v-if="retryResult" class="result" :class="retryResult.correct ? 'result--ok' : 'result--bad'">
           <div class="result__title">{{ retryResult.correct ? '回答正确' : '回答错误' }}</div>
           <div>正确答案：<strong>{{ retryResult.correct_answer }}</strong></div>
-          <div class="result__explain">重练不计入正确率统计</div>
+          <div v-if="retryResult.explanation" class="result__explain">解析：{{ retryResult.explanation }}</div>
         </div>
       </template>
       <template #footer>
@@ -513,6 +612,91 @@ onMounted(async () => {
 }
 .detail__explain {
   color: var(--text-secondary);
+}
+/* 错题详情 / 重练：选项列表 */
+.detail__options {
+  list-style: none;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.detail__options li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+.detail__options li.is-correct {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success);
+}
+.detail__option-key {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--brand-600);
+}
+.detail__options li.is-correct .detail__option-key {
+  color: var(--success);
+}
+/* 错题重练：题号导航 */
+.retry-nav {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px dashed var(--border-color);
+}
+.retry-nav__label {
+  flex-shrink: 0;
+  padding-top: 4px;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+.retry-nav__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.retry-nav__item {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.retry-nav__item:hover {
+  border-color: var(--brand-300);
+  color: var(--brand-600);
+}
+.retry-nav__item.is-correct {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success);
+}
+.retry-nav__item.is-wrong {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.retry-nav__item.is-current {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--brand-500), var(--brand-600));
+  color: #fff;
+  box-shadow: 0 4px 10px -4px rgba(79, 127, 240, 0.9);
 }
 
 @media (max-width: 860px) {

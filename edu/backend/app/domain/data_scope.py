@@ -65,15 +65,6 @@ class DataScopeContext:
         """用户关系范围 AND 校区范围，业务列表统一使用。"""
         return f"({self.campus_predicate(alias)}) AND ({self.user_predicate(alias)})"
 
-    def campus_record_predicate(self, column: str) -> str:
-        """业务记录校区快照谓词：记录 campus_id 为空或落在操作者校区内。"""
-        if self.scope == DATA_SCOPE_ALL:
-            return "1 = 1"
-        if not self.campus_ids:
-            return "1 = 0"
-        ids = ",".join(str(int(value)) for value in self.campus_ids)
-        return f"({column} IS NULL OR {column} IN ({ids}))"
-
 
 def context(connection: Connection, actor_id: int) -> DataScopeContext:
     """构建操作者的数据范围上下文：最大范围 + 所有启用校区。"""
@@ -101,15 +92,3 @@ def context(connection: Connection, actor_id: int) -> DataScopeContext:
         ).fetchall()
     ]
     return DataScopeContext(actor_id=actor_id, scope=scope, campus_ids=campus_ids)
-
-
-def primary_campus_id(connection: Connection, user_id: int) -> int | None:
-    """取用户主校区 ID。"""
-    return connection.execute(
-        text(
-            "SELECT campus_id FROM campus_members "
-            "WHERE user_id = :user_id AND status = 1 AND is_primary = 1 "
-            "ORDER BY id LIMIT 1"
-        ),
-        {"user_id": user_id},
-    ).scalar()

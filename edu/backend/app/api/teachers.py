@@ -30,6 +30,7 @@ def _teacher_view(row) -> dict:
         "description": row["description"] or "",
         "avatar": row["avatar"] or "",
         "status": row["status"],
+        "course_count": int(row["course_count"] or 0) if "course_count" in row.keys() else 0,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -57,19 +58,20 @@ def list_teachers(request: Request):
         where = ["1=1"]
         params: dict = {}
         if keyword:
-            where.append("(name LIKE :kw OR description LIKE :kw)")
+            where.append("(t.name LIKE :kw OR t.description LIKE :kw)")
             params["kw"] = f"%{keyword}%"
         if status in ("0", "1"):
-            where.append("status = :status")
+            where.append("t.status = :status")
             params["status"] = int(status)
         clause = " AND ".join(where)
         total = connection.execute(
-            text(f"SELECT COUNT(*) FROM teachers WHERE {clause}"), params
+            text(f"SELECT COUNT(*) FROM teachers t WHERE {clause}"), params
         ).scalar()
         rows = connection.execute(
             text(
-                "SELECT id, name, description, avatar, status, created_at, updated_at "
-                f"FROM teachers WHERE {clause} ORDER BY id DESC LIMIT :limit OFFSET :offset"
+                "SELECT t.id, t.name, t.description, t.avatar, t.status, t.created_at, t.updated_at, "
+                "(SELECT COUNT(*) FROM course_teachers ct WHERE ct.teacher_id=t.id) course_count "
+                f"FROM teachers t WHERE {clause} ORDER BY t.id DESC LIMIT :limit OFFSET :offset"
             ),
             {**params, "limit": size, "offset": (page - 1) * size},
         ).mappings().all()
@@ -148,6 +150,40 @@ def delete_teacher(teacher_id: int):
         )
         connection.execute(text("DELETE FROM teachers WHERE id=:id"), {"id": teacher_id})
     return ok({"id": teacher_id})
+
+
+@router.get("/teacher/{teacher_id}/courses")
+def teacher_courses(teacher_id: int):
+    """某教师当前关联（授课）的课程列表，用于教师管理页查看。"""
+    with get_engine().connect() as connection:
+        exists = connection.execute(
+            text("SELECT COUNT(*) FROM teachers WHERE id=:id"), {"id": teacher_id}
+        ).scalar()
+        if not exists:
+            raise not_found("教师不存在")
+        rows = connection.execute(
+            text(
+                "SELECT c.id, c.name, c.short_description, c.cover, c.status, c.published_at, "
+                "(SELECT COUNT(*) FROM course_chapters ch WHERE ch.course_id=c.id) chapter_count "
+                "FROM courses c JOIN course_teachers ct ON ct.course_id=c.id "
+                "WHERE ct.teacher_id=:id ORDER BY c.id DESC"
+            ),
+            {"id": teacher_id},
+        ).mappings().all()
+        connection.commit()
+    items = [
+        {
+            "id": row["id"],
+            "name": row["name"],
+            "short_description": row["short_description"] or "",
+            "cover": row["cover"] or "",
+            "status": row["status"],
+            "published_at": row["published_at"],
+            "chapter_count": int(row["chapter_count"] or 0),
+        }
+        for row in rows
+    ]
+    return ok({"items": items})
 
 
 @router.post("/teacher/toggle-status")

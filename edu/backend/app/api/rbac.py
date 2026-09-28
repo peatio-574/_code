@@ -103,7 +103,7 @@ def _permission_codes_for_role(connection, role_id: int) -> list[str]:
         for row in connection.execute(
             text(
                 "SELECT p.code FROM permissions p JOIN role_permissions rp "
-                "ON rp.permission_id = p.id WHERE rp.role_id = :role_id "
+                "ON rp.permission_id = p.id WHERE rp.role_id = :role_id AND p.status = 1 "
                 "ORDER BY p.module, p.code"
             ),
             {"role_id": role_id},

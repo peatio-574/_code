@@ -18,12 +18,8 @@ from .security import hash_password, now
 # 测试账号统一初始密码
 TEST_PASSWORD = "Test123!"
 
-TEST_USERS: list[tuple[str, str, str]] = [
-    ("test_system_admin", "system_admin", "Test System Admin"),
-    ("test_principal", "principal", "Test Principal"),
-    ("test_homeroom_teacher", "homeroom_teacher", "Test Homeroom Teacher"),
-    ("test_student", "student", "Test Student"),
-]
+# 内置开发/测试账号。置空表示不再自动创建，初始仅保留管理员自行创建的账号。
+TEST_USERS: list[tuple[str, str, str]] = []
 
 
 def seed_rbac() -> None:
@@ -192,38 +188,34 @@ def seed_rbac() -> None:
                 ),
                 {"created_at": timestamp, "updated_at": timestamp},
             ).lastrowid
+        # 仅把「尚无任何启用校区归属」的账号补入默认校区，避免把已有校区的
+        # 管理员/学员重复挂到默认校区（历史实现只检查默认校区，会重复归属）。
         members = connection.execute(
             text(
                 "SELECT DISTINCT u.id, r.code FROM users u "
                 "JOIN user_roles ur ON ur.user_id = u.id "
                 "JOIN roles r ON r.id = ur.role_id AND r.status = 1 "
                 "WHERE u.status = 1 AND r.code IN "
-                "('principal','homeroom_teacher','student')"
+                "('principal','homeroom_teacher','student') "
+                "AND NOT EXISTS (SELECT 1 FROM campus_members cm "
+                "WHERE cm.user_id = u.id AND cm.status = 1)"
             )
         ).fetchall()
         for user_id, member_type in members:
-            exists = connection.execute(
+            connection.execute(
                 text(
-                    "SELECT COUNT(*) FROM campus_members "
-                    "WHERE campus_id = :campus_id AND user_id = :user_id AND status = 1"
+                    "INSERT INTO campus_members(campus_id, user_id, member_type, is_primary, "
+                    "status, joined_at, created_at) VALUES(:campus_id, :user_id, :member_type, "
+                    "1, 1, :joined_at, :created_at)"
                 ),
-                {"campus_id": default_campus, "user_id": user_id},
-            ).scalar()
-            if not exists:
-                connection.execute(
-                    text(
-                        "INSERT INTO campus_members(campus_id, user_id, member_type, is_primary, "
-                        "status, joined_at, created_at) VALUES(:campus_id, :user_id, :member_type, "
-                        "1, 1, :joined_at, :created_at)"
-                    ),
-                    {
-                        "campus_id": default_campus,
-                        "user_id": user_id,
-                        "member_type": member_type,
-                        "joined_at": timestamp,
-                        "created_at": timestamp,
-                    },
-                )
+                {
+                    "campus_id": default_campus,
+                    "user_id": user_id,
+                    "member_type": member_type,
+                    "joined_at": timestamp,
+                    "created_at": timestamp,
+                },
+            )
 
 
 def bootstrap() -> list[str]:

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 视频学习：断点续播、心跳上报、右侧章节切换。
-import { ArrowLeft, CircleCheckFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, CircleCheckFilled, DArrowLeft, DArrowRight, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -29,6 +29,13 @@ const lastPosition = ref(0)
 const lastReportedAt = ref(0)
 let heartbeat: number | undefined
 
+// 播放控制：播放/暂停、进度、倍数
+const isPlaying = ref(false)
+const playbackRate = ref(1)
+const currentSeconds = ref(0)
+const durationSeconds = ref(0)
+const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2]
+
 const courseId = computed(() => Number(route.params.courseId))
 const chapters = computed<Record<string, any>[]>(() => detail.value?.chapters ?? [])
 const currentChapter = computed(() => chapters.value.find((c: any) => c.id === currentChapterId.value) ?? null)
@@ -38,6 +45,18 @@ const completedSet = computed(() => {
   for (const item of progress.value?.chapters ?? []) if (item.completed) set.add(item.chapter_id)
   return set
 })
+
+// 各章节已学习时长（秒）
+const watchedMap = computed(() => {
+  const map = new Map<number, number>()
+  for (const item of progress.value?.chapters ?? []) {
+    map.set(item.chapter_id, item.watched_seconds || 0)
+  }
+  return map
+})
+
+// 当前章节已学习时长（秒）
+const currentWatched = computed(() => watchedMap.value.get(currentChapterId.value) || 0)
 
 const completedCount = computed(() => completedSet.value.size)
 
@@ -135,9 +154,26 @@ async function switchChapter(chapterId: number) {
   }
 }
 
+/** 章节列表「学习」按钮：切到该章节并自动播放。 */
+async function playChapter(chapterId: number) {
+  if (chapterId !== currentChapterId.value) {
+    await switchChapter(chapterId)
+  }
+  const video = videoRef.value
+  if (video) {
+    try {
+      await video.play()
+    } catch {
+      /* 浏览器可能因自动播放策略拒绝，忽略 */
+    }
+  }
+}
+
 async function onLoadedMetadata() {
   const video = videoRef.value
   if (!video) return
+  video.playbackRate = playbackRate.value
+  durationSeconds.value = Math.floor(video.duration || 0)
   const recorded = progress.value?.chapters?.find((c: any) => c.chapter_id === currentChapterId.value)
   if (recorded && !recorded.completed && recorded.last_position_seconds > 0) {
     video.currentTime = recorded.last_position_seconds
@@ -145,7 +181,51 @@ async function onLoadedMetadata() {
 }
 
 function onPlay() {
+  isPlaying.value = true
   if (!sessionId.value) beginSession()
+}
+
+function onPause() {
+  isPlaying.value = false
+  reportNow('pause')
+}
+
+function onTimeUpdate() {
+  const video = videoRef.value
+  if (!video) return
+  currentSeconds.value = Math.floor(video.currentTime)
+  if (video.duration) durationSeconds.value = Math.floor(video.duration)
+}
+
+/** 播放/暂停。 */
+async function togglePlay() {
+  const video = videoRef.value
+  if (!video) return
+  if (video.paused) {
+    try {
+      await video.play()
+    } catch {
+      /* 自动播放被拒绝时忽略 */
+    }
+  } else {
+    video.pause()
+  }
+}
+
+/** 快进/快退（秒）。 */
+function seekBy(seconds: number) {
+  const video = videoRef.value
+  if (!video) return
+  const duration = video.duration || 0
+  video.currentTime = Math.min(Math.max(video.currentTime + seconds, 0), duration || Infinity)
+  void reportNow('seek')
+}
+
+/** 设置播放倍数。 */
+function setRate(rate: number) {
+  playbackRate.value = rate
+  const video = videoRef.value
+  if (video) video.playbackRate = rate
 }
 
 function handleBeforeUnload() {
@@ -160,11 +240,31 @@ function handleBeforeUnload() {
   }
 }
 
+/**
+ * 选择进入学习的章节：
+ * 1. 指定 chapter_id（章节列表点进来）；
+ * 2. 上次学习的章节未完成 → 续播该章节；
+ * 3. 上次章节已完成 → 定位到第一个未完成章节；
+ * 4. 兜底第一个章节。
+ */
+function pickInitialChapter(): number {
+  const queryChapter = Number(route.query.chapter_id)
+  if (queryChapter) return queryChapter
+  if (!chapters.value.length) return 0
+  const lastId = Number(progress.value?.last_chapter_id || 0)
+  if (lastId && !completedSet.value.has(lastId)) return lastId
+  const firstUnfinished = chapters.value.find((c) => !completedSet.value.has(c.id))
+  return firstUnfinished?.id ?? lastId ?? chapters.value[0].id
+}
+
 onMounted(async () => {
   detail.value = await getCourseDetail(courseId.value)
-  await loadProgress()
-  const queryChapter = Number(route.query.chapter_id)
-  currentChapterId.value = queryChapter || progress.value?.last_chapter_id || chapters.value[0]?.id || 0
+  try {
+    await loadProgress()
+  } catch {
+    /* 进度读取失败不阻断学习 */
+  }
+  currentChapterId.value = pickInitialChapter()
   await startLearning(courseId.value)
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
@@ -200,15 +300,46 @@ onBeforeUnmount(async () => {
             :src="videoUrl(currentChapter.file)"
             @loadedmetadata="onLoadedMetadata"
             @play="onPlay"
-            @pause="() => reportNow('pause')"
+            @pause="onPause"
+            @timeupdate="onTimeUpdate"
             @seeking="() => reportNow('seek')"
             @ended="() => { reportNow('ended'); finishSession() }"
           />
           <EmptyState v-else title="暂无视频" description="该课程尚未上传视频章节" />
         </div>
+        <div v-if="currentChapter" class="player__controls">
+          <div class="player__control-group">
+            <el-button
+              circle
+              :icon="isPlaying ? VideoPause : VideoPlay"
+              class="control-btn control-btn--primary"
+              @click="togglePlay"
+            />
+            <el-button circle :icon="DArrowLeft" class="control-btn" title="快退 10 秒" @click="seekBy(-10)" />
+            <el-button circle :icon="DArrowRight" class="control-btn" title="快进 10 秒" @click="seekBy(10)" />
+          </div>
+          <span class="player__time tabular">
+            {{ formatDuration(currentSeconds) }} / {{ formatDuration(durationSeconds || currentChapter.duration) }}
+          </span>
+          <div class="player__rate">
+            <span class="player__rate-label">倍数</span>
+            <el-select
+              :model-value="playbackRate"
+              size="small"
+              class="player__rate-select"
+              @change="setRate"
+            >
+              <el-option v-for="rate in PLAYBACK_RATES" :key="rate" :label="`${rate}x`" :value="rate" />
+            </el-select>
+          </div>
+        </div>
         <div class="player__info">
           <h3 class="player__title">{{ currentChapter?.title || '—' }}</h3>
-          <span v-if="currentChapter" class="player__duration tabular">{{ formatDuration(currentChapter.duration) }}</span>
+          <span v-if="currentChapter" class="player__meta tabular">
+            <span class="player__meta-item">
+              已学习 <b>{{ formatDuration(currentWatched) }}</b> / {{ formatDuration(currentChapter.duration) }}
+            </span>
+          </span>
         </div>
       </section>
 
@@ -225,9 +356,23 @@ onBeforeUnmount(async () => {
             @click="switchChapter(chapter.id)"
           >
             <span class="chapter-index">{{ String(index + 1).padStart(2, '0') }}</span>
-            <span class="chapter-name">{{ chapter.title }}</span>
-            <el-icon v-if="completedSet.has(chapter.id)" class="chapter-check"><CircleCheckFilled /></el-icon>
-            <span v-else class="chapter-status tabular">{{ formatDuration(chapter.duration) }}</span>
+            <div class="chapter-main">
+              <span class="chapter-name">{{ chapter.title }}</span>
+              <span class="chapter-time tabular">
+                <el-icon v-if="completedSet.has(chapter.id)" class="chapter-check"><CircleCheckFilled /></el-icon>
+                <template v-else>
+                  已学习 {{ formatDuration(watchedMap.get(chapter.id) || 0) }} / {{ formatDuration(chapter.duration) }}
+                </template>
+              </span>
+            </div>
+            <el-button
+              link
+              type="primary"
+              class="chapter-learn"
+              @click.stop="playChapter(chapter.id)"
+            >
+              学习
+            </el-button>
           </li>
         </ul>
       </aside>
@@ -295,18 +440,56 @@ onBeforeUnmount(async () => {
   box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
+/* 视频区上下加大：更宽阔的播放舞台 */
 .player__stage {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 320px;
+  min-height: 520px;
   background: #0b1220;
 }
 .video {
   width: 100%;
-  max-height: 60vh;
+  max-height: 78vh;
   display: block;
   background: #000;
+}
+/* 自定义播放控制栏 */
+.player__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-color);
+  background: var(--slate-25);
+}
+.player__control-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.control-btn {
+  font-size: 18px;
+}
+.control-btn--primary {
+  font-size: 22px;
+}
+.player__time {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.player__rate {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+.player__rate-label {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+.player__rate-select {
+  width: 92px;
 }
 .player__info {
   display: flex;
@@ -320,9 +503,14 @@ onBeforeUnmount(async () => {
   font-size: var(--text-md);
   font-weight: 600;
 }
-.player__duration {
+.player__meta {
+  flex-shrink: 0;
   font-size: var(--text-sm);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
+}
+.player__meta-item b {
+  color: var(--brand-600);
+  font-weight: 700;
 }
 
 .chapters {
@@ -330,7 +518,7 @@ onBeforeUnmount(async () => {
   width: 340px;
   flex-shrink: 0;
   flex-direction: column;
-  max-height: calc(60vh + 88px);
+  max-height: calc(78vh + 88px);
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
@@ -384,19 +572,32 @@ onBeforeUnmount(async () => {
 .chapters__list li.active .chapter-index {
   color: var(--brand-500);
 }
-.chapter-name {
+.chapter-main {
+  display: flex;
+  min-width: 0;
   flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+.chapter-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chapter-status {
+.chapter-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--text-tertiary);
   font-size: var(--text-xs);
 }
 .chapter-check {
   color: var(--success);
-  font-size: 16px;
+  font-size: 15px;
+}
+.chapter-learn {
+  flex-shrink: 0;
+  font-weight: 600;
 }
 
 @media (max-width: 1024px) {

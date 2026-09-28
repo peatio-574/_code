@@ -256,7 +256,7 @@ onMounted(load)
     <el-dialog v-model="dialogVisible" :lock-scroll="false" title="新增字典" width="480px" append-to-body>
       <el-form label-position="top">
         <el-form-item label="字段中文名" required>
-          <el-input v-model="form.name" placeholder="如 课程分类" />
+          <el-input v-model="form.name" placeholder="如 课程方向" />
         </el-form-item>
         <el-form-item label="字段英文名" required>
           <el-input v-model="form.code" placeholder="如 course_type" />
@@ -274,9 +274,6 @@ onMounted(load)
 </template>
 
 <style scoped>
-.built-tag {
-  margin-left: var(--space-2);
-}
 .dict-table :deep(.el-checkbox__inner) {
   width: 18px;
   height: 18px;

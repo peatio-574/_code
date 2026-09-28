@@ -16,13 +16,21 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import PortalBackdrop from '@/components/portal-backdrop.vue'
-import { useSystemConfig } from '@/lib/system-config'
+import { resolveImageUrl, useSystemConfig } from '@/lib/system-config'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
-const { systemName, logo, friendLinks } = useSystemConfig()
+const { systemName, logo, friendLinks, bannerBackgrounds } = useSystemConfig()
+
+// 顶部 banner 背景：取 banner 场景的首张图片，未配置时回退默认图
+const bannerStyle = computed(() => {
+  const url = bannerBackgrounds.value[0]
+  return url
+    ? { '--portal-banner-image': `url(${url})` }
+    : { '--portal-banner-image': "url('/portal-banner.png')" }
+})
 
 // 鼠标视差：把归一化位移写入 --px / --py，仅供背景光晕使用（轮播图不参与）
 const shellEl = ref<HTMLElement | null>(null)
@@ -88,8 +96,10 @@ onBeforeUnmount(() => {
 const isAuthenticated = computed(() => auth.isAuthenticated)
 const isAdmin = computed(() => auth.isAdmin)
 const displayName = computed(() => auth.user?.display_name || auth.user?.username || '')
-// 首页固定为整屏布局，不产生页面滚动
-const isHome = computed(() => route.name === 'home')
+// 首页与课程中心固定为整屏布局，不产生页面滚动
+const isHome = computed(() => route.name === 'home' || route.name === 'courses')
+// 考试作答页：整屏固定，且隐藏页脚以最大化作答区域
+const isExamAttempt = computed(() => route.name === 'exam-attempt')
 
 const baseLinks = [
   { label: '首页', to: '/', icon: HomeFilled },
@@ -129,13 +139,18 @@ function handleCommand(command: string) {
 </script>
 
 <template>
-  <div ref="shellEl" class="portal-shell" :class="{ 'is-home': isHome }">
+  <div
+    ref="shellEl"
+    class="portal-shell"
+    :class="{ 'is-home': isHome, 'is-exam': isExamAttempt }"
+    :style="bannerStyle"
+  >
     <PortalBackdrop />
     <header class="portal-header">
       <div class="portal-topbar">
         <router-link to="/" class="brand">
           <span class="brand__mark">
-            <img v-if="logo" :src="`/api/image/${logo}`" :alt="systemName" />
+            <img v-if="logo" :src="resolveImageUrl(logo)" :alt="systemName" />
             <span v-else>{{ systemName.slice(0, 1) }}</span>
           </span>
           <span class="brand__text">{{ systemName }}</span>
@@ -185,7 +200,7 @@ function handleCommand(command: string) {
       </router-view>
     </main>
 
-    <footer v-if="friendLinks.length" class="portal-footer">
+    <footer v-if="friendLinks.length && !isExamAttempt" class="portal-footer">
       <div class="portal-footer__inner">
         <div class="portal-footer__links">
           <span class="portal-footer__links-label">友情链接</span>
@@ -241,9 +256,41 @@ function handleCommand(command: string) {
   padding-top: var(--space-5);
   padding-bottom: var(--space-5);
 }
-.portal-shell.is-home .portal-main :deep(.home) {
+.portal-shell.is-home .portal-main :deep(.home),
+.portal-shell.is-home .portal-main :deep(.courses) {
   flex: 1;
   min-height: 0;
+}
+/* 考试作答页：整屏固定，隐藏页脚，作答区内部滚动 */
+.portal-shell.is-exam {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+.portal-shell.is-exam .portal-main {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: var(--space-4);
+  padding-bottom: var(--space-4);
+}
+.portal-shell.is-exam .portal-main :deep(.attempt) {
+  flex: 1;
+  min-height: 0;
+}
+/* 小屏：取消整屏固定，允许自然滚动，避免内容被裁切 */
+@media (max-width: 640px) {
+  .portal-shell.is-home,
+  .portal-shell.is-exam {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+  .portal-shell.is-home .portal-main,
+  .portal-shell.is-exam .portal-main {
+    overflow: visible;
+  }
 }
 
 /* ============ 门户浅色主题（米白 + 青瓷蓝） ============ */

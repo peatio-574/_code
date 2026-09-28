@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 课程详情：概述、教师、总时长/已学进度、章节列表与开始学习。
-import { Clock, Reading, User } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowRight, Clock, Reading, User } from '@element-plus/icons-vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -15,6 +15,8 @@ const auth = useAuthStore()
 const detail = ref<Record<string, any> | null>(null)
 const progress = ref<Record<string, any> | null>(null)
 const loading = ref(true)
+// 课程介绍折叠状态：默认收起（仅显示前三行）
+const introOpen = ref(false)
 
 const courseId = computed(() => Number(route.params.courseId))
 
@@ -101,48 +103,64 @@ watch(courseId, () => {
           <h1 class="hero__title">{{ detail.course.name }}</h1>
           <p class="hero__summary">{{ detail.course.short_description || '暂无课程概述' }}</p>
 
-          <div class="hero__teachers" v-if="detail.teachers.length">
-            <span v-for="teacher in detail.teachers" :key="teacher.id" class="hero__teacher">
-              <el-avatar :size="28" :src="teacher.avatar ? `/api/image/${teacher.avatar}` : undefined">
-                <el-icon :size="14"><User /></el-icon>
-              </el-avatar>
-              {{ teacher.name }}
-            </span>
-          </div>
-
-          <div class="hero__stats">
-            <div class="stat">
-              <el-icon class="stat__icon"><Reading /></el-icon>
-              <div>
-                <div class="stat__value tabular">{{ chapters.length }}</div>
-                <div class="stat__label">章节数</div>
+          <div class="hero__bottom">
+            <div class="hero__meta">
+              <div class="hero__stats">
+                <div class="stat" v-if="detail.teachers.length">
+                  <span class="stat__icon"><el-icon><User /></el-icon></span>
+                  <div>
+                    <div class="stat__value stat__value--teachers">
+                      <span v-for="teacher in detail.teachers" :key="teacher.id">{{ teacher.name }}</span>
+                    </div>
+                    <div class="stat__label">授课教师</div>
+                  </div>
+                </div>
+                <div class="stat">
+                  <span class="stat__icon"><el-icon><Reading /></el-icon></span>
+                  <div>
+                    <div class="stat__value tabular">{{ chapters.length }}</div>
+                    <div class="stat__label">章节数</div>
+                  </div>
+                </div>
+                <div class="stat">
+                  <span class="stat__icon"><el-icon><Clock /></el-icon></span>
+                  <div>
+                    <div class="stat__value tabular">{{ formatDuration(detail.total_duration) }}</div>
+                    <div class="stat__label">课程总时长</div>
+                  </div>
+                </div>
+                <div class="stat" v-if="auth.isAuthenticated">
+                  <span class="stat__icon stat__icon--success">
+                    <el-icon><Reading /></el-icon>
+                  </span>
+                  <div>
+                    <div class="stat__value tabular">{{ progressPercent }}%</div>
+                    <div class="stat__label">已完成</div>
+                  </div>
+                </div>
               </div>
+              <el-button type="primary" size="large" class="hero__learn-btn" @click="learn()">
+                {{ progressPercent > 0 ? '继续学习' : '开始学习' }}
+              </el-button>
             </div>
-            <div class="stat">
-              <el-icon class="stat__icon"><Clock /></el-icon>
-              <div>
-                <div class="stat__value tabular">{{ formatDuration(detail.total_duration) }}</div>
-                <div class="stat__label">课程总时长</div>
-              </div>
-            </div>
-            <div class="stat" v-if="auth.isAuthenticated">
-              <div class="stat__value tabular">{{ progressPercent }}%</div>
-              <div class="stat__label">已完成</div>
-            </div>
-          </div>
-
-          <div class="hero__actions">
-            <el-button type="primary" size="large" @click="learn()">
-              {{ progressPercent > 0 ? '继续学习' : '开始学习' }}
-            </el-button>
           </div>
         </div>
       </section>
 
       <!-- 课程介绍 -->
-      <section v-if="detail.course.description" class="panel">
-        <h2 class="panel__title">课程介绍</h2>
-        <div class="richtext" v-html="detail.course.description" />
+      <section v-if="detail.course.description" class="panel intro">
+        <div class="panel__head intro__head" role="button" tabindex="0" @click="introOpen = !introOpen" @keydown.enter="introOpen = !introOpen">
+          <h2 class="panel__title">课程介绍</h2>
+          <span class="intro__toggle" :class="{ 'is-open': introOpen }">
+            {{ introOpen ? '收起' : '展开' }}
+            <el-icon><ArrowDown /></el-icon>
+          </span>
+        </div>
+        <div
+          class="richtext"
+          :class="{ 'richtext--clamp': !introOpen }"
+          v-html="detail.course.description"
+        />
       </section>
 
       <!-- 章节列表 -->
@@ -165,16 +183,24 @@ watch(courseId, () => {
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="时长 / 已学" min-width="220">
+          <el-table-column label="时长 / 已学习" min-width="220">
             <template #default="{ row }">
               <span class="cell-muted tabular">
                 {{ formatDuration(row.duration) }} / {{ formatDuration(watchMap.get(row.id) || 0) }}
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="110" align="right">
+          <el-table-column label="操作" width="120" align="right">
             <template #default="{ row }">
-              <el-button type="primary" link @click="learn(row.id)">学习</el-button>
+              <button
+                type="button"
+                class="learn-btn"
+                :class="{ 'learn-btn--done': completedSet.has(row.id) }"
+                @click="learn(row.id)"
+              >
+                <span>{{ completedSet.has(row.id) ? '复习' : '学习' }}</span>
+                <el-icon class="learn-btn__arrow"><ArrowRight /></el-icon>
+              </button>
             </template>
           </el-table-column>
         </el-table>
@@ -231,45 +257,87 @@ watch(courseId, () => {
   font-size: var(--text-base);
   color: var(--text-secondary);
 }
-.hero__teachers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
+/* 底部区块：整体靠下 */
+.hero__bottom {
+  margin-top: auto;
 }
-.hero__teacher {
+/* 指标行 + 开始学习按钮同一行 */
+.hero__meta {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-}
-.hero__stats {
-  display: flex;
-  gap: var(--space-8);
-  padding: var(--space-4) 0;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
   border-top: 1px solid var(--border-color);
   border-bottom: 1px solid var(--border-color);
 }
-.stat {
-  display: flex;
-  align-items: center;
+/* 指标平铺：授课教师在最前，等分占满整行 */
+.hero__stats {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: var(--space-3);
 }
+.stat {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--slate-50);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.stat:hover {
+  background: var(--brand-50);
+}
 .stat__icon {
-  font-size: 20px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--brand-50);
   color: var(--brand-500);
+  font-size: 16px;
+}
+.stat__icon--success {
+  background: var(--success-bg);
+  color: var(--success);
 }
 .stat__value {
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
   font-weight: 700;
+  line-height: 1.2;
   color: var(--text-strong);
+  white-space: nowrap;
+}
+.stat__value--teachers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--brand-600);
 }
 .stat__label {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
-.hero__actions {
-  margin-top: auto;
+.hero__learn-btn {
+  flex-shrink: 0;
+  min-width: 200px;
+  height: 52px;
+  padding: 0 var(--space-8);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  border-radius: var(--radius-md);
+}
+.hero__learn-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px -10px rgba(79, 127, 240, 0.85);
+}
+.hero__learn-btn:active {
+  transform: translateY(0);
 }
 
 /* ============ 面板 ============ */
@@ -301,10 +369,87 @@ watch(courseId, () => {
 .richtext {
   line-height: 1.8;
   color: var(--text-primary);
+  /* 与后台录入（textarea）一致：保留换行与空格 */
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .richtext :deep(img) {
   max-width: 100%;
   border-radius: var(--radius-md);
+}
+/* 折叠时仅显示前三行 */
+.richtext--clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* 课程介绍折叠 */
+.intro__head {
+  cursor: pointer;
+  user-select: none;
+}
+.intro__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.intro__head:hover .intro__toggle {
+  color: var(--brand-600);
+}
+.intro__toggle .el-icon {
+  transition: transform var(--duration-base) var(--ease-out);
+}
+.intro__toggle.is-open .el-icon {
+  transform: rotate(180deg);
+}
+/* 章节列表「学习」按钮 */
+.learn-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 14px;
+  border: 1px solid var(--brand-200);
+  border-radius: var(--radius-pill);
+  background: var(--brand-50);
+  color: var(--brand-600);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.learn-btn .el-icon {
+  transition: transform var(--duration-base) var(--ease-out);
+}
+.learn-btn:hover {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--brand-500), var(--brand-600));
+  box-shadow: 0 8px 18px -8px rgba(79, 127, 240, 0.9);
+  transform: translateY(-1px);
+}
+.learn-btn:hover .el-icon {
+  transform: translateX(3px);
+}
+.learn-btn:active {
+  transform: translateY(0);
+}
+.learn-btn--done {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success);
+}
+.learn-btn--done:hover {
+  background: linear-gradient(135deg, var(--success), #15803d);
+  box-shadow: 0 8px 18px -8px rgba(22, 163, 74, 0.8);
 }
 .chapter-index {
   display: grid;

@@ -96,8 +96,3 @@ export async function createRole(input: {
   const response = await api.post<ApiResult<RoleItem>>('/api/admin/rbac/roles', input)
   return response.data
 }
-
-export async function deleteRole(id: number) {
-  const response = await api.delete<ApiResult<{ id: number }>>(`/api/admin/rbac/roles/${id}`)
-  return response.data
-}

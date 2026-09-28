@@ -1,25 +1,24 @@
 <script setup lang="ts">
-// 题库管理：练习类型配置、题目 CRUD、批量删除与导入。
-import { Plus, Search, Upload } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+// 题库管理：题目 CRUD、批量删除与导入。
+import { Download, Plus, Search, Upload } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { onMounted, reactive, ref } from 'vue'
 
 import {
   batchDeleteQuestions,
   createQuestion,
-  createQuestionCategory,
   deleteQuestion,
-  deleteQuestionCategory,
+  importQuestions,
   listQuestionCategories,
   listQuestions,
   toggleQuestion,
   updateQuestion,
-  updateQuestionCategory,
 } from '@/api/admin'
 import DataPage from '@/components/data-page.vue'
 import StatusSwitch from '@/components/status-switch.vue'
 import { api } from '@/lib/api'
 import { formatDateTime, STATUS_FAILURE_TEXT, statusChangeMessage } from '@/lib/labels'
+import { buildXlsx, readXlsx } from '@/lib/xlsx'
 
 const QUESTION_TYPES = [
   { value: 'single', label: '单选题' },
@@ -49,9 +48,6 @@ const form = reactive({
   category_id: 0,
   score: 1,
 })
-
-const categoryVisible = ref(false)
-const categoryForm = reactive({ id: 0, name: '', sort_order: 0, status: 1 })
 
 async function load() {
   loading.value = true
@@ -148,53 +144,256 @@ async function loadCategories() {
   categories.value = data?.items ?? []
 }
 
-async function saveCategory() {
-  if (!categoryForm.name.trim()) {
-    ElMessage.warning('请填写名称')
-    return
+const importing = ref(false)
+
+const TYPE_ALIASES: Record<string, string> = {
+  单选题: 'single',
+  单选: 'single',
+  多选题: 'multiple',
+  多选: 'multiple',
+  判断题: 'true_false',
+  判断: 'true_false',
+  填空题: 'fill',
+  填空: 'fill',
+  问答题: 'qa',
+  问答: 'qa',
+  综合题: 'group',
+  综合答题: 'group',
+  材料题: 'group',
+}
+
+function normalizeType(value: string | undefined): string {
+  const raw = (value || '').trim()
+  if (!raw) return 'single'
+  if (QUESTION_TYPES.some((t) => t.value === raw)) return raw
+  return TYPE_ALIASES[raw] || 'single'
+}
+
+/** 解析 CSV 文本为二维数组，支持双引号包裹与转义。 */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let quoted = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          cell += '"'
+          i++
+        } else {
+          quoted = false
+        }
+      } else {
+        cell += ch
+      }
+    } else if (ch === '"') {
+      quoted = true
+    } else if (ch === ',') {
+      row.push(cell.trim())
+      cell = ''
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++
+      row.push(cell.trim())
+      rows.push(row)
+      row = []
+      cell = ''
+    } else {
+      cell += ch
+    }
   }
-  const result = categoryForm.id
-    ? await updateQuestionCategory(categoryForm)
-    : await createQuestionCategory(categoryForm)
-  if (result.success) {
-    ElMessage.success('已保存')
-    categoryForm.id = 0
-    categoryForm.name = ''
-    await loadCategories()
-  } else {
-    ElMessage.error(result.message || '保存失败')
+  if (cell !== '' || row.length) {
+    row.push(cell.trim())
+    rows.push(row)
+  }
+  return rows
+}
+
+/** 将「；/;」分隔的选项文本转为题库存储的 JSON 结构。 */
+function optionsToJson(raw: string): string {
+  const text = (raw || '').trim()
+  if (!text) return ''
+  if (text.startsWith('[') || text.startsWith('{')) return text
+  const parts = text.split(/[；;]/).map((item) => item.trim()).filter(Boolean)
+  if (!parts.length) return ''
+  return JSON.stringify(parts.map((item, index) => ({ key: String.fromCharCode(65 + index), text: item })))
+}
+
+interface ImportColumns {
+  iType: number
+  iTitle: number
+  iOptions: number
+  iAnswer: number
+  iScore: number
+  iStatus: number
+  iCategory: number
+  iExplanation: number
+  hasHeader: boolean
+}
+
+/** 根据表头定位各列索引；无表头时按固定顺序回退。 */
+function detectColumns(grid: string[][]): ImportColumns {
+  const header = (grid[0] ?? []).map((cell) => String(cell ?? '').trim())
+  const hasHeader = header.some((h) =>
+    ['题型', '类型', '题目', '题干', '选项', '答案', 'type', 'title'].includes(h),
+  )
+  const col = (names: string[], fallback: number) => {
+    if (!hasHeader) return fallback
+    const idx = header.findIndex((h) => names.includes(h))
+    return idx >= 0 ? idx : fallback
+  }
+  return {
+    iType: col(['题型', '类型', 'type'], 0),
+    iTitle: col(['题目', '题干', 'title'], 1),
+    iOptions: col(['选项', 'options'], 2),
+    iAnswer: col(['答案', 'answer'], 3),
+    iScore: col(['分值', '分数', 'score'], 4),
+    iStatus: col(['状态', 'status'], -1),
+    iCategory: col(['分类', '题目方向', 'category'], -1),
+    iExplanation: col(['解析', '答案解析', 'explanation'], -1),
+    hasHeader,
   }
 }
 
-async function removeCategory(row: Record<string, any>) {
-  const result = await deleteQuestionCategory(row.id)
-  if (result.success) {
-    ElMessage.success('已删除')
-    await loadCategories()
+/** 将表格二维数据转为 { payload, categoryName } 列表。 */
+function toRows(grid: string[][]): { payload: Record<string, unknown>; categoryName: string }[] {
+  const data = grid.filter((row) => row.some((cell) => String(cell ?? '').trim()))
+  if (!data.length) return []
+  const cols = detectColumns(data)
+  const body = cols.hasHeader ? data.slice(1) : data
+  const rows: { payload: Record<string, unknown>; categoryName: string }[] = []
+  for (const row of body) {
+    const title = String(row[cols.iTitle] ?? '').trim()
+    if (!title) continue
+    const type = normalizeType(row[cols.iType])
+    const payload: Record<string, unknown> = {
+      type,
+      title,
+      options: type === 'group' ? '' : optionsToJson(String(row[cols.iOptions] ?? '')),
+      answer: String(row[cols.iAnswer] ?? '').trim(),
+      score: Number(row[cols.iScore]) || 1,
+      explanation: cols.iExplanation >= 0 ? String(row[cols.iExplanation] ?? '').trim() : '',
+    }
+    if (cols.iStatus >= 0) {
+      const status = String(row[cols.iStatus] ?? '').trim()
+      payload.status = status === '0' || status === '禁用' || status === '停用' ? 0 : 1
+    }
+    const categoryName = cols.iCategory >= 0 ? String(row[cols.iCategory] ?? '').trim() : ''
+    rows.push({ payload, categoryName })
   }
+  return rows
 }
 
-function editCategory(row: Record<string, any>) {
-  Object.assign(categoryForm, { id: row.id, name: row.name, sort_order: row.sort_order, status: row.status })
+/** 下载导入模板（xlsx），表头与导入解析规则保持一致。 */
+function downloadTemplate() {
+  const rows: (string | number)[][] = [
+    ['类型', '题目', '选项', '答案', '分值', '状态', '分类', '解析'],
+    [
+      'single',
+      '一项工程，甲单独做需10天，乙单独做需15天，两人合作需多少天完成？',
+      '5；6；7；8',
+      'B',
+      1,
+      1,
+      '行政测试-数量关系',
+      '甲效率1/10，乙1/15，合作效率1/10+1/15=1/6，故需6天',
+    ],
+    [
+      'single',
+      '甲、乙两地相距240千米，汽车去时速度60千米/时，返回速度40千米/时，往返平均速度是多少？',
+      '50；48；45；52',
+      'B',
+      1,
+      1,
+      '行政测试-数量关系',
+      '平均速度=2×60×40÷(60+40)=48',
+    ],
+    [
+      'single',
+      '商品进价100元，按20%利润率定价，售价为多少元？',
+      '110；120；125；130',
+      'B',
+      1,
+      1,
+      '行政测试-数量关系',
+      '售价=100×(1+20%)=120',
+    ],
+    [
+      'single',
+      '从5个人中任选2人参加比赛，共有多少种选法？',
+      '15；10；20；8',
+      'B',
+      1,
+      1,
+      '行政测试-数量关系',
+      'C(5,2)=5×4÷2=10',
+    ],
+    [
+      'single',
+      '掷一枚骰子，点数为偶数的概率是多少？',
+      '1/3；1/2；1/6；2/3',
+      'B',
+      1,
+      1,
+      '行政测试-数量关系',
+      '偶数有2、4、6三种，3÷6=1/2',
+    ],
+  ]
+  const blob = buildXlsx(rows)
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = '题库导入模板.xlsx'
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 async function importFile(options: any) {
-  // 简化导入：读取 CSV（题型,标题,答案,分值）
-  const text = await options.file.text()
-  const lines = text.split(/\r?\n/).filter((line: string) => line.trim())
+  const file: File = options.file
+  const isExcel = /\.xlsx$/i.test(file.name)
+  const loader = ElLoading.service({
+    lock: true,
+    text: isExcel ? '正在解析 Excel 并导入…' : '正在导入题目…',
+    background: 'rgba(255, 255, 255, 0.7)',
+  })
+  importing.value = true
   let imported = 0
-  for (const line of lines.slice(1)) {
-    const [type, title, answer, score] = line.split(',')
-    if (!title) continue
-    try {
-      await createQuestion({ type: type?.trim() || 'single', title: title.trim(), answer: (answer || '').trim(), score: Number(score) || 1 })
-      imported += 1
-    } catch {
-      /* skip */
+  let failed = 0
+  try {
+    let grid: string[][]
+    if (isExcel) {
+      grid = await readXlsx(file)
+    } else {
+      const text = await file.text()
+      grid = parseCsv(text)
     }
+    const rows = toRows(grid)
+    if (!rows.length) {
+      ElMessage.warning('未解析到有效题目，请检查文件内容')
+      return
+    }
+    // 一次性批量提交，避免逐条请求
+    const items = rows.map(({ payload, categoryName }) => ({
+      ...payload,
+      category: categoryName,
+    }))
+    const result = await importQuestions({ items })
+    if (result.success) {
+      imported = result.data?.imported ?? items.length
+      failed = result.data?.skipped ?? 0
+      await loadCategories()
+      await load()
+      ElMessage.success(failed ? `已导入 ${imported} 道题，跳过 ${failed} 道` : `已导入 ${imported} 道题`)
+    } else {
+      ElMessage.error(result.message || '导入失败，请检查文件格式')
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导入失败')
+  } finally {
+    loader.close()
+    importing.value = false
   }
-  ElMessage.success(`已导入 ${imported} 道题`)
-  await load()
 }
 
 async function toggleStatus(row: Record<string, any>, next: number) {
@@ -218,7 +417,7 @@ onMounted(async () => {
 <template>
   <DataPage
     title="题库管理"
-    description="维护练习题与练习类型；练习类型也可在「字典管理 → 练习类型」中统一维护。"
+    description="维护练习题与题目方向；题目方向与「字典管理 → 题目方向」共用同一份枚举值。"
     :total="total"
     :page="query.p"
     :page-size="query.page_size"
@@ -228,8 +427,14 @@ onMounted(async () => {
     @change="load"
   >
     <template #actions>
-      <el-upload :show-file-list="false" :http-request="importFile" accept=".csv">
-        <el-button :icon="Upload">导入题目</el-button>
+      <el-button :icon="Download" @click="downloadTemplate">下载模板</el-button>
+      <el-upload
+        :show-file-list="false"
+        :http-request="importFile"
+        :disabled="importing"
+        accept=".xlsx,.csv"
+      >
+        <el-button :icon="Upload" :loading="importing">导入题目</el-button>
       </el-upload>
       <el-button type="primary" :icon="Plus" @click="openCreate">添加题目</el-button>
     </template>
@@ -245,13 +450,12 @@ onMounted(async () => {
       <el-select v-model="query.type" placeholder="题型" clearable style="width: 160px">
         <el-option v-for="type in QUESTION_TYPES" :key="type.value" :label="type.label" :value="type.value" />
       </el-select>
-      <el-select v-model="query.category_id" placeholder="练习类型" clearable style="width: 180px">
+      <el-select v-model="query.category_id" placeholder="题目方向" clearable style="width: 180px">
         <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="String(category.id)" />
       </el-select>
       <el-button type="primary" @click="() => { query.p = 1; load() }">搜索</el-button>
       <el-button @click="reset">重置</el-button>
       <span class="toolbar-spacer" />
-      <el-button @click="categoryVisible = true">练习类型配置</el-button>
       <el-button type="danger" plain :disabled="!selection.length" @click="batchRemove">
         批量删除{{ selection.length ? `（${selection.length}）` : '' }}
       </el-button>
@@ -267,15 +471,17 @@ onMounted(async () => {
       <el-table-column type="selection" width="48" />
       <el-table-column label="题目" min-width="280">
         <template #default="{ row }">
-          <div class="question-cell">
-            <el-tag size="small" effect="plain" class="question-cell__type">
-              {{ QUESTION_TYPES.find((t) => t.value === row.type)?.label || row.type }}
-            </el-tag>
-            <span class="question-cell__title">{{ row.title }}</span>
-          </div>
+          <span class="question-cell__title" :title="row.title">{{ row.title }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="category_name" label="练习类型" min-width="140">
+      <el-table-column label="题型" min-width="120">
+        <template #default="{ row }">
+          <el-tag size="small" effect="plain" class="question-type-tag">
+            {{ QUESTION_TYPES.find((t) => t.value === row.type)?.label || row.type }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="category_name" label="题目方向" min-width="140">
         <template #default="{ row }">{{ row.category_name || '未分类' }}</template>
       </el-table-column>
       <el-table-column label="分值" min-width="90" align="right">
@@ -314,7 +520,7 @@ onMounted(async () => {
           </el-form-item>
         </el-col>
         <el-col :span="12">
-          <el-form-item label="练习类型">
+          <el-form-item label="题目方向">
             <el-select v-model="form.category_id" style="width: 100%">
               <el-option label="未分类" :value="0" />
               <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
@@ -346,54 +552,18 @@ onMounted(async () => {
       <el-button type="primary" @click="save">保存</el-button>
     </template>
   </el-dialog>
-
-  <el-dialog v-model="categoryVisible" :lock-scroll="false" title="练习类型配置" width="560px" append-to-body>
-    <div class="category-form">
-      <el-input v-model="categoryForm.name" placeholder="练习类型名称" class="category-form__name" />
-      <el-input-number v-model="categoryForm.sort_order" :min="0" placeholder="排序" />
-      <el-button type="primary" @click="saveCategory">{{ categoryForm.id ? '更新' : '新增' }}</el-button>
-      <el-button v-if="categoryForm.id" @click="categoryForm.id = 0, categoryForm.name = ''">取消</el-button>
-    </div>
-    <el-table :data="categories" row-key="id" empty-text="暂无练习类型">
-      <el-table-column prop="name" label="练习类型" min-width="180" />
-      <el-table-column prop="sort_order" label="排序" min-width="90" align="right" />
-      <el-table-column label="操作" min-width="140">
-        <template #default="{ row }">
-          <div class="row-actions">
-            <el-button link type="primary" @click="editCategory(row)">编辑</el-button>
-            <el-button link type="danger" @click="removeCategory(row)">删除</el-button>
-          </div>
-        </template>
-      </el-table-column>
-    </el-table>
-  </el-dialog>
 </template>
 
 <style scoped>
-.question-cell {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-}
-.question-cell__type {
-  flex-shrink: 0;
-}
 .question-cell__title {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-strong);
 }
-.category-form {
-  display: flex;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-  padding: var(--space-4);
-  background: var(--slate-50);
-  border-radius: var(--radius-md);
-}
-.category-form__name {
-  flex: 1;
+.question-type-tag {
+  flex-shrink: 0;
 }
 </style>
 
