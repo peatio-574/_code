@@ -84,10 +84,13 @@ def list_campuses(request: Request):
             text(
                 "SELECT c.id, c.code, c.name, c.address, c.contact_name, c.contact_mobile, "
                 "c.status, c.created_at, c.updated_at, "
-                "(SELECT COUNT(*) FROM campus_members cm WHERE cm.campus_id=c.id AND cm.status=1) member_count, "
-                "(SELECT COUNT(*) FROM campus_members cm WHERE cm.campus_id=c.id AND cm.status=1 "
+                "(SELECT COUNT(*) FROM campus_members cm JOIN users u ON u.id=cm.user_id "
+                "WHERE cm.campus_id=c.id AND cm.status=1) member_count, "
+                "(SELECT COUNT(*) FROM campus_members cm JOIN users u ON u.id=cm.user_id "
+                "WHERE cm.campus_id=c.id AND cm.status=1 "
                 "AND cm.member_type IN ('principal','homeroom_teacher')) manager_count, "
-                "(SELECT COUNT(*) FROM campus_members cm WHERE cm.campus_id=c.id AND cm.status=1 AND cm.member_type='student') student_count "
+                "(SELECT COUNT(*) FROM campus_members cm JOIN users u ON u.id=cm.user_id "
+                "WHERE cm.campus_id=c.id AND cm.status=1 AND cm.member_type='student') student_count "
                 f"FROM campuses c WHERE {clause} ORDER BY c.id LIMIT :limit OFFSET :offset"
             ),
             {**params, "limit": size, "offset": (page - 1) * size},
@@ -256,7 +259,10 @@ def delete_campus(campus_id: int, request: Request):
         if not is_super_admin(connection, actor):
             raise forbidden()
         members = connection.execute(
-            text("SELECT COUNT(*) FROM campus_members WHERE campus_id = :id AND status = 1"),
+            text(
+                "SELECT COUNT(*) FROM campus_members cm JOIN users u ON u.id=cm.user_id "
+                "WHERE cm.campus_id = :id AND cm.status = 1"
+            ),
             {"id": campus_id},
         ).scalar()
         if members:
@@ -283,7 +289,10 @@ def batch_delete(payload: IdsInput, request: Request):
             raise forbidden()
         for campus_id in payload.ids:
             members = connection.execute(
-                text("SELECT COUNT(*) FROM campus_members WHERE campus_id = :id AND status = 1"),
+                text(
+                    "SELECT COUNT(*) FROM campus_members cm JOIN users u ON u.id=cm.user_id "
+                    "WHERE cm.campus_id = :id AND cm.status = 1"
+                ),
                 {"id": campus_id},
             ).scalar()
             if members:
