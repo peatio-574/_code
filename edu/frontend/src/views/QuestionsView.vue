@@ -116,7 +116,6 @@ async function loadQuestion() {
     const data = await getRandomQuestion({ type: currentType.value, category_id: selectedCategories.value })
     question.value = data?.question ?? null
     children.value = data?.children ?? []
-    if (!question.value) ElMessage.info('暂无更多题目')
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {

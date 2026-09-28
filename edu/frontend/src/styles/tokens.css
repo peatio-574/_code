@@ -57,20 +57,20 @@
   --info-bg: #f1f5f9;
 
   /* ============ 语义背景/文字/边框 ============ */
-  --bg-app: #f6f5f1;
-  --bg-app-gradient: linear-gradient(155deg, #faf9f6 0%, #f4f3ee 45%, #f6f5f1 100%);
+  --bg-app: #eef1f7;
+  --bg-app-gradient: linear-gradient(160deg, #f5f7fb 0%, #e9eef7 48%, #eef1f7 100%);
   --bg-surface: #ffffff;
-  --bg-subtle: #f7f6f2;
-  --bg-muted: #efece5;
+  --bg-subtle: #f4f6fa;
+  --bg-muted: #e8ecf4;
 
-  --text-strong: #16233b;
-  --text-primary: #22304a;
-  --text-secondary: #5a6a85;
-  --text-tertiary: #8592a8;
+  --text-strong: #14213a;
+  --text-primary: #1f2c45;
+  --text-secondary: #566580;
+  --text-tertiary: #8392a8;
   --text-inverse: #ffffff;
 
-  --border-color: #e9e6df;
-  --border-strong: #dcd8cf;
+  --border-color: #e1e7f1;
+  --border-strong: #d2dae7;
 
   /* ============ 字号 ============ */
   --font-family: 'Public Sans', 'Inter', -apple-system, BlinkMacSystemFont,

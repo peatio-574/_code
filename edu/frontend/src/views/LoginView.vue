@@ -121,7 +121,8 @@ async function submit() {
       ElMessage.error(result.message || '用户名或密码错误')
       return
     }
-    const redirect = (route.query.redirect as string) || (auth.isAdmin ? '/admin' : '/')
+    // 登录后默认进入首页；从受保护页跳转来的按 redirect 回跳
+    const redirect = (route.query.redirect as string) || '/'
     await router.push(redirect)
     ElMessage.success('欢迎回来')
   } catch (error) {

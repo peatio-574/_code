@@ -293,7 +293,7 @@ function handleCommand(command: string) {
   }
 }
 
-/* ============ 门户浅色主题（米白 + 青瓷蓝） ============ */
+/* ============ 门户浅色主题（淡雅蓝灰 + 青瓷蓝） ============ */
 .portal-shell {
   background-image:
     radial-gradient(1100px 520px at 8% -10%, rgba(79, 127, 240, 0.1), transparent 60%),

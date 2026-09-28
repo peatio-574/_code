@@ -34,11 +34,20 @@ const isPlaying = ref(false)
 const playbackRate = ref(1)
 const currentSeconds = ref(0)
 const durationSeconds = ref(0)
+// 是否已开始播放：未开始时展示封面海报，避免出现空白加载条
+const hasStarted = ref(false)
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
 const courseId = computed(() => Number(route.params.courseId))
 const chapters = computed<Record<string, any>[]>(() => detail.value?.chapters ?? [])
 const currentChapter = computed(() => chapters.value.find((c: any) => c.id === currentChapterId.value) ?? null)
+
+// 未开始播放时覆盖在视频上的封面海报背景
+const showPoster = computed(() => !!currentChapter.value && !hasStarted.value)
+const posterStyle = computed(() => {
+  const cover = detail.value?.course?.cover
+  return cover ? { backgroundImage: `url(/api/image/${cover})` } : {}
+})
 
 const completedSet = computed(() => {
   const set = new Set<number>()
@@ -148,6 +157,7 @@ async function switchChapter(chapterId: number) {
   if (chapterId === currentChapterId.value) return
   await finishSession()
   currentChapterId.value = chapterId
+  hasStarted.value = false
   const video = videoRef.value
   if (video) {
     video.load()
@@ -182,6 +192,7 @@ async function onLoadedMetadata() {
 
 function onPlay() {
   isPlaying.value = true
+  hasStarted.value = true
   if (!sessionId.value) beginSession()
 }
 
@@ -305,7 +316,16 @@ onBeforeUnmount(async () => {
             @seeking="() => reportNow('seek')"
             @ended="() => { reportNow('ended'); finishSession() }"
           />
-          <EmptyState v-else title="暂无视频" description="该课程尚未上传视频章节" />
+          <!-- 未开始播放：封面海报 + 播放按钮 -->
+          <div v-if="showPoster" class="player__poster" @click="togglePlay">
+            <div class="player__poster-bg" :style="posterStyle" />
+            <div class="player__poster-inner">
+              <span class="player__poster-play"><el-icon><VideoPlay /></el-icon></span>
+              <h3 class="player__poster-title">{{ currentChapter?.title }}</h3>
+              <p class="player__poster-hint">点击开始播放</p>
+            </div>
+          </div>
+          <EmptyState v-else-if="!currentChapter" title="暂无视频" description="该课程尚未上传视频章节" />
         </div>
         <div v-if="currentChapter" class="player__controls">
           <div class="player__control-group">
@@ -440,19 +460,85 @@ onBeforeUnmount(async () => {
   box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
-/* 视频区上下加大：更宽阔的播放舞台 */
+/* 播放舞台：固定 16:9，避免未加载时出现空白黑带 */
 .player__stage {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 520px;
+  aspect-ratio: 16 / 9;
+  max-height: 78vh;
+  overflow: hidden;
   background: #0b1220;
 }
 .video {
   width: 100%;
-  max-height: 78vh;
+  height: 100%;
   display: block;
+  object-fit: contain;
   background: #000;
+}
+/* 未播放封面海报 */
+.player__poster {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background:
+    radial-gradient(680px 380px at 50% 42%, rgba(79, 127, 240, 0.3), transparent 70%),
+    linear-gradient(160deg, #0b1220 0%, #16233b 55%, #1f2c45 100%);
+}
+.player__poster-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.3;
+  transform: scale(1.06);
+  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 0%, transparent 78%);
+  mask-image: radial-gradient(circle at 50% 45%, #000 0%, transparent 78%);
+}
+.player__poster-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  text-align: center;
+}
+.player__poster-play {
+  display: grid;
+  width: 84px;
+  height: 84px;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand-500), var(--brand-600));
+  color: #fff;
+  font-size: 36px;
+  box-shadow: 0 16px 40px -12px rgba(79, 127, 240, 0.9);
+  transition: transform var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
+}
+.player__poster:hover .player__poster-play {
+  transform: scale(1.08);
+  box-shadow: 0 20px 48px -12px rgba(79, 127, 240, 1);
+}
+.player__poster-title {
+  max-width: 80%;
+  color: #fff;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.5);
+}
+.player__poster-hint {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: var(--text-sm);
+  letter-spacing: 0.08em;
 }
 /* 自定义播放控制栏 */
 .player__controls {

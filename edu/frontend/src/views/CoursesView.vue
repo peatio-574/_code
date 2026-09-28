@@ -158,12 +158,14 @@ onMounted(async () => {
   min-height: 0;
   height: auto;
 }
+/* 统计与分页固定在内容区底部 */
 .courses__footer {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
+  margin-top: auto;
 }
 .courses__total {
   color: var(--text-secondary);
