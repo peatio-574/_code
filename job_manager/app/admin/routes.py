@@ -33,6 +33,26 @@ def safe_strptime(date_str, fmt='%Y-%m-%d %H:%M:%S'):
         return None
 
 
+# 批量导入分批提交的批大小。
+# 一次性提交大量行会生成超大 SQL 报文，若超过服务端 max_allowed_packet（本机为 2048 字节），
+# MySQL 会直接断开连接并抛出 (2006, "MySQL server has gone away", BrokenPipe)。
+# 分批提交可把单次报文控制在安全范围内，并避免长事务。
+IMPORT_BATCH_SIZE = 200
+
+
+def commit_import_batch(errors, idx, added_in_batch):
+    """提交当前批次；失败则回滚并记录错误。返回本批实际提交的行数。"""
+    if added_in_batch <= 0:
+        return 0
+    try:
+        db.session.commit()
+        return added_in_batch
+    except Exception as e:
+        db.session.rollback()
+        errors.append(f'第{idx}行附近：批量写入失败（{e}）')
+        return 0
+
+
 def is_valid_phone(phone):
     """校验手机号：11位，1开头，纯数字"""
     phone = (phone or '').strip()
@@ -1229,6 +1249,7 @@ def job_import():
 
             count = 0
             errors = []
+            batch_added = 0
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 job_name_raw = val(row, '职位名称', '职位名称 ')
                 if not job_name_raw:
@@ -1283,6 +1304,11 @@ def job_import():
                     )
                     db.session.add(job)
                     count += 1
+                    batch_added += 1
+                    if batch_added >= IMPORT_BATCH_SIZE:
+                        if commit_import_batch(errors, idx, batch_added) == 0:
+                            count -= batch_added
+                        batch_added = 0
                 except Exception as e:
                     errors.append(f'第{idx}行：{str(e)}')
             if count == 0:
@@ -1292,7 +1318,8 @@ def job_import():
                 flash(msg, 'warning')
                 return render_template('admin/job_import.html', **ctx)
             log_operation('import_jobs', 'job', 0, f'批量导入 {count} 个岗位')
-            db.session.commit()
+            if commit_import_batch(errors, ws.max_row, batch_added) == 0:
+                count -= batch_added
             success_msg = f'成功导入 {count} 个岗位'
             if errors:
                 success_msg += f'，{len(errors)} 行失败'
@@ -2298,6 +2325,7 @@ def import_admins():
             row_count = max(1, ws.max_row - 1)
             count = 0
             errors = []
+            batch_added = 0
 
             header_cells = [str(c.value).strip() if c.value is not None else '' for c in ws[1]]
             colmap = {}
@@ -2377,6 +2405,11 @@ def import_admins():
                 user.set_password(password)
                 db.session.add(user)
                 count += 1
+                batch_added += 1
+                if batch_added >= IMPORT_BATCH_SIZE:
+                    if commit_import_batch(errors, idx, batch_added) == 0:
+                        count -= batch_added
+                    batch_added = 0
             
             if count == 0 and not errors:
                 msg = '未导入任何管理员，请检查文件格式'
@@ -2386,7 +2419,8 @@ def import_admins():
                 return render_template('admin/import_admins.html', **ctx)
             
             log_operation('import_admins', 'user', 0, f'批量导入 {count} 个管理员')
-            db.session.commit()
+            if commit_import_batch(errors, ws.max_row, batch_added) == 0:
+                count -= batch_added
             
             if errors:
                 result_msg = f'成功导入 {count} 个管理员，{len(errors)} 条警告：' + '; '.join(errors[:5])
@@ -2449,6 +2483,7 @@ def import_students():
             ws = wb.active
             count = 0
             errors = []
+            batch_added = 0
 
             header_cells = [str(c.value).strip() if c.value is not None else '' for c in ws[1]]
             colmap = {}
@@ -2560,6 +2595,11 @@ def import_students():
                 user.set_password(password)
                 db.session.add(user)
                 count += 1
+                batch_added += 1
+                if batch_added >= IMPORT_BATCH_SIZE:
+                    if commit_import_batch(errors, idx, batch_added) == 0:
+                        count -= batch_added
+                    batch_added = 0
             
             if count == 0 and not errors:
                 msg = '未导入任何学员，请检查文件格式'
@@ -2569,7 +2609,8 @@ def import_students():
                 return render_template('admin/import_students.html', **ctx)
             
             log_operation('import_students', 'user', 0, f'批量导入 {count} 个学员')
-            db.session.commit()
+            if commit_import_batch(errors, ws.max_row, batch_added) == 0:
+                count -= batch_added
             
             if errors:
                 result_msg = f'成功导入 {count} 个学员，{len(errors)} 条警告：' + '; '.join(errors[:5])
