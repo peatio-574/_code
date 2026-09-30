@@ -854,6 +854,90 @@ class ZhiPin(object):
         lines = [ln.strip() for ln in s.splitlines()]
         return "\n".join(ln for ln in lines if ln)
 
+    # ---------- 专业要求抽取 ----------
+    # 智联搜索接口没有结构化的“专业要求”字段（needMajor 恒为空），
+    # 专业要求只存在于职位描述文本里，这里按常见写法做启发式提取。
+    _MAJOR_NOT_EXACT = set(
+        "管理 技术 设计 工程 学科 专业 知识 能力 技能 培训 团队 服务 咨询 经验 "
+        "工作 运营 发展 实践 相关 优先 学历 本科 大专 要求".split())
+    _MAJOR_NOT_SUFFIX = (
+        "知识", "能力", "技能", "培训", "团队", "服务", "咨询", "讲解", "介绍",
+        "素养", "水平", "评估", "测试", "顾问", "机构", "岗位", "课程", "方案",
+        "建议", "指导", "风险", "认知", "职责", "人员", "精神", "理解", "素质",
+        "经验", "运营", "成长", "实践", "形象", "术语", "词汇", "文书",
+        "面试", "回答", "答辩", "训练", "协同", "分包", "优先", "以及", "背景")
+    _MAJOR_HINT = (
+        "学", "工程", "科学", "管理", "技术", "信息", "医学", "教育", "经济", "金融",
+        "会计", "财务", "设计", "电子", "机械", "材", "化学", "生物", "计算机", "软件",
+        "通信", "自动化", "建筑", "土木", "车辆", "能源", "动力", "制药", "药学", "营销",
+        "传播", "法学", "法律", "农", "畜牧", "兽医", "环境", "安全", "工业", "物流",
+        "贸易", "英语", "语", "美术", "视觉", "动画", "艺术", "新闻", "政治", "国际",
+        "统计", "数学", "物理", "地理", "地质", "测绘", "测控", "仪器", "电气", "电力",
+        "物联网", "网络", "智能", "数据", "分析", "审计", "税务", "工商", "行政", "人力",
+        "护理", "临床", "中医", "中药", "机电", "烹饪", "食品", "纺织", "服装",
+        "广告", "旅游", "酒店", "供应链", "冶金", "矿业", "石油", "海")
+    _MAJOR_LEAD = re.compile(
+        r"^(?:\s*(?:任职要求|岗位要求|职位要求|任职资格|应聘要求|资格要求|人员要求|招聘要求|"
+        r"学历要求|教育背景|教育经历|专业要求|专业方向|专业类别|所学专业|专业|要求|"
+        r"统招|全日制|正规院校|国家|省属|重点|一本|二本|三本|985|211|"
+        r"本科|大专|专科|硕士|博士|研究生|中专|高中|初中|毕业|应届|在校|学生|"
+        r"及以上|以上|以下|学历|学位|具有|具备|优先|均可|即可|相关|其他|以及|\d+|"
+        r"[（(][^）)]*[）)])\s*[,，、;；:：.。\-—/]?\s*)+")
+
+    @classmethod
+    def _tidy_major(cls, cand):
+        cand = cand.strip(" 　，,、;；:：/")
+        cand = re.sub(r"(?:等)?(?:相关)?专业.*$", "", cand)
+        cand = re.sub(r"(?:等|或|和|与|及|、)?\s*(?:相关|其它|其他|类似).*$", "", cand)
+        cand = re.sub(r"(?:等|及|和|与|或|其他|其它|、|，|,|/|·|-|—|的)+$", "", cand).strip()
+        cand = re.sub(r"(?:优先|者优先|均可|不限|即可).*$", "", cand).strip()
+        cand = cls._MAJOR_LEAD.sub("", cand)
+        cand = re.sub(r"^[的或及和与相关、，,;；:：/-—]+", "", cand)
+        return cand.strip(" 　，,、;；:：/")
+
+    @classmethod
+    def _looks_like_major(cls, cand):
+        if not cand or len(cand) > 80:
+            return False
+        toks = [t.strip() for t in re.split(r"[、，,/]|及|和|与|或", cand) if t.strip()]
+        for t in toks:
+            if t in cls._MAJOR_NOT_EXACT:
+                continue
+            if any(t.endswith(w) for w in cls._MAJOR_NOT_SUFFIX):
+                continue
+            if any(h in t for h in cls._MAJOR_HINT):
+                return True
+        return False
+
+    @classmethod
+    def extract_major(cls, text):
+        """从职位描述文本中提取“专业要求”；提取不到返回空串（调用方回退为“不限”）。"""
+        if not text:
+            return ""
+        t = cls.clean_html(text)
+        # 1) “专业要求：xxx / 专业：xxx”等显式标签
+        for m in re.finditer(
+                r"(?:所学专业|专业要求|专业方向|专业类别|专业背景|专业)\s*[:：]\s*([^\n]{1,80})", t):
+            raw = m.group(1)
+            if "不限" in raw:
+                return "不限"
+            cand = cls._tidy_major(raw)
+            if cls._looks_like_major(cand):
+                return cand
+        # 2) “专业不限 / 不限专业 / 专业、教资不限”
+        if re.search(r"专业\s*不?\s*限|不限专业", t) \
+                or re.search(r"专业[、，,][^，,。；;\n]{0,8}不限", t):
+            return "不限"
+        # 3) “xx、yy等相关专业”列表
+        for m in re.finditer(r"([^，,。；;：:\n]{2,80}?)(?:等)?(?:相关)?专业", t):
+            cand = cls._tidy_major(m.group(1))
+            if cls._looks_like_major(cand):
+                tail = t[m.end():m.end() + 6]
+                if any(w in tail for w in ("知识", "技能", "能力", "术语", "词汇")):
+                    continue
+                return cand
+        return ""
+
     @staticmethod
     def item_to_row(it, prov, city):
         """把接口返回的单条岗位数据整理成字段字典（不含采集日期/省份）。"""
@@ -875,12 +959,31 @@ class ZhiPin(object):
         else:
             salary_text = it.get("salary60") or pb.get("salary") or "0~0 元/月"
         work_type = it.get("workType") or pb.get("workType") or ""
-        if work_type == "兼职":
+        is_intern = "实习" in work_type or (it.get("internshipMonths") or 0) > 0
+        # 招聘类型：实习 / 校园招聘 / 社会招聘
+        if is_intern:
+            recruit_type = "实习"
+        elif it.get("campusJobDetail") or "校" in work_type:
+            recruit_type = "校园招聘"
+        else:
+            recruit_type = "社会招聘"
+        # 职位性质：全职 / 兼职 / 实习
+        if "兼职" in work_type:
             nature = "兼职"
-        elif (it.get("internshipMonths") or 0) > 0 or "实习" in work_type:
+        elif is_intern:
             nature = "实习"
         else:
-            nature = "不限"
+            nature = "全职"
+        # 专业要求：优先用结构化 needMajor，否则从职位描述中提取
+        major_items = it.get("needMajor") or []
+        major = ""
+        if isinstance(major_items, list) and major_items:
+            major = "、".join(
+                m.get("name") if isinstance(m, dict) else str(m) for m in major_items if m)
+        if not major:
+            major = ZhiPin.extract_major(de.get("description") or it.get("jobSummary") or "")
+        if not major:
+            major = "不限"
         recruit = int(it.get("recruitNumber") or 0) or int(pb.get("recruitNumber") or 0)
         recruit_text = str(recruit) if recruit > 0 else "若干"
         cat = it.get("subJobTypeLevelName") or jt.get("subJobTypeLevelName") or "不限"
@@ -898,14 +1001,14 @@ class ZhiPin(object):
             "公司性质": it.get("propertyName") or it.get("property") or "不限",
             "公司规模": it.get("companySize") or "不限",
             "公司行业": it.get("industryName") or "不限",
-            "招聘类型": "不限",
+            "招聘类型": recruit_type,
             "职位性质": nature,
             "职位类别": cat,
             "薪资范围": salary_text,
             "招聘人数": recruit_text,
             "学历要求": edu,
             "经验要求": exp,
-            "专业要求": "不限",
+            "专业要求": major,
             "工作地点": work_place,
             "详细地址": addr,
             "报名截止": dt.get("dateEnd") or "长期有效",
