@@ -56,20 +56,12 @@ if errorlevel 1 (
     echo Dependencies OK.
 )
 
-rem ============ 3b. Ensure bundled Chromium ============
+rem ============ 4. Prune bundled browsers + clean old output ============
+rem 不再内置 Chromium：删除 playwright 包内的 .local-browsers（约 680MB），
+rem 运行时改用系统自带的 Edge/Chrome，从而大幅缩小 exe 体积。
 echo.
-echo [3b/5] Ensuring Playwright Chromium (bundled into package)...
-set "PLAYWRIGHT_BROWSERS_PATH=0"
-"%PYTHON%" -m playwright install chromium
-if errorlevel 1 (
-    echo [ERROR] playwright install chromium failed.
-    pause
-    exit /b 1
-)
-
-rem ============ 4. Clean old output ============
-echo.
-echo [4/5] Cleaning old output...
+echo [4/5] Pruning bundled browsers and cleaning old output...
+"%PYTHON%" -c "import playwright, os, shutil; p=os.path.join(os.path.dirname(playwright.__file__),'driver','package','.local-browsers'); existed=os.path.isdir(p); shutil.rmtree(p, ignore_errors=True); print('[INFO] removed bundled browsers' if existed else '[INFO] no bundled browsers found')"
 if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
 if exist "%DIST_DIR%\%APP_NAME%.exe" del /f /q "%DIST_DIR%\%APP_NAME%.exe"
 if exist "%SPEC_FILE%" del /f /q "%SPEC_FILE%"
@@ -122,10 +114,12 @@ echo [DONE] Build success!
 echo EXE : %cd%\%DIST_DIR%\%APP_NAME%.exe
 echo.
 echo Notes:
-echo   * Chromium is bundled via Playwright (PLAYWRIGHT_BROWSERS_PATH=0). No system Chrome needed.
-echo   * To force system Chrome instead, set env PLAYWRIGHT_CHANNEL=chrome at runtime.
+echo   * No bundled browser: the EXE uses the system Edge/Chrome at runtime.
+echo     Windows 10/11 ships Edge, so no extra install is needed.
+echo   * Force a specific browser via env PLAYWRIGHT_CHANNEL (msedge/chrome/chromium).
 echo   * Login state zp_profile is created/reused next to the EXE; keep that dir writable.
-echo   * Bundled Chromium + driver makes the EXE large (about 250MB+). Remove Zhipin to shrink.
+echo   * If the "removed bundled browsers" line above said "no bundled browsers found",
+echo     the EXE may still be large because a browser is present in the package.
 echo ============================================================
 echo.
 pause

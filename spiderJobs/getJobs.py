@@ -37,12 +37,11 @@ import tkinter as tk
 from tkinter import ttk, simpledialog
 
 
-# ==================== Playwright 浏览器路径（打包友好） ====================
-# 打包成 exe 时使用随包内置的 Chromium：构建与运行时都设 PLAYWRIGHT_BROWSERS_PATH=0，
-# 浏览器位于 playwright 包内，会被 PyInstaller 一并打进 exe，目标机无需另装 Chrome。
-# 如需强制使用系统 Chrome，可设置环境变量 PLAYWRIGHT_CHANNEL=chrome。
-if getattr(sys, 'frozen', False):
-    os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '0')
+# ==================== Playwright 浏览器（使用系统浏览器，不随包内置） ====================
+# 为控制打包体积，exe 不再内置 Chromium，而是调用系统已安装的浏览器：
+# 依次尝试 系统 Edge(msedge) -> 系统 Chrome(chrome) -> Playwright 内置 Chromium。
+# Windows 10/11 自带 Edge，因此目标机通常无需另装浏览器。
+# 可用环境变量 PLAYWRIGHT_CHANNEL 强制指定（如 msedge / chrome / chromium）。
 
 
 # ==================== 统一输出表格列 ====================
@@ -1183,17 +1182,28 @@ class ZhiPin(object):
         if cls._page is not None:
             return cls._page
         cls._pw = await async_playwright().start()
-        # 默认使用 Playwright 自带的 Chromium（随包打包，无需系统 Chrome）；
-        # 如需强制系统 Chrome，设置环境变量 PLAYWRIGHT_CHANNEL=chrome。
+        # 优先使用系统浏览器（不随包内置，减小体积）：
+        # 未指定 PLAYWRIGHT_CHANNEL 时依次尝试 系统 Edge -> 系统 Chrome -> 内置 Chromium。
         launch_kwargs = dict(headless=False, locale="zh-CN",
                              viewport={"width": 1360, "height": 900})
-        channel = (os.environ.get('PLAYWRIGHT_CHANNEL') or '').strip()
-        if channel:
-            launch_kwargs['channel'] = channel
-        logger.info('【智联招聘】启动浏览器（channel=%s）' % (channel or 'bundled-chromium'))
-        cls._context = await cls._pw.chromium.launch_persistent_context(profile, **launch_kwargs)
-        cls._page = cls._context.pages[0] if cls._context.pages else await cls._context.new_page()
-        return cls._page
+        forced = (os.environ.get('PLAYWRIGHT_CHANNEL') or '').strip()
+        channels = [forced] if forced else ['msedge', 'chrome', None]
+        last_err = None
+        for channel in channels:
+            kwargs = dict(launch_kwargs)
+            if channel:
+                kwargs['channel'] = channel
+            logger.info('【智联招聘】启动浏览器（channel=%s）' % (channel or 'bundled-chromium'))
+            try:
+                cls._context = await cls._pw.chromium.launch_persistent_context(profile, **kwargs)
+                cls._page = cls._context.pages[0] if cls._context.pages \
+                    else await cls._context.new_page()
+                return cls._page
+            except Exception as e:
+                last_err = e
+                logger.warning('【智联招聘】channel=%s 启动失败：%r' % (channel or 'bundled', e))
+                cls._context = None
+        raise last_err if last_err else RuntimeError('未找到可用浏览器（Edge/Chrome/Chromium）')
 
     @classmethod
     def launch(cls, profile=None):
