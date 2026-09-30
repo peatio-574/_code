@@ -38,6 +38,7 @@ FIELDS: list[tuple[str, str]] = [
     ("autoExamDuration", "auto_exam_duration"),
     ("autoExamCategories", "auto_exam_categories"),
     ("autoExamRatios", "auto_exam_ratios"),
+    ("autoExamSections", "auto_exam_sections"),
     ("autoExamIncludeGroup", "auto_exam_include_group"),
     ("autoExamTargetScore", "auto_exam_target_score"),
     ("autoExamExcludeDays", "auto_exam_exclude_days"),

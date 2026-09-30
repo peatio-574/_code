@@ -25,6 +25,7 @@ class SectionInput(BaseModel):
     description: str
     question_ids: list[int]
     score: int = 0
+    category_id: int = 0
 
 
 class ExamInput(BaseModel):
@@ -202,7 +203,7 @@ def _exam_value(connection, exam_id: int) -> dict:
     sections = []
     for section in connection.execute(
         text(
-            "SELECT id, type, description, score, sort_order FROM exam_sections "
+            "SELECT id, type, description, score, sort_order, category_id FROM exam_sections "
             "WHERE exam_id=:id ORDER BY sort_order"
         ),
         {"id": exam_id},
@@ -294,8 +295,8 @@ def _insert_sections(connection, exam_id: int, sections: list[SectionInput]) -> 
             raise validation("试卷分组不合法")
         section_id = connection.execute(
             text(
-                "INSERT INTO exam_sections(exam_id, type, description, score, sort_order) "
-                "VALUES(:exam_id, :type, :description, :score, :sort_order)"
+                "INSERT INTO exam_sections(exam_id, type, description, score, sort_order, category_id) "
+                "VALUES(:exam_id, :type, :description, :score, :sort_order, :category_id)"
             ),
             {
                 "exam_id": exam_id,
@@ -303,6 +304,7 @@ def _insert_sections(connection, exam_id: int, sections: list[SectionInput]) -> 
                 "description": section.description.strip(),
                 "score": max(0, int(section.score or 0)),
                 "sort_order": index,
+                "category_id": max(0, int(section.category_id or 0)),
             },
         ).lastrowid
         seen: set[int] = set()
@@ -311,11 +313,13 @@ def _insert_sections(connection, exam_id: int, sections: list[SectionInput]) -> 
             if question_id <= 0 or question_id in seen:
                 continue
             seen.add(question_id)
-            kind = connection.execute(
-                text("SELECT type FROM questions WHERE id=:id"), {"id": question_id}
-            ).scalar()
-            if kind != section.type:
+            row = connection.execute(
+                text("SELECT type, category_id FROM questions WHERE id=:id"), {"id": question_id}
+            ).mappings().first()
+            if row is None or row["type"] != section.type:
                 raise validation("题目与分组题型不一致")
+            if section.category_id and int(row["category_id"] or 0) != int(section.category_id):
+                raise validation("题目与分组题目方向不一致")
             order += 1
             connection.execute(
                 text(
@@ -960,7 +964,8 @@ def _mock_config(connection) -> dict:
         text(
             "SELECT `key`, value FROM sys_config WHERE `key` IN ('auto_exam_enabled','auto_exam_title',"
             "'auto_exam_total','auto_exam_duration','auto_exam_categories','auto_exam_ratios',"
-            "'auto_exam_include_group','mock_exam_total','mock_exam_duration','mock_exam_ratios')"
+            "'auto_exam_sections','auto_exam_include_group','mock_exam_total','mock_exam_duration',"
+            "'mock_exam_ratios')"
         )
     ).fetchall()
     stored = {row[0]: row[1] for row in rows}
@@ -973,18 +978,6 @@ def _mock_config(connection) -> dict:
     use_auto = get("auto_exam_total") is not None or get("auto_exam_ratios") is not None
     import json
 
-    ratios_raw = get("auto_exam_ratios") if use_auto else get("mock_exam_ratios")
-    try:
-        ratios = json.loads(ratios_raw) if ratios_raw else {"single": 40, "multiple": 20, "true_false": 20, "fill": 10, "qa": 10}
-    except Exception:
-        ratios = {"single": 40, "multiple": 20, "true_false": 20, "fill": 10, "qa": 10}
-    try:
-        import json as _json
-
-        categories = _json.loads(get("auto_exam_categories") or "[]")
-    except Exception:
-        categories = []
-
     def to_int(value, fallback):
         try:
             return int(value)
@@ -994,14 +987,74 @@ def _mock_config(connection) -> dict:
     total = to_int(get("auto_exam_total") if use_auto else get("mock_exam_total"), 20)
     duration = to_int(get("auto_exam_duration") if use_auto else get("mock_exam_duration"), 30)
     include_group = str(get("auto_exam_include_group") or "false").lower() not in ("0", "false")
+
+    # 题型分组（完全对齐「新增试卷」）：每组含题型、题目方向（单选）、
+    # 取题方式（勾选/按比例）、抽取题数、每题分值、勾选的具体题目
+    sections: list[dict] = []
+    try:
+        raw_sections = json.loads(get("auto_exam_sections") or "[]")
+    except Exception:
+        raw_sections = []
+    if isinstance(raw_sections, list):
+        for item in raw_sections:
+            if not isinstance(item, dict):
+                continue
+            qtype = str(item.get("type") or "").strip()
+            if qtype not in QUESTION_TYPES:
+                continue
+            mode = "select" if str(item.get("mode") or "ratio") == "select" else "ratio"
+            category = to_int(item.get("category_id"), 0)
+            score = max(0, to_int(item.get("score"), 0))
+            question_ids = [int(v) for v in (item.get("question_ids") or []) if str(v).isdigit()]
+            count = to_int(item.get("count"), 0) or to_int(item.get("ratio"), 0)
+            if mode == "select":
+                if not question_ids:
+                    continue
+            elif count <= 0:
+                continue
+            sections.append(
+                {
+                    "type": qtype,
+                    "category": category,
+                    "mode": mode,
+                    "count": count,
+                    "score": score,
+                    "question_ids": question_ids,
+                }
+            )
+
+    # 兼容极旧配置：按题型比例 + 单一题目方向（按比例抽取）
+    if not sections:
+        try:
+            ratios = json.loads(get("auto_exam_ratios") or '{}')
+        except Exception:
+            ratios = {}
+        try:
+            categories_raw = json.loads(get("auto_exam_categories") or "[]")
+        except Exception:
+            categories_raw = []
+        if isinstance(categories_raw, list):
+            category = next((int(v) for v in categories_raw if str(v).isdigit() or isinstance(v, int)), 0)
+        else:
+            category = int(categories_raw) if str(categories_raw).isdigit() else 0
+        for qtype, ratio in ratios.items():
+            if qtype in QUESTION_TYPES and to_int(ratio, 0) > 0:
+                sections.append(
+                    {
+                        "type": qtype,
+                        "category": category,
+                        "mode": "ratio",
+                        "count": max(1, round(to_int(get("auto_exam_total"), 20) * to_int(ratio, 0) / 100)),
+                        "score": 0,
+                        "question_ids": [],
+                    }
+                )
+
     return {
         "enabled": enabled,
         "title": title,
-        "total": max(1, min(total, 500)),
         "duration": max(1, min(duration, 600)),
-        "ratios": ratios,
-        "categories": categories,
-        "include_group": include_group,
+        "sections": sections,
     }
 
 
@@ -1012,40 +1065,39 @@ def mock_exam(request: Request):
         config = _mock_config(connection)
         if not config["enabled"]:
             raise not_found("模拟考试未开启")
-        types = ["single", "multiple", "true_false", "fill", "qa"]
-        if config["include_group"]:
-            types.append("group")
-        ratio_sum = sum(int(config["ratios"].get(t, 0) or 0) for t in types)
-        if ratio_sum <= 0:
-            raise not_found("模拟考试未配置题目比例")
-        counts = []
-        allocated = 0
-        total = config["total"]
-        for question_type in types:
-            count = (total * int(config["ratios"].get(question_type, 0) or 0) + ratio_sum // 2) // ratio_sum
-            counts.append(count)
-            allocated += count
-        counts[0] = max(counts[0] + total - allocated, 0)
+        # 题型分组（完全对齐「新增试卷」）：勾选题目取固定题；按比例从题型+方向随机抽题
         selected = []
-        for question_type, count in zip(types, counts):
-            if count <= 0:
-                continue
-            params: dict = {"type": question_type}
-            where = "type=:type AND status=1 AND parent_id=0"
-            if config["categories"]:
-                placeholders = ",".join(f":cat{i}" for i in range(len(config["categories"])))
-                where += f" AND category_id IN ({placeholders})"
-                for index, value in enumerate(config["categories"]):
-                    params[f"cat{index}"] = int(value)
-            ids = [
-                row[0]
-                for row in connection.execute(
-                    text(f"SELECT id FROM questions WHERE {where} ORDER BY RAND() LIMIT :count"),
-                    {**params, "count": count},
-                ).fetchall()
-            ]
+        for section in config["sections"]:
+            ids: list[int] = []
+            if section["mode"] == "select":
+                fixed = section["question_ids"]
+                if fixed:
+                    placeholders = ",".join(f":f{i}" for i in range(len(fixed)))
+                    rows = connection.execute(
+                        text(
+                            "SELECT id FROM questions WHERE parent_id=0 AND status=1 "
+                            f"AND id IN ({placeholders}) ORDER BY id"
+                        ),
+                        {f"f{i}": value for i, value in enumerate(fixed)},
+                    ).scalars().all()
+                    ids = [int(v) for v in rows]
+            else:
+                count = int(section["count"])
+                if count > 0:
+                    params: dict = {"type": section["type"]}
+                    where = "type=:type AND status=1 AND parent_id=0"
+                    if section["category"]:
+                        where += " AND category_id=:category"
+                        params["category"] = int(section["category"])
+                    ids = [
+                        int(row[0])
+                        for row in connection.execute(
+                            text(f"SELECT id FROM questions WHERE {where} ORDER BY RAND() LIMIT :count"),
+                            {**params, "count": count},
+                        ).fetchall()
+                    ]
             if ids:
-                selected.append((question_type, ids))
+                selected.append((section["type"], section["category"], section["score"], ids))
         if not selected:
             raise not_found("题库暂无可用于模拟考试的题目")
         timestamp = now()
@@ -1064,13 +1116,20 @@ def mock_exam(request: Request):
                 "ts": timestamp,
             },
         ).lastrowid
-        for index, (question_type, ids) in enumerate(selected, start=1):
+        for index, (question_type, section_category, section_score, ids) in enumerate(selected, start=1):
             section_id = connection.execute(
                 text(
-                    "INSERT INTO exam_sections(exam_id, type, description, sort_order) "
-                    "VALUES(:eid, :type, :description, :sort_order)"
+                    "INSERT INTO exam_sections(exam_id, type, description, sort_order, category_id, score) "
+                    "VALUES(:eid, :type, :description, :sort_order, :category_id, :score)"
                 ),
-                {"eid": exam_id, "type": question_type, "description": question_type, "sort_order": index},
+                {
+                    "eid": exam_id,
+                    "type": question_type,
+                    "description": question_type,
+                    "sort_order": index,
+                    "category_id": int(section_category or 0),
+                    "score": int(section_score or 0),
+                },
             ).lastrowid
             for order, question_id in enumerate(ids, start=1):
                 connection.execute(

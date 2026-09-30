@@ -12,6 +12,8 @@ import {
   getExam,
   listCampuses,
   listExamAttempts,
+  listQuestionCategories,
+  listQuestions,
   publishExam,
   updateExam,
   withdrawExam,
@@ -32,7 +34,7 @@ const QUESTION_TYPES = [
 /** 题型配置：勾选模式存具体题目；按比例模式存抽取题数，保存时随机抽题。 */
 interface SectionForm {
   type: string
-  description: string
+  directionId: number | null
   mode: 'select' | 'ratio'
   question_ids: number[]
   ratio: number
@@ -48,7 +50,7 @@ function typeLabel(value: string) {
 function createSection(type = 'single', score = 1): SectionForm {
   return {
     type,
-    description: typeLabel(type),
+    directionId: null,
     mode: 'select',
     question_ids: [],
     ratio: 10,
@@ -58,22 +60,13 @@ function createSection(type = 'single', score = 1): SectionForm {
   }
 }
 
-/** Fisher-Yates 洗牌，用于按比例随机抽题。 */
-function shuffle<T>(items: T[]): T[] {
-  const result = [...items]
-  for (let i = result.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[result[i], result[j]] = [result[j], result[i]]
-  }
-  return result
-}
-
 const items = ref<Record<string, any>[]>([])
 const total = ref(0)
 const loading = ref(false)
 const query = reactive({ p: 1, page_size: 20, keyword: '' })
 const selection = ref<Record<string, any>[]>([])
 const campuses = ref<Record<string, any>[]>([])
+const directions = ref<Record<string, any>[]>([])
 
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
@@ -104,6 +97,11 @@ function toggleAllCampuses(value: boolean) {
 const pickerVisible = ref(false)
 const pickerType = ref('single')
 const pickerOptions = ref<Record<string, any>[]>([])
+const pickerKeyword = ref('')
+const pickerPage = ref(1)
+const pickerTotal = ref(0)
+const pickerLoading = ref(false)
+const PICKER_PAGE_SIZE = 20
 const activeSection = ref(0)
 
 const resultVisible = ref(false)
@@ -213,7 +211,7 @@ async function openEdit(row: Record<string, any>) {
     campus_ids: Array.isArray(detail.exam.campus_ids) ? [...detail.exam.campus_ids] : [],
     sections: detail.sections.map((section: any) => ({
       ...createSection(section.type, Number(section.score) || 0),
-      description: section.description,
+      directionId: section.category_id ? Number(section.category_id) : null,
       mode: 'select',
       question_ids: section.questions.map((q: any) => q.id),
     })),
@@ -229,10 +227,25 @@ function removeSection(index: number) {
   form.sections.splice(index, 1)
 }
 
+function directionLabel(value: number | null | undefined) {
+  return directions.value.find((item) => Number(item.id) === Number(value))?.name ?? ''
+}
+
+/** 分组说明：优先用题目方向名称，否则用题型名称（写入 exam_sections.description）。 */
+function sectionDescription(section: SectionForm) {
+  return directionLabel(section.directionId) || typeLabel(section.type)
+}
+
 function onSectionTypeChange(section: SectionForm) {
-  section.description = typeLabel(section.type)
   section.question_ids = []
   section.poolCount = null
+  if (section.mode === 'ratio') void loadPool(section)
+}
+
+function onSectionDirectionChange(section: SectionForm) {
+  section.question_ids = []
+  section.poolCount = null
+  if (section.mode === 'ratio') void loadPool(section)
 }
 
 async function loadPool(section: SectionForm) {
@@ -250,23 +263,61 @@ function onSectionModeChange(section: SectionForm) {
   }
 }
 
-/** 题库可用数：启用题目中，剔除已被其他分组占用的题目。 */
-async function fetchPoolCount(section: SectionForm) {
-  const response = await api.get('/api/admin/questions/options', { params: { type: section.type } })
-  const items = (response.data?.data?.items ?? []) as { id: number; status: number }[]
-  const others = new Set<number>()
+/** 其他分组已占用的题目 id（用于跨分组去重）。 */
+function otherUsedIds(section: SectionForm): number[] {
+  const ids: number[] = []
   form.sections.forEach((item) => {
-    if (item !== section) item.question_ids.forEach((id) => others.add(id))
+    if (item !== section) ids.push(...item.question_ids)
   })
-  return items.filter((item) => item.status === 1 && !others.has(item.id)).length
+  return ids
+}
+
+/** 题库可用数：后端按启用题目精确统计（限定题型 + 题目方向），剔除已被其他分组占用的题目。 */
+async function fetchPoolCount(section: SectionForm) {
+  const exclude = otherUsedIds(section)
+  const response = await api.get('/api/admin/questions/pool-count', {
+    params: {
+      type: section.type,
+      category_id: section.directionId || undefined,
+      exclude: exclude.join(',') || undefined,
+    },
+  })
+  return Number(response.data?.data?.count ?? 0)
+}
+
+/** 选择题库：分页拉取，避免一次加载整个题库（大题库只显示前 1000 的限制）。 */
+async function loadPickerOptions() {
+  pickerLoading.value = true
+  try {
+    const section = form.sections[activeSection.value]
+    const page = await listQuestions({
+      p: pickerPage.value,
+      page_size: PICKER_PAGE_SIZE,
+      type: pickerType.value,
+      category_id: section?.directionId || undefined,
+      exclude: section ? otherUsedIds(section).join(',') || undefined : undefined,
+      keyword: pickerKeyword.value || undefined,
+      status: 1,
+    })
+    pickerOptions.value = page?.items ?? []
+    pickerTotal.value = page?.total ?? 0
+  } finally {
+    pickerLoading.value = false
+  }
 }
 
 async function openPicker(sectionIndex: number) {
   activeSection.value = sectionIndex
   pickerType.value = form.sections[sectionIndex].type
-  const response = await api.get('/api/admin/questions/options', { params: { type: pickerType.value } })
-  pickerOptions.value = response.data?.data?.items ?? []
+  pickerKeyword.value = ''
+  pickerPage.value = 1
   pickerVisible.value = true
+  await loadPickerOptions()
+}
+
+function searchPicker() {
+  pickerPage.value = 1
+  loadPickerOptions()
 }
 
 function toggleQuestion(id: number) {
@@ -298,19 +349,25 @@ async function resolveSectionQuestionIds(section: SectionForm, used: Set<number>
   }
   const count = Math.max(0, Math.floor(Number(section.ratio) || 0))
   if (!count) return []
-  const response = await api.get('/api/admin/questions/options', { params: { type: section.type } })
-  const items = (response.data?.data?.items ?? []) as { id: number; status: number }[]
-  // 题库排除已被其他分组选用的题目，避免重复出题
-  const pool: number[] = items
-    .filter((item) => item.status === 1 && !used.has(item.id))
-    .map((item) => item.id)
-  section.poolCount = pool.length
-  if (pool.length < count) {
+  // 由后端在完整题库中随机抽题，排除已被其他分组选用的题目，避免重复出题
+  const response = await api.get('/api/admin/questions/random-ids', {
+    params: {
+      type: section.type,
+      category_id: section.directionId || undefined,
+      count,
+      exclude: [...used].join(',') || undefined,
+    },
+  })
+  const data = response.data?.data ?? {}
+  const ids = (data.ids ?? []) as number[]
+  section.poolCount = Number(data.available ?? 0)
+  if (ids.length < count) {
     throw new Error(
-      `「${typeLabel(section.type)}」题库可用 ${pool.length} 题（已剔除其他分组已选题目），不足以抽取 ${count} 题`,
+      `「${typeLabel(section.type)}${directionLabel(section.directionId) ? ' · ' + directionLabel(section.directionId) : ''}」` +
+        `题库可用 ${section.poolCount} 题（已剔除其他分组已选题目），不足以抽取 ${count} 题`,
     )
   }
-  return shuffle(pool).slice(0, count)
+  return ids
 }
 
 /** 勾选弹窗：判断该题是否已被其他分组占用（占用则禁选）。 */
@@ -331,7 +388,28 @@ async function save() {
     ElMessage.warning('结束时间必须晚于开始时间')
     return
   }
-  const sections: { type: string; description: string; question_ids: number[]; score: number }[] = []
+  if (!form.sections.length) {
+    ElMessage.warning('请至少配置一种题型')
+    return
+  }
+  // 题型与题目方向均为必选
+  const missingType = form.sections.findIndex((section) => !section.type)
+  if (missingType !== -1) {
+    ElMessage.warning(`第 ${missingType + 1} 个分组请选择题型`)
+    return
+  }
+  const missingDirection = form.sections.findIndex((section) => !section.directionId)
+  if (missingDirection !== -1) {
+    ElMessage.warning(`第 ${missingDirection + 1} 个分组请选择题目方向`)
+    return
+  }
+  const sections: {
+    type: string
+    description: string
+    question_ids: number[]
+    score: number
+    category_id: number
+  }[] = []
   const used = new Set<number>()
   try {
     for (const section of form.sections) {
@@ -340,9 +418,10 @@ async function save() {
       ids.forEach((id) => used.add(id))
       sections.push({
         type: section.type,
-        description: (section.description || typeLabel(section.type)).trim(),
+        description: sectionDescription(section),
         question_ids: ids,
         score: Math.max(0, Math.floor(Number(section.score) || 0)),
+        category_id: Number(section.directionId) || 0,
       })
     }
   } catch (error) {
@@ -491,6 +570,11 @@ onMounted(async () => {
     campuses.value = (await listCampuses({ page_size: 100 }))?.items ?? []
   } catch {
     campuses.value = []
+  }
+  try {
+    directions.value = (await listQuestionCategories())?.items ?? []
+  } catch {
+    directions.value = []
   }
   await load()
 })
@@ -670,10 +754,23 @@ onMounted(async () => {
     <p class="section-label">题型配置</p>
     <div v-for="(section, index) in form.sections" :key="index" class="section-block">
       <div class="section-head">
-        <el-select v-model="section.type" style="width: 140px" @change="onSectionTypeChange(section)">
+        <el-select v-model="section.type" placeholder="题型" class="section-head__type" @change="onSectionTypeChange(section)">
           <el-option v-for="type in QUESTION_TYPES" :key="type.value" :label="type.label" :value="type.value" />
         </el-select>
-        <el-input v-model="section.description" placeholder="题型说明，如「单选题」" class="section-head__desc" />
+        <el-select
+          v-model="section.directionId"
+          placeholder="题目方向"
+          clearable
+          class="section-head__desc"
+          @change="onSectionDirectionChange(section)"
+        >
+          <el-option
+            v-for="direction in directions"
+            :key="direction.id"
+            :label="direction.name"
+            :value="Number(direction.id)"
+          />
+        </el-select>
         <el-radio-group v-model="section.mode" @change="() => onSectionModeChange(section)">
           <el-radio-button value="select">勾选题目</el-radio-button>
           <el-radio-button value="ratio">按比例抽题</el-radio-button>
@@ -707,9 +804,18 @@ onMounted(async () => {
 
   <el-dialog v-model="pickerVisible" :lock-scroll="false" title="从题库选择题目" width="680px" append-to-body>
     <div class="picker-toolbar">
+      <el-input
+        v-model="pickerKeyword"
+        placeholder="搜索题目内容"
+        clearable
+        :prefix-icon="Search"
+        class="picker-toolbar__search"
+        @keyup.enter="searchPicker"
+        @clear="searchPicker"
+      />
       <span class="picker-toolbar__count">
         已选 <b>{{ form.sections[activeSection]?.question_ids.length ?? 0 }}</b> 题
-        <span class="picker-toolbar__total">/ 共 {{ pickerOptions.length }} 题</span>
+        <span class="picker-toolbar__total">/ 题库共 {{ pickerTotal }} 题</span>
       </span>
       <el-button
         v-if="form.sections[activeSection]?.question_ids.length"
@@ -721,6 +827,7 @@ onMounted(async () => {
       </el-button>
     </div>
     <el-table
+      v-loading="pickerLoading"
       :data="pickerOptions"
       row-key="id"
       max-height="420"
@@ -740,14 +847,22 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column prop="title" label="题目" min-width="240" show-overflow-tooltip />
       <el-table-column prop="score" label="分值" min-width="90" align="right" />
-      <el-table-column label="状态" width="90" align="center">
-        <template #default="{ row }">
-          <el-tag v-if="usedByOtherSections(row.id)" type="info" size="small" effect="light">他组已选</el-tag>
-        </template>
-      </el-table-column>
     </el-table>
     <template #footer>
-      <el-button type="primary" @click="pickerVisible = false">确定</el-button>
+      <div class="picker-footer" style="display: flex; width: 100%; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 12px">
+        <span class="picker-footer__total" style="flex: none; white-space: nowrap; margin-left: -12px; margin-right: auto">
+          共 {{ pickerTotal }} 题
+        </span>
+        <el-pagination
+          :current-page="pickerPage"
+          :page-size="PICKER_PAGE_SIZE"
+          :total="pickerTotal"
+          background
+          layout="prev, pager, next"
+          @current-change="(value: number) => { pickerPage = value; loadPickerOptions() }"
+        />
+        <el-button type="primary" @click="pickerVisible = false">确定</el-button>
+      </div>
     </template>
   </el-dialog>
 
@@ -877,8 +992,12 @@ onMounted(async () => {
   align-items: center;
   gap: var(--space-3);
 }
+.section-head__type {
+  width: 130px;
+  flex: none;
+}
 .section-head__desc {
-  width: 150px;
+  width: 360px;
   flex: none;
 }
 .section-body {
@@ -896,10 +1015,17 @@ onMounted(async () => {
 .picker-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--space-3);
   margin-bottom: var(--space-3);
   font-size: var(--text-sm);
   color: var(--text-secondary);
+}
+.picker-toolbar__search {
+  width: 240px;
+}
+.picker-toolbar__count {
+  margin-left: auto;
+  white-space: nowrap;
 }
 .picker-toolbar__count b {
   color: var(--brand-600);
@@ -908,6 +1034,16 @@ onMounted(async () => {
 .picker-toolbar__total {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
+}
+.picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.picker-footer__total {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
 }
 .section-head__count {
   font-size: var(--text-sm);

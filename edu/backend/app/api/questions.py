@@ -472,6 +472,15 @@ def admin_list(request: Request):
     question_type = (request.query_params.get("type") or "").strip()
     categories = [int(c) for c in request.query_params.getlist("category_id") if c.isdigit()]
     status = (request.query_params.get("status") or "").strip()
+    raw_exclude = request.query_params.getlist("exclude") or [
+        (request.query_params.get("exclude") or "")
+    ]
+    exclude = [
+        int(part)
+        for chunk in raw_exclude
+        for part in chunk.split(",")
+        if part.strip().isdigit()
+    ]
     where = ["q.parent_id=0"]
     params: dict = {}
     if keyword:
@@ -488,6 +497,11 @@ def admin_list(request: Request):
     if status in ("0", "1", "2"):
         where.append("q.status=:status")
         params["status"] = int(status)
+    if exclude:
+        placeholders = ",".join(f":ex{i}" for i in range(len(exclude)))
+        where.append(f"q.id NOT IN ({placeholders})")
+        for index, value in enumerate(exclude):
+            params[f"ex{index}"] = value
     clause = " AND ".join(where)
     with get_engine().connect() as connection:
         total = connection.execute(
@@ -531,6 +545,74 @@ def admin_options(request: Request):
         ).mappings().all()
         connection.commit()
     return ok({"items": [dict(r) for r in rows]})
+
+
+def _pool_conditions(request: Request, *, enabled_only: bool = True):
+    """构造题库可用题目的筛选条件（parent_id=0，可选题型/排除已占用 id）。"""
+    question_type = (request.query_params.get("type") or "").strip()
+    raw_exclude = request.query_params.getlist("exclude") or [
+        (request.query_params.get("exclude") or "")
+    ]
+    exclude: list[int] = []
+    for chunk in raw_exclude:
+        exclude.extend(int(part) for part in chunk.split(",") if part.strip().isdigit())
+    direction = (request.query_params.get("category_id") or "").strip()
+    where = ["q.parent_id=0"]
+    params: dict = {}
+    if enabled_only:
+        where.append("q.status=1")
+    if question_type:
+        where.append("q.type=:type")
+        params["type"] = question_type
+    if direction.isdigit():
+        where.append("q.category_id=:direction")
+        params["direction"] = int(direction)
+    if exclude:
+        placeholders = ",".join(f":ex{i}" for i in range(len(exclude)))
+        where.append(f"q.id NOT IN ({placeholders})")
+        for index, value in enumerate(exclude):
+            params[f"ex{index}"] = value
+    return " AND ".join(where), params
+
+
+@admin_router.get("/questions/pool-count")
+def admin_pool_count(request: Request):
+    """题型可用题目总数（仅启用题目），排除指定题目后统计，供组卷「题库可用」展示。"""
+    clause, params = _pool_conditions(request)
+    with get_engine().connect() as connection:
+        count = connection.execute(
+            text(f"SELECT COUNT(*) FROM questions q WHERE {clause}"), params
+        ).scalar()
+        connection.commit()
+    return ok({"count": int(count or 0)})
+
+
+@admin_router.get("/questions/random-ids")
+def admin_random_ids(request: Request):
+    """按题型随机抽取指定数量的启用题目 id（排除已占用），供「按比例抽题」使用。"""
+    clause, params = _pool_conditions(request)
+    try:
+        count = int((request.query_params.get("count") or "0").strip() or 0)
+    except ValueError:
+        raise validation("抽取数量不合法")
+    count = max(0, count)
+    with get_engine().connect() as connection:
+        available = connection.execute(
+            text(f"SELECT COUNT(*) FROM questions q WHERE {clause}"), params
+        ).scalar()
+        available = int(available or 0)
+        ids: list[int] = []
+        if count and available:
+            rows = connection.execute(
+                text(
+                    f"SELECT q.id FROM questions q WHERE {clause} "
+                    "ORDER BY RAND() LIMIT :limit"
+                ),
+                {**params, "limit": count},
+            ).scalars().all()
+            ids = [int(value) for value in rows]
+        connection.commit()
+    return ok({"ids": ids, "available": available})
 
 
 @admin_router.get("/question/{question_id}")

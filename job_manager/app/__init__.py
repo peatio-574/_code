@@ -78,11 +78,7 @@ def create_app(config_name='default'):
         return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
     with app.app_context():
-        db.create_all()
-        _add_missing_columns()
-        _normalize_dict_sort()
-        _ensure_dict_keys()
-        _create_defaults()
+        _run_startup_tasks()
 
     # 确保上传目录存在
     upload_dir = app.config.get('UPLOAD_FOLDER')
@@ -159,6 +155,37 @@ def setup_error_handlers(app):
         app.logger.error('【错误】服务器内部错误（500），请查看日志定位问题')
         return jsonify({'success': False,
                         'message': '服务器内部错误，请稍后重试或联系管理员（已记录日志）'}), 500
+
+
+def _run_startup_tasks():
+    """执行建表与幂等迁移。
+
+    gunicorn 多 worker 会同时启动，若并发执行 ALTER TABLE 会触发
+    “table definition is being modified by concurrent DDL” 导致 worker 启动失败。
+    这里用 MySQL 命名锁串行化，保证同一时刻只有一个 worker 执行迁移。
+    """
+    from sqlalchemy import text
+    lock_conn = db.engine.connect()
+    locked = False
+    try:
+        try:
+            lock_conn.execute(text("SELECT GET_LOCK('job_manager_startup', 60)"))
+            locked = True
+        except Exception:
+            # 非 MySQL 或获取锁失败：退化为不串行（仍可继续启动）
+            db.session.rollback()
+        db.create_all()
+        _add_missing_columns()
+        _normalize_dict_sort()
+        _ensure_dict_keys()
+        _create_defaults()
+    finally:
+        if locked:
+            try:
+                lock_conn.execute(text("SELECT RELEASE_LOCK('job_manager_startup')"))
+            except Exception:
+                pass
+        lock_conn.close()
 
 
 def _add_missing_columns():
