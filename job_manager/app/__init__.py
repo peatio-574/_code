@@ -7,6 +7,17 @@ from . import config as config_module
 from .models import db, User, Campus, Role, DictType, DictItem
 from .permissions import get_user_permissions, can_access_menu as _can_access_menu, validate_csrf
 
+def _intent_class(intent):
+    """报考意向 → CSS 修饰类名（agree/reject/consider），用于盖章配色。"""
+    return {'同意报考': 'agree', '不同意报考': 'reject', '考虑中': 'consider'}.get(intent or '', 'consider')
+
+
+def _intent_lines(intent):
+    """报考意向 → 盖章分行文本（如「不同意报考」→ ['不同意', '报考']）。"""
+    return {'同意报考': ['同意', '报考'], '不同意报考': ['不同意', '报考'], '考虑中': ['考虑中']}.get(
+        intent or '', [intent or ''])
+
+
 login_manager = LoginManager()
 login_manager.login_view = 'auth.login'
 login_manager.login_message = '请先登录'
@@ -29,6 +40,8 @@ def create_app(config_name='default'):
 
     from . import dict_service
     app.jinja_env.globals['dict_options'] = dict_service.options
+    app.jinja_env.globals['intent_class'] = _intent_class
+    app.jinja_env.globals['intent_lines'] = _intent_lines
 
     @app.before_request
     def csrf_protect():
@@ -158,6 +171,17 @@ def _add_missing_columns():
             with db.engine.begin() as conn:
                 conn.execute(text('ALTER TABLE users ADD COLUMN can_ai_recognition BOOLEAN DEFAULT 0'))
     except Exception:
+        db.session.rollback()
+
+    try:
+        insp = inspect(db.engine)
+        existing = [c['name'] for c in insp.get_columns('push_records')]
+        if 'application_intent' not in existing:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE push_records ADD COLUMN application_intent VARCHAR(20) DEFAULT ''"))
+                conn.execute(text("ALTER TABLE push_records ADD COLUMN intent_at DATETIME NULL"))
+    except Exception as e:
+        print('[migrate] push_records 报考意向字段迁移失败:', e)
         db.session.rollback()
 
     try:

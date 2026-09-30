@@ -1,5 +1,7 @@
 <div class="job-card {% if selected_job and selected_job.id == push.job.id %}active{% endif %}"
      data-job-id="{{ push.job.id }}"
+     data-push-id="{{ push.id }}"
+     data-intent="{{ push.application_intent or '' }}"
      onclick="selectJob({{ push.job.id }})">
     <div class="job-card-header">
         <div class="job-title">
@@ -39,4 +41,17 @@
             </div>
         </div>
     </div>
+    {% if push.application_intent %}
+    <div class="job-card-seal intent-stamped">
+        <span class="intent-seal intent-seal--{{ intent_class(push.application_intent) }}">{% for line in intent_lines(push.application_intent) %}{{ line }}{% if not loop.last %}<br>{% endif %}{% endfor %}</span>
+    </div>
+    {% else %}
+    <div class="intent-box" onclick="event.stopPropagation()">
+        <div class="intent-options">
+            <button type="button" class="intent-btn intent-btn--agree" onclick="chooseIntent({{ push.job.id }}, {{ push.id }}, '同意报考')">同意报考</button>
+            <button type="button" class="intent-btn intent-btn--reject" onclick="chooseIntent({{ push.job.id }}, {{ push.id }}, '不同意报考')">不同意报考</button>
+            <button type="button" class="intent-btn intent-btn--consider" onclick="chooseIntent({{ push.job.id }}, {{ push.id }}, '考虑中')">考虑中</button>
+        </div>
+    </div>
+    {% endif %}
 </div>

@@ -1,5 +1,10 @@
 {% if selected_job %}
-<div class="detail-card">
+<div class="detail-card" data-detail-job-id="{{ selected_job.id }}">
+    {% if selected_push and selected_push.application_intent %}
+    <div class="detail-seal intent-stamped">
+        <span class="intent-seal intent-seal--{{ intent_class(selected_push.application_intent) }}">{% for line in intent_lines(selected_push.application_intent) %}{{ line }}{% if not loop.last %}<br>{% endif %}{% endfor %}</span>
+    </div>
+    {% endif %}
     <div class="detail-header">
         <div class="detail-title-row">
             <div>

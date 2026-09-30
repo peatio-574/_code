@@ -89,6 +89,22 @@
 <div class="job-detail-panel" id="jobDetailPanel">
     {% include "student/_job_detail_panel.html" %}
 </div>
+
+<!-- 报考意向确认弹窗 -->
+<div class="modal fade intent-confirm-modal" id="intentConfirmModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 380px;">
+        <div class="modal-content">
+            <div class="modal-body text-center" style="padding: 28px 24px;">
+                <div id="intentConfirmIcon" class="intent-confirm-icon"><i class="bi bi-patch-question"></i></div>
+                <h5 class="mb-0" id="intentConfirmTitle">确认报考意向</h5>
+            </div>
+            <div class="modal-footer justify-content-center border-0 pt-0 pb-4">
+                <button type="button" class="btn intent-cancel-btn px-4" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary px-4" id="intentConfirmBtn" onclick="confirmIntent()">确认提交</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -101,6 +117,109 @@ const loadMoreWrap = document.getElementById('loadMoreWrap');
 const noMoreText = document.getElementById('noMoreText');
 
 const JOB_PANEL_URL = '{{ url_for("student.job_detail_panel", id=0) }}';
+const INTENT_SUBMIT_URL = '{{ url_for("student.submit_intent", job_id=0) }}';
+
+function intentClass(intent) {
+    return intent === '同意报考' ? 'agree' : (intent === '不同意报考' ? 'reject' : 'consider');
+}
+
+function intentLines(intent) {
+    if (intent === '同意报考') return ['同意', '报考'];
+    if (intent === '不同意报考') return ['不同意', '报考'];
+    return [intent];
+}
+
+function intentSealHtml(intent) {
+    return '<span class="intent-seal intent-seal--' + intentClass(intent) + '">' + intentLines(intent).map(esc).join('<br>') + '</span>';
+}
+
+function intentOptionsHtml(jobId, pushId) {
+    return '<div class="intent-options">'
+        + '<button type="button" class="intent-btn intent-btn--agree" onclick="chooseIntent(' + jobId + ',' + pushId + ',\'同意报考\')">同意报考</button>'
+        + '<button type="button" class="intent-btn intent-btn--reject" onclick="chooseIntent(' + jobId + ',' + pushId + ',\'不同意报考\')">不同意报考</button>'
+        + '<button type="button" class="intent-btn intent-btn--consider" onclick="chooseIntent(' + jobId + ',' + pushId + ',\'考虑中\')">考虑中</button>'
+        + '</div>';
+}
+
+let pendingIntent = { jobId: null, pushId: null, intent: '' };
+
+function chooseIntent(jobId, pushId, intent) {
+    const card = document.querySelector('.job-card[data-push-id="' + pushId + '"]');
+    if (card && card.getAttribute('data-intent')) return;
+    pendingIntent = { jobId: jobId, pushId: pushId, intent: intent };
+    document.getElementById('intentConfirmTitle').textContent = '确认【' + intent + '】意向';
+    const colors = { agree: '#16a34a', reject: '#dc2626', consider: '#d97706' };
+    const icon = document.getElementById('intentConfirmIcon');
+    icon.style.background = colors[intentClass(intent)];
+    new bootstrap.Modal(document.getElementById('intentConfirmModal')).show();
+}
+
+function stampCard(pushId, jobId, intent) {
+    const seal = intentSealHtml(intent);
+
+    function applySeal(container, wrapperClass) {
+        if (!container) return null;
+        let box = container.querySelector('.' + wrapperClass);
+        if (!box) {
+            box = document.createElement('div');
+            box.className = wrapperClass + ' intent-stamped';
+            container.appendChild(box);
+        }
+        box.innerHTML = seal;
+        return box;
+    }
+
+    // 左侧岗位卡片：移除底部按钮区，浮层盖章
+    const card = document.querySelector('.job-card[data-push-id="' + pushId + '"]');
+    if (card) {
+        card.setAttribute('data-intent', intent);
+        const options = card.querySelector('.intent-box');
+        if (options) options.remove();
+        const cardSeal = applySeal(card, 'job-card-seal');
+        if (cardSeal) playStamp(cardSeal);
+    }
+    // 右侧岗位详情（若正在展示同一岗位）
+    const detail = document.querySelector('.detail-card[data-detail-job-id="' + jobId + '"]');
+    const detailSeal = applySeal(detail, 'detail-seal');
+    if (detailSeal) playStamp(detailSeal);
+}
+
+function playStamp(el) {
+    el.classList.add('stamping');
+    setTimeout(function() { el.classList.remove('stamping'); }, 750);
+}
+
+async function confirmIntent() {
+    const jobId = pendingIntent.jobId;
+    const pushId = pendingIntent.pushId;
+    const intent = pendingIntent.intent;
+    if (!jobId || !intent) return;
+    const btn = document.getElementById('intentConfirmBtn');
+    btn.disabled = true;
+    try {
+        const fd = new FormData();
+        fd.append('intent', intent);
+        if (pushId) fd.append('push_id', pushId);
+        fd.append('csrf_token', '{{ csrf_token }}');
+        const res = await fetch(INTENT_SUBMIT_URL.replace('/0/', '/' + jobId + '/'), {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('intentConfirmModal')).hide();
+            stampCard(pushId, jobId, intent);
+            showToast(data.message || '报考意向已提交', 'success');
+        } else {
+            showToast(data.message || '提交失败', 'danger');
+        }
+    } catch (e) {
+        showToast('提交失败', 'danger');
+    } finally {
+        btn.disabled = false;
+    }
+}
 
 async function selectJob(jobId) {
     // 1) 高亮当前选中的岗位卡片（不刷新左侧列表）
@@ -206,7 +325,12 @@ function buildJobCard(job) {
 
     const companyMetaline = (job.company_size || '') + (job.company_industry ? ' · ' + job.company_industry : '');
 
-    return `<div class="job-card" data-job-id="${job.id}" onclick="selectJob(${job.id})">
+    const intent = job.application_intent || '';
+    const intentPart = intent
+        ? '<div class="job-card-seal intent-stamped">' + intentSealHtml(intent) + '</div>'
+        : '<div class="intent-box" onclick="event.stopPropagation()">' + intentOptionsHtml(job.id, job.push_id) + '</div>';
+
+    return `<div class="job-card" data-job-id="${job.id}" data-push-id="${job.push_id}" data-intent="${esc(intent)}" onclick="selectJob(${job.id})">
         <div class="job-card-header">
             <div class="job-title"><a href="javascript:void(0)">${esc(job.job_name)}</a>${job.is_new ? '<span class="tag-new">New</span>' : ''}</div>
             <div class="job-salary">${esc(job.salary_display)}</div>
@@ -220,6 +344,7 @@ function buildJobCard(job) {
                 <div class="company-location">${esc(companyMetaline)}</div>
             </div>
         </div>
+        ${intentPart}
     </div>`;
 }
 

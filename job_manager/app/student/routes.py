@@ -155,6 +155,13 @@ def my_pushes():
     if not selected_job and pagination.items:
         selected_job = pagination.items[0].job
 
+    selected_push = None
+    if selected_job:
+        selected_push = PushRecord.query.filter_by(
+            job_id=selected_job.id, student_id=current_user.id,
+            is_deleted=False, is_revoked=False
+        ).first()
+
     cities = [r[0] for r in db.session.query(Job.city).filter(
         Job.is_deleted == False,
         Job.city != '',
@@ -180,6 +187,7 @@ def my_pushes():
                          company_size=company_size,
                          cities=cities,
                          selected_job=selected_job,
+                         selected_push=selected_push,
                          now=datetime.now())
 
 
@@ -262,6 +270,8 @@ def my_pushes_api():
         job = push.job
         items.append({
             'id': job.id,
+            'push_id': push.id,
+            'application_intent': push.application_intent or '',
             'job_name': job.job_name,
             'company_name': job.company_name,
             'company_size': job.company_size,
@@ -308,6 +318,46 @@ def job_detail(id):
     return render_template('student/job_detail.html', job=job, push=push, now=datetime.now())
 
 
+ALLOWED_INTENTS = ('同意报考', '不同意报考', '考虑中')
+
+
+@student_bp.route('/job/<int:job_id>/intent', methods=['POST'])
+@student_required
+def submit_intent(job_id):
+    """学员提交报考意向（同意报考/不同意报考/考虑中）。
+
+    提交后不可修改；同时写入推送记录，供后台「推送记录」查看。
+    """
+    intent = (request.form.get('intent') or '').strip()
+    if intent not in ALLOWED_INTENTS:
+        return jsonify({'success': False, 'message': '请选择有效的报考意向'})
+
+    push_id = request.form.get('push_id', type=int)
+    query = PushRecord.query.filter_by(student_id=current_user.id, job_id=job_id, is_deleted=False)
+    if push_id:
+        push = query.filter_by(id=push_id).first()
+    else:
+        push = query.order_by(PushRecord.id.desc()).first()
+
+    if not push:
+        return jsonify({'success': False, 'message': '推送记录不存在'})
+    if (push.application_intent or '').strip():
+        return jsonify({'success': False, 'message': '报考意向已提交，不可修改'})
+
+    push.application_intent = intent
+    push.intent_at = datetime.now()
+    db.session.add(OperationLog(
+        user_id=current_user.id,
+        action='submit_intent',
+        target_type='push',
+        target_id=push.id,
+        details=f'报考意向：{intent}（岗位：{push.job.job_name if push.job else job_id}）',
+        ip_address=request.remote_addr or '',
+    ))
+    db.session.commit()
+    return jsonify({'success': True, 'message': '报考意向已提交', 'intent': intent})
+
+
 @student_bp.route('/job/<int:id>/panel')
 @student_required
 def job_detail_panel(id):
@@ -326,7 +376,7 @@ def job_detail_panel(id):
     if not push.is_read:
         push.is_read = True
         db.session.commit()
-    return render_template('student/_job_detail_panel.html', selected_job=job, now=datetime.now())
+    return render_template('student/_job_detail_panel.html', selected_job=job, selected_push=push, now=datetime.now())
 
 
 # ==================== 我的操作日志（仅本人可见） ====================

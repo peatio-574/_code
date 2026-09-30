@@ -216,6 +216,8 @@ class PushRecord(db.Model):
     pushed_at = db.Column(db.DateTime, default=datetime.now, comment='推送时间')
     is_read = db.Column(db.Boolean, default=False, comment='是否已读')
     is_revoked = db.Column(db.Boolean, default=False, comment='是否撤销')
+    application_intent = db.Column(db.String(20), default='', comment='报考意向：同意报考/不同意报考/考虑中/空')
+    intent_at = db.Column(db.DateTime, nullable=True, comment='报考意向提交时间')
     is_deleted = db.Column(db.Boolean, default=False, comment='是否删除')
     created_at = db.Column(db.DateTime, default=datetime.now, comment='创建时间')
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')

@@ -8,6 +8,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        /* 固定布局下始终保留滚动条槽位，弹窗打开/关闭时页面不抖动 */
+        html { overflow-y: scroll; scrollbar-gutter: stable; }
+        body.modal-open { padding-right: 0 !important; overflow: hidden; }
         body { 
             background-color: #f0f2f5; 
             font-family: -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif;
@@ -457,6 +460,149 @@
             display: flex;
             align-items: center;
             gap: 4px;
+        }
+
+        /* 报考意向 */
+        .intent-box {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed #e5e7eb;
+        }
+        .intent-options {
+            display: flex;
+            gap: 8px;
+        }
+        .intent-btn {
+            flex: 1;
+            padding: 7px 8px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.18s ease;
+            background: #f5f7fa;
+            color: #6b7280;
+            white-space: nowrap;
+        }
+        .intent-btn--agree { border-color: #bbf7d0; color: #16a34a; background: #f0fdf4; }
+        .intent-btn--agree:hover { background: #dcfce7; border-color: #86efac; }
+        .intent-btn--reject { border-color: #fecaca; color: #dc2626; background: #fef2f2; }
+        .intent-btn--reject:hover { background: #fee2e2; border-color: #fca5a5; }
+        .intent-btn--consider { border-color: #fde68a; color: #d97706; background: #fffbeb; }
+        .intent-btn--consider:hover { background: #fef3c7; border-color: #fcd34d; }
+
+        /* 印章：绝对定位浮层（非布局块），不占底部空间 */
+        .intent-stamped {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .job-card-seal,
+        .detail-seal {
+            position: absolute;
+            z-index: 3;
+            pointer-events: none;
+        }
+        /* 卡片盖章：位于薪资下方的右侧区域，垂直居中 */
+        .job-card-seal {
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        /* 详情盖章：标题右侧、薪资左侧的头部区域 */
+        .detail-seal {
+            right: 250px;
+            top: 46px;
+        }
+        /* 详情盖章动效：从卡片中间飞至目标位置 */
+        .detail-seal.stamping {
+            animation: sealFly 0.6s cubic-bezier(0.25, 0.8, 0.3, 1) both;
+        }
+        @keyframes sealFly {
+            0% { top: 50%; right: 50%; opacity: 0; }
+            30% { top: 50%; right: 50%; opacity: 1; }
+            100% { top: 46px; right: 250px; opacity: 1; }
+        }
+        .intent-seal {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px;
+            border: 2px solid currentColor;
+            border-radius: 50%;
+            font-weight: 600;
+            line-height: 1.3;
+            letter-spacing: 1px;
+            text-align: center;
+            white-space: nowrap;
+            transform: rotate(-11deg);
+            position: relative;
+            width: 104px;
+            height: 104px;
+            font-size: 18px;
+        }
+        .job-card-seal .intent-seal { width: 96px; height: 96px; font-size: 17px; border-width: 2px; }
+        .detail-seal .intent-seal { width: 168px; height: 168px; font-size: 28px; border-width: 3px; letter-spacing: 3px; }
+        /* 仅在提交（JS 添加 stamping）时播放盖章动画，刷新页面不重播 */
+        .intent-stamped.stamping .intent-seal {
+            animation: stampIn 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+        }
+        /* 详情印章：以飞行动效为主，内部不再缩放、不显示水波纹 */
+        .detail-seal.stamping .intent-seal {
+            animation: none;
+        }
+        .detail-seal.stamping::before {
+            display: none;
+        }
+        .intent-seal--agree { color: #16a34a; }
+        .intent-seal--reject { color: #dc2626; }
+        .intent-seal--consider { color: #d97706; }
+        @keyframes stampIn {
+            0% { transform: rotate(-11deg) scale(3.2); opacity: 0; }
+            55% { transform: rotate(-11deg) scale(0.9); opacity: 1; }
+            70% { transform: rotate(-11deg) scale(1.08); }
+            100% { transform: rotate(-11deg) scale(1); opacity: 1; }
+        }
+        /* 盖章瞬间的冲击光环 */
+        .intent-stamped.stamping::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 3px solid currentColor;
+            color: #ef4444;
+            transform: translate(-50%, -50%);
+            animation: stampRipple 0.7s ease-out forwards;
+        }
+        @keyframes stampRipple {
+            0% { width: 12px; height: 12px; opacity: 0.85; }
+            100% { width: 260px; height: 260px; opacity: 0; }
+        }
+        /* 详情卡片作为定位上下文 */
+        .detail-card { position: relative; }
+
+        /* 报考意向确认弹窗 */
+        .intent-confirm-modal .modal-content { border: none; border-radius: 14px; overflow: hidden; }
+        .intent-confirm-icon {
+            width: 64px; height: 64px; margin: 0 auto 14px;
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 30px; color: #fff;
+        }
+        .intent-cancel-btn {
+            background: #9ca3af;
+            border: 1px solid #9ca3af;
+            color: #fff;
+            font-weight: 500;
+        }
+        .intent-cancel-btn:hover,
+        .intent-cancel-btn:focus {
+            background: #6b7280;
+            border-color: #6b7280;
+            color: #fff;
         }
 
         /* Right Panel - Job Detail */

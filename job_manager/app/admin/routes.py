@@ -2100,11 +2100,14 @@ def push_list():
     keyword_student = request.args.get('keyword_student', '').strip()
     keyword_pusher = request.args.get('keyword_pusher', '').strip()
     is_read = request.args.get('is_read', '').strip()
+    intent = request.args.get('intent', '').strip()
     
     if per_page not in [20, 50, 100]:
         per_page = 20
     
     query = PushRecord.query.filter_by(is_deleted=False)
+    if intent in ('同意报考', '不同意报考', '考虑中'):
+        query = query.filter(PushRecord.application_intent == intent)
     if keyword_job:
         J = aliased(Job)
         query = query.join(J, PushRecord.job_id == J.id, isouter=True).filter(J.job_name.contains(keyword_job))
@@ -2146,7 +2149,8 @@ def push_list():
             'pushed_at': push.pushed_at.strftime('%Y-%m-%d %H:%M'),
             'updated_at': push.updated_at.strftime('%Y-%m-%d %H:%M') if push.updated_at else '-',
             'is_read': push.is_read,
-            'is_revoked': push.is_revoked
+            'is_revoked': push.is_revoked,
+            'application_intent': push.application_intent or ''
         })
     
     return jsonify({

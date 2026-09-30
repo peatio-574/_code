@@ -153,6 +153,8 @@ CREATE TABLE IF NOT EXISTS `push_records` (
   `pushed_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '推送时间',
   `is_read` TINYINT(1) DEFAULT 0 COMMENT '是否已读',
   `is_revoked` TINYINT(1) DEFAULT 0 COMMENT '是否撤销',
+  `application_intent` VARCHAR(20) DEFAULT '' COMMENT '报考意向：同意报考/不同意报考/考虑中/空',
+  `intent_at` DATETIME DEFAULT NULL COMMENT '报考意向提交时间',
   `is_deleted` TINYINT(1) DEFAULT 0 COMMENT '是否删除',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
