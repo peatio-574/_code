@@ -172,29 +172,32 @@ input, button, select { font-family: inherit; font-size: inherit; }
 
 /* ---------------- Certificate detail ---------------- */
 .certificate-detail .container {
-    width: 750px; min-height: 362px; border: 1px solid #eaeaea;
-    margin: 30px auto 80px; overflow: hidden; background: #fffff7;
-    position: relative; padding-bottom: 50px;
+    width: 828px; min-height: 362px; border: 1px solid #eaeaea;
+    margin: 30px auto 80px; overflow: hidden; background: #fff;
+    position: relative; padding-bottom: 30px;
 }
-.certificate-detail .logo { display: block; margin: 45px auto; width: 84px; height: 84px; border-radius: 50%; }
+.certificate-detail .logo { display: block; margin: 40px auto 28px; width: 84px; height: 84px; border-radius: 50%; }
 .certificate-detail .c-title { font-size: 28px; text-align: center; font-weight: 600; font-family: NSimSun, STSong, SimSun; }
 .certificate-detail .c-title.en { font-size: 18px; margin-top: 8px; }
 .certificate-detail .apply-title {
-    font-size: 28px; font-weight: 700; font-family: SimSun, STSong;
+    font-size: 24px; font-weight: 400;
     color: #363636; margin-top: 45px; text-align: center;
 }
-.certificate-detail .a-list { width: 680px; margin: 20px auto; }
-.certificate-detail .a-list .item { width: 100%; min-height: 46px; padding-top: 12px; padding-bottom: 15px; }
+.certificate-detail .a-list { width: 684px; margin: 24px auto 40px; }
+.certificate-detail .a-list .item {
+    width: 100%; min-height: 47px; padding: 12px 0 15px;
+    border-bottom: 1px solid #e7e7e7;
+}
 .certificate-detail .a-list .item .a-title {
-    width: 180px; font-size: 14px; font-weight: 700; color: #363636;
+    width: 150px; font-size: 14px; font-weight: 400; color: #363636;
     text-align: right; white-space: nowrap; float: left;
 }
 .certificate-detail .a-list .item .a-info {
     width: 500px; padding-left: 15px; font-size: 14px; color: #7a7a7a;
-    float: right; border-bottom: 1px solid #e7e7e7; word-break: break-all;
+    float: right; word-break: break-all;
 }
 .certificate-detail .btn-wrap { margin: 0 auto 20px; text-align: center; }
-.certificate-detail .btn-wrap .btn { width: 30%; }
+.certificate-detail .btn-wrap .btn { width: 205px; }
 .certificate-detail .search { text-align: center; color: #909399; font-size: 13px; }
 .certificate-detail .search a { color: #d8010f; }
 

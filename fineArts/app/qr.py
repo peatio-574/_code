@@ -61,7 +61,7 @@ def _paste_logo(qr_img, logo_path, logo_ratio):
 
 
 def generate_qr_png(url, logo_path=None, caption=None, box_size=10, border=3,
-                    logo_ratio=0.22, caption_color=(110, 110, 110)):
+                    logo_ratio=0.16, caption_color=(110, 110, 110)):
     """生成二维码 PNG，返回 BytesIO。
 
     url      : 扫码后跳转的地址（写入二维码内容）
