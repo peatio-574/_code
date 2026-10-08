@@ -87,7 +87,7 @@
                     <th>所属校区</th>
                     <th>推送人</th>
                     <th>推送时间</th>
-                    <th>更新时间</th>
+                    <th>来源</th>
                     <th>学员查看</th>
                     <th>报考意向</th>
                     <th>撤销</th>
@@ -201,7 +201,7 @@ function renderPushes(pushes) {
             <td>${escapeHtml(p.campus)}</td>
             <td>${escapeHtml(p.pusher)}</td>
             <td>${escapeHtml(p.pushed_at)}</td>
-            <td>${escapeHtml(p.updated_at)}</td>
+            <td>${escapeHtml(p.source) || '-'}</td>
             <td>${read}</td>
             <td>${intent}</td>
             <td>${revokeSwitch}</td>

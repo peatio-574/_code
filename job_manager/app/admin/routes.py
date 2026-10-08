@@ -2147,7 +2147,7 @@ def push_list():
             'campus': push.student.campus.name if (push.student and push.student.campus) else '-',
             'pusher': (push.pusher.real_name or push.pusher.username) if push.pusher else '-',
             'pushed_at': push.pushed_at.strftime('%Y-%m-%d %H:%M'),
-            'updated_at': push.updated_at.strftime('%Y-%m-%d %H:%M') if push.updated_at else '-',
+            'source': (push.job.source or '') if push.job else '',
             'is_read': push.is_read,
             'is_revoked': push.is_revoked,
             'application_intent': push.application_intent or ''
