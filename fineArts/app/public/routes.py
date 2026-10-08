@@ -1,31 +1,13 @@
 # -*- coding: utf-8 -*-
 """前台：证书查询"""
-from flask import (Response, current_app, jsonify, redirect, render_template,
+from flask import (Response, jsonify, redirect, render_template,
                    request, url_for)
-from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from ..api import fail, ok, single_pagination
 from ..captcha import captcha_data_uri, create_captcha, render_png, verify_captcha
 from ..models import Certificate
+from ..tokens import load_qr_token, load_token, make_token
 from . import public_bp
-
-TOKEN_SALT = 'finearts-cert-detail'
-
-
-def _serializer():
-    return URLSafeTimedSerializer(current_app.config['SECRET_KEY'], salt=TOKEN_SALT)
-
-
-def make_token(cert_id):
-    return _serializer().dumps({'id': cert_id})
-
-
-def load_token(token, max_age=3600):
-    try:
-        data = _serializer().loads(token, max_age=max_age)
-        return data.get('id')
-    except (BadSignature, SignatureExpired):
-        return None
 
 
 @public_bp.route('/', methods=['GET'])
@@ -115,7 +97,8 @@ def query():
 
 @public_bp.route('/certificate/<token>')
 def detail(token):
-    cert_id = load_token(token)
+    # 先尝试限时令牌（查询结果跳转），再尝试永久令牌（证书二维码，不过期）
+    cert_id = load_token(token) or load_qr_token(token)
     if not cert_id:
         return render_template('public/detail_invalid.html'), 404
     cert = Certificate.query.filter(Certificate.id == cert_id,

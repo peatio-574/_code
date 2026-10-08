@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """后台管理：证书管理"""
+import base64
 import io
+import os
 from datetime import datetime
 
 from flask import (current_app, flash, redirect, render_template, request,
@@ -12,6 +14,8 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from ..api import fail, ok, pagination_dict
 from ..excel_utils import COLUMNS, build_template, parse_workbook
 from ..models import db, Admin, Certificate
+from ..qr import generate_qr_png
+from ..tokens import make_qr_token
 from . import admin_bp
 
 FIELDS = [c[1] for c in COLUMNS]
@@ -178,6 +182,27 @@ def api_certificate_get(cid):
         return fail('未登录或登录已过期', status=401)
     cert = Certificate.query.get_or_404(cid)
     return ok(_serialize(cert))
+
+
+@admin_bp.route('/api/certificate/<int:cid>/qrcode', methods=['GET'])
+def api_certificate_qrcode(cid):
+    """生成证书二维码（中间带 logo、底部带链接），返回详情链接与 data URI 图片"""
+    if not current_user.is_authenticated:
+        return fail('未登录或登录已过期', status=401)
+    cert = Certificate.query.get_or_404(cid)
+
+    # 永久令牌：二维码长期有效，扫码进入对应证书信息页
+    token = make_qr_token(cert.id)
+    path = url_for('public.detail', token=token)
+    base = (current_app.config.get('SITE_BASE_URL') or '').rstrip('/')
+    url = base + path if base else url_for('public.detail', token=token, _external=True)
+    caption = current_app.config.get('QR_CAPTION') or (base + '/' if base else url)
+
+    logo_path = os.path.join(current_app.static_folder, 'img', 'share.png')
+    buf = generate_qr_png(url, logo_path=logo_path, caption=caption)
+    image = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode('ascii')
+    return ok({'id': cert.id, 'name': cert.name, 'url': url,
+               'caption': caption, 'image': image})
 
 
 @admin_bp.route('/api/certificate/<int:cid>', methods=['POST'])

@@ -51,6 +51,10 @@ class Config(object):
     SITE_SUBTITLE = '社会艺术水平考级中心'
     OFFICIAL_SITE = 'https://kjzx.caa.edu.cn/'
     HOME_URL = 'https://mskj.caa.edu.cn/'
+    # 证书二维码中链接/底部文字所使用的实际站点根地址（写死，不带结尾斜杠）
+    SITE_BASE_URL = 'http://kjzxcaaedu.cn'
+    # 二维码底部展示的链接文案
+    QR_CAPTION = 'https://mskj.caa.edu.cn/'
 
     PER_PAGE = 20
     CAPTCHA_TTL = 300

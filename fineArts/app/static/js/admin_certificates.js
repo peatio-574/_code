@@ -42,6 +42,13 @@
         var el = document.createElement('td');
         el.className = 'op nowrap';
 
+        var qr = document.createElement('button');
+        qr.type = 'button';
+        qr.className = 'link-btn';
+        qr.textContent = '二维码';
+        qr.addEventListener('click', function () { openQrModal(item.id); });
+        el.appendChild(qr);
+
         var edit = document.createElement('button');
         edit.type = 'button';
         edit.className = 'link-btn';
@@ -404,6 +411,144 @@
     if (editModal) {
         editModal.addEventListener('click', function (e) {
             if (e.target === editModal) closeEditModal();
+        });
+    }
+
+    /* ---------- 二维码弹窗 ---------- */
+    var qrModal = document.getElementById('qr_modal');
+    var qrImg = document.getElementById('qr_img');
+    var qrUrlInput = document.getElementById('qr_url');
+    var qrLoading = document.getElementById('qr_loading');
+    var currentQrUrl = '';
+    var currentQrImage = '';
+
+    function openQrModal(id) {
+        if (!qrModal) return;
+        currentQrUrl = '';
+        currentQrImage = '';
+        if (qrImg) qrImg.removeAttribute('src');
+        if (qrUrlInput) qrUrlInput.value = '';
+        if (qrLoading) qrLoading.style.display = 'block';
+        qrModal.style.display = 'flex';
+
+        fetch('/admin/api/certificate/' + id + '/qrcode', { credentials: 'same-origin' })
+            .then(function (r) {
+                if (r.status === 401) { window.location = '/admin/login'; throw new Error('unauthorized'); }
+                return r.json();
+            })
+            .then(function (res) {
+                if (qrLoading) qrLoading.style.display = 'none';
+                if (!res.success) { alert(res.message || '生成二维码失败'); return; }
+                currentQrUrl = res.data.url || '';
+                currentQrImage = res.data.image || '';
+                if (qrImg) qrImg.src = currentQrImage;
+                if (qrUrlInput) qrUrlInput.value = currentQrUrl;
+            })
+            .catch(function () {
+                if (qrLoading) qrLoading.style.display = 'none';
+                alert('生成二维码失败，请重试');
+            });
+    }
+
+    function closeQrModal() {
+        if (qrModal) qrModal.style.display = 'none';
+    }
+
+    function copyText(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+            try {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+                resolve();
+            } catch (err) { reject(err); }
+        });
+    }
+
+    function copyQrLink() {
+        if (!currentQrUrl) { alert('二维码尚未生成'); return; }
+        copyText(currentQrUrl)
+            .then(function () { alert('链接已复制'); })
+            .catch(function () { alert('复制失败，请手动复制'); });
+    }
+
+    function copyQrImage() {
+        if (!currentQrImage) { alert('二维码尚未生成'); return; }
+        if (navigator.clipboard && window.ClipboardItem) {
+            fetch(currentQrImage)
+                .then(function (r) { return r.blob(); })
+                .then(function (blob) {
+                    return navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                })
+                .then(function () { alert('二维码已复制'); })
+                .catch(function () {
+                    copyImageFallback(currentQrImage)
+                        .then(function () { alert('二维码已复制'); })
+                        .catch(function () { alert('复制失败，请点击“下载二维码”后使用'); });
+                });
+        } else {
+            copyImageFallback(currentQrImage)
+                .then(function () { alert('二维码已复制'); })
+                .catch(function () { alert('复制失败，请点击“下载二维码”后使用'); });
+        }
+    }
+
+    /* HTTP 环境下 navigator.clipboard 不可用的兜底：选中图片后复制 */
+    function copyImageFallback(dataUrl) {
+        return new Promise(function (resolve, reject) {
+            try {
+                var box = document.createElement('div');
+                box.setAttribute('contenteditable', 'true');
+                box.style.position = 'fixed';
+                box.style.left = '-9999px';
+                box.style.top = '0';
+                var img = document.createElement('img');
+                img.src = dataUrl;
+                box.appendChild(img);
+                document.body.appendChild(box);
+
+                var range = document.createRange();
+                range.selectNodeContents(box);
+                var sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+                var ok = document.execCommand('copy');
+                sel.removeAllRanges();
+                box.remove();
+                if (ok) { resolve(); } else { reject(new Error('copy failed')); }
+            } catch (err) { reject(err); }
+        });
+    }
+
+    function downloadQr() {
+        if (!currentQrImage) { alert('二维码尚未生成'); return; }
+        var a = document.createElement('a');
+        a.href = currentQrImage;
+        a.download = '证书二维码.png';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    }
+
+    var qrClose = document.getElementById('qr_modal_close');
+    if (qrClose) qrClose.addEventListener('click', closeQrModal);
+    var qrCopyImg = document.getElementById('qr_copy_img');
+    if (qrCopyImg) qrCopyImg.addEventListener('click', copyQrImage);
+    var qrCopyLink = document.getElementById('qr_copy_link');
+    if (qrCopyLink) qrCopyLink.addEventListener('click', copyQrLink);
+    var qrDownload = document.getElementById('qr_download');
+    if (qrDownload) qrDownload.addEventListener('click', downloadQr);
+    if (qrModal) {
+        qrModal.addEventListener('click', function (e) {
+            if (e.target === qrModal) closeQrModal();
         });
     }
 

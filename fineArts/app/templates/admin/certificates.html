@@ -141,6 +141,31 @@
         </div>
     </div>
 </div>
+
+<!-- 二维码弹窗 -->
+<div class="modal-mask" id="qr_modal" style="display:none;">
+    <div class="modal-box qr-box">
+        <div class="modal-head">
+            <span>证书二维码</span>
+            <button type="button" class="modal-close" id="qr_modal_close">&times;</button>
+        </div>
+        <div class="modal-body qr-body">
+            <div class="qr-img-wrap">
+                <div class="qr-loading" id="qr_loading">正在生成二维码…</div>
+                <img id="qr_img" alt="证书二维码">
+            </div>
+            <div class="qr-link-row">
+                <input class="form-input" id="qr_url" type="text" readonly placeholder="扫码链接">
+            </div>
+            <p class="qr-tip">用手机扫码即可打开该证书的信息页，也可复制链接分享。</p>
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="btn" id="qr_download">下载二维码</button>
+            <button type="button" class="btn" id="qr_copy_link">复制链接</button>
+            <button type="button" class="btn btn-primary" id="qr_copy_img">复制二维码</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

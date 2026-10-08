@@ -12,7 +12,7 @@ cd /d "%~dp0"
 set "PYTHON=d:\_code\python\python.exe"
 if not exist "%PYTHON%" set "PYTHON=python"
 
-"%PYTHON%" -c "import flask, flask_login, flask_sqlalchemy, PIL, openpyxl, pymysql, dotenv" >nul 2>nul
+"%PYTHON%" -c "import flask, flask_login, flask_sqlalchemy, PIL, openpyxl, pymysql, dotenv, qrcode" >nul 2>nul
 if errorlevel 1 (
     echo [INFO] Installing dependencies...
     "%PYTHON%" -m pip install -r requirements.txt
