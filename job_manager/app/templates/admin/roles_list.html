@@ -159,7 +159,7 @@ function renderRoles(roles) {
         </div>`;
         return '<tr>' +
             '<td style="padding-left:15px; text-align:left;">' + escapeHtml(r.name) + '</td>' +
-            '<td style="text-align:center;"><a href="/admin/users/page?role=' + encodeURIComponent(r.name) + '" style="color:#0d6efd; text-decoration:none; cursor:pointer; font-weight:bold;" title="点击查看关联用户">' + r.user_count + '</a></td>' +
+            '<td style="text-align:center;"><a href="{{ url_for('admin.users_page') }}?role=' + encodeURIComponent(r.name) + '" style="color:#0d6efd; text-decoration:none; cursor:pointer; font-weight:bold;" title="点击查看关联用户">' + r.user_count + '</a></td>' +
             '<td style="text-align:center;">' + statusSwitch + '</td>' +
             '<td style="text-align:center;">' + escapeHtml(r.created_at) + '</td>' +
             '<td style="text-align:center;">' + escapeHtml(r.updated_at) + '</td>' +

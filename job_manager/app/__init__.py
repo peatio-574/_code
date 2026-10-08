@@ -85,6 +85,11 @@ def create_app(config_name='default'):
     if upload_dir:
         os.makedirs(upload_dir, exist_ok=True)
 
+    # 反向代理支持：当 nginx 通过子路径（如 /job/）转发并带上 X-Forwarded-Prefix 时，
+    # 让 url_for 生成带前缀的绝对地址，保证页面/静态资源/重定向路径正确。
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
     return app
 
 

@@ -90,6 +90,12 @@ job_manager/
 
 登录后自动按角色跳转到对应首页。
 
+> 生产若因安全组只放行 80 端口，可由 nginx 以子路径 `/job/` 反向代理到本应用
+> （gunicorn `127.0.0.1:5001`），访问地址变为 `http://<host>/job/login`。
+> 该方式依赖 `app/__init__.py` 中的 `ProxyFix(x_prefix=1)` + nginx 传递
+> `X-Forwarded-Prefix: /job` 头；同时需把 `/uploads/`（数据库中的头像等绝对路径）
+> 一并转发到后端。参考部署中 nginx 站点里的 `/job/` 与 `/uploads/` 两个 location。
+
 ---
 
 ## 六、部署说明
@@ -144,7 +150,7 @@ sudo bash deploy.sh
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `DB_USER` | job_CAIQABiAB | MySQL 用户 |
+| `DB_USER` | job_app | MySQL 用户 |
 | `DB_PASSWORD` | （空，用内置） | MySQL 密码，传则覆盖 |
 | `DB_HOST` / `DB_PORT` | 127.0.0.1 / 3306 | 数据库地址/端口 |
 | `DB_NAME` | job | 库名 |

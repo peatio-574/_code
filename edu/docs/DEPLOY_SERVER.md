@@ -39,12 +39,12 @@ FastAPI :18081 ──► MySQL 127.0.0.1:3306 / education_rust（生产库）
 ### 2.1 连接账号
 
 - **服务器上 `root/root123` 不可用**（`Access denied`）。
-- 生产实际使用**应用账号**（见 `/srv/education/shared/education.env` 的 `DATABASE_URL`）：
-  `job_CAIQABiAB`，可访问 `education_rust` 与旧库 `education`。
+- 生产实际使用**应用账号**（见 `/srv/edu-api/app/.env` 的 `DATABASE_URL`）：
+  `edu_rust_app`（2026-10-08 安全加固后由原 `job_CAIQABiAB` 更换而来），仅可访问 `education_rust`。
 - 新后端 `.env` 中 `DATABASE_URL` 使用该应用账号（密码做 URL 编码），前缀改为 `mysql+pymysql://`：
 
   ```
-  DATABASE_URL=mysql+pymysql://job_CAIQABiAB:<url_encoded_password>@127.0.0.1:3306/education_rust
+  DATABASE_URL=mysql+pymysql://edu_rust_app:<password>@127.0.0.1:3306/education_rust
   ```
 
 ### 2.2 结构与数据差异（本地 vs 生产，结论）
@@ -95,7 +95,7 @@ FastAPI :18081 ──► MySQL 127.0.0.1:3306 / education_rust（生产库）
 1. **备份生产库**（务必）：
    ```bash
    export MYSQL_PWD='<app_password>'
-   mysqldump -u job_CAIQABiAB --single-transaction --routines --triggers --events --hex-blob \
+   mysqldump -u edu_rust_app --single-transaction --routines --triggers --events --hex-blob \
      education_rust | gzip > /root/db_backup/education_rust_$(date +%Y%m%d_%H%M%S).sql.gz
    ```
 2. **打包并上传**（本地执行）：

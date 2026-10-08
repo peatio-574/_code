@@ -12,7 +12,7 @@ set -e
 # --------------------- 配置区（可用环境变量覆盖）---------------------
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-3306}"
-DB_USER="${DB_USER:-job_CAIQABiAB}"
+DB_USER="${DB_USER:-job_app}"
 # 密码默认留空：脚本会用 init_db.py 内置的密码建库；如需覆盖请传：
 #   sudo DB_PASSWORD='你的密码' bash deploy.sh
 DB_PASSWORD="${DB_PASSWORD:-}"
