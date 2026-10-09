@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="format-detection" content="telephone=no">
+<title>正在打开淘宝…</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f6f6f6; color: #333;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .box { text-align: center; padding: 0 28px; max-width: 420px; }
+  .spinner {
+    width: 42px; height: 42px; margin: 0 auto 18px;
+    border: 3px solid #ff5000; border-top-color: transparent;
+    border-radius: 50%; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .box p { font-size: 15px; color: #666; line-height: 1.8; }
+  .btn {
+    display: block; margin: 22px auto 0; padding: 13px 30px; width: 220px;
+    background: #ff5000; color: #fff; font-size: 16px;
+    border: none; border-radius: 24px; text-decoration: none; cursor: pointer;
+  }
+  .btn.ghost { background: #fff; color: #ff5000; border: 1px solid #ff5000; margin-top: 12px; }
+  .tip { margin-top: 18px; font-size: 12px; color: #999; line-height: 1.7; }
+  #mask {
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0, 0, 0, .78); color: #fff; padding: 20px;
+  }
+  #mask .arrow { position: absolute; top: 10px; right: 22px; font-size: 48px; line-height: 1; }
+  #mask .hint { margin-top: 100px; text-align: right; font-size: 17px; line-height: 2; }
+  #mask .hint b { color: #ffd200; }
+</style>
+</head>
+<body>
+  <div class="box" id="panel">
+    <div class="spinner" id="spin"></div>
+    <p id="msg">正在尝试打开淘宝 App…</p>
+    <button class="btn" id="openApp" type="button">打开淘宝 App</button>
+    <a class="btn ghost" id="openWeb" href="#">用浏览器打开（可能需登录）</a>
+    <div class="tip">若已安装淘宝，请点「打开淘宝 App」直达商品；<br>未安装则会跳到网页版。</div>
+  </div>
+
+  <div id="mask">
+    <div class="arrow">↗</div>
+    <div class="hint">
+      请点击右上角 <b>「···」</b><br>
+      选择 <b>「在浏览器打开」</b><br>
+      即可打开淘宝 App
+    </div>
+  </div>
+
+<script>
+  var TARGET = {{ target|tojson }};
+  // 由网页地址推导淘宝 App 唤起协议
+  var SCHEME = TARGET.replace(/^https?:\/\//, "taobao://");
+
+  var ua = (navigator.userAgent || "").toLowerCase();
+  var inWeChat = ua.indexOf("micromessenger") !== -1;
+  var inQQ = ua.indexOf("qq/") !== -1 || ua.indexOf("mqqbrowser") !== -1;
+
+  var openAppBtn = document.getElementById("openApp");
+  var openWeb = document.getElementById("openWeb");
+  openWeb.setAttribute("href", TARGET);
+
+  function launchApp() {
+    // 尝试唤起淘宝 App；未安装则停留本页
+    window.location.href = SCHEME;
+  }
+
+  openAppBtn.addEventListener("click", launchApp);
+
+  if (inWeChat || inQQ) {
+    // 微信/QQ 内置浏览器：先引导用户到系统浏览器
+    document.getElementById("mask").style.display = "block";
+  } else {
+    // 系统浏览器：自动尝试唤起淘宝 App
+    launchApp();
+    // 若 1.5s 后仍在本页（未唤起成功），提示用户手动点击
+    setTimeout(function () {
+      var msg = document.getElementById("msg");
+      if (msg) msg.textContent = "未能自动打开淘宝，请点击下方按钮：";
+      var spin = document.getElementById("spin");
+      if (spin) spin.style.display = "none";
+    }, 1500);
+  }
+</script>
+</body>
+</html>

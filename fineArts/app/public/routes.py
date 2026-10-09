@@ -10,6 +10,24 @@ from ..tokens import load_qr_token, load_token, make_token
 from . import public_bp
 
 
+# 微信扫码中转页：微信内打开时引导「在浏览器打开」，系统浏览器直接跳转
+# 默认目标为普通商品链接（商品 id），在手机浏览器中免登录直接打开商品详情页
+TAOBAO_JUMP_TARGET = 'https://item.taobao.com/item.htm?id=1088451299872'
+
+
+@public_bp.route('/tz', methods=['GET'])
+def jump():
+    """扫码中转页：用于微信内引导跳转到淘宝等外部页面。"""
+    target = request.args.get('u') or ''
+    # 仅允许跳转到淘宝/阿里相关域名，避免被滥用为开放重定向
+    low = target.lower()
+    allowed = low.startswith('https://') and any(
+        d in low for d in ('taobao.com', 'tb.cn', 'tmall.com', 'alicdn.com', 'alibaba.com'))
+    if not allowed:
+        target = TAOBAO_JUMP_TARGET
+    return render_template('public/jump.html', target=target)
+
+
 @public_bp.route('/', methods=['GET'])
 def root():
     """根路径跳转到查询页 index.html"""
