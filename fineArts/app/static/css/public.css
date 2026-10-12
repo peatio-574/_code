@@ -171,9 +171,18 @@ input, button, select { font-family: inherit; font-size: inherit; }
 .clear:hover { text-decoration: underline; }
 
 /* ---------------- Certificate detail ---------------- */
+.cert-detail-head {
+    position: relative; background: #fff; height: 50px; line-height: 50px;
+    text-align: center; border-bottom: 2px solid #d8010f;
+}
+.cert-detail-head .head-title { color: #d8010f; font-size: 20px; font-weight: 700; }
+.cert-detail-head .back {
+    position: absolute; left: 12px; top: 0; height: 50px; line-height: 50px;
+    color: #d8010f; font-size: 30px; text-decoration: none; padding: 0 8px;
+}
 .certificate-detail .container {
     width: 828px; min-height: 362px; border: 1px solid #eaeaea;
-    margin: 30px auto 80px; overflow: hidden; background: #fff;
+    margin: 18px auto 80px; overflow: hidden; background: #fff;
     position: relative; padding-bottom: 30px;
 }
 .certificate-detail .logo { display: block; margin: 40px auto 28px; width: 84px; height: 84px; border-radius: 50%; }
@@ -181,7 +190,7 @@ input, button, select { font-family: inherit; font-size: inherit; }
 .certificate-detail .c-title.en { font-size: 18px; margin-top: 8px; }
 .certificate-detail .apply-title {
     font-size: 24px; font-weight: 400;
-    color: #363636; margin-top: 45px; text-align: center;
+    color: #363636; margin-top: 34px; text-align: center;
 }
 .certificate-detail .a-list { width: 684px; margin: 24px auto 40px; }
 .certificate-detail .a-list .item {
