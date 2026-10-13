@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from ..common import actor_id, now, page_params, page_result
 from ..db import get_engine, named_lock
-from ..error import conflict, not_found, validation
+from ..error import ApiError, conflict, not_found, validation
 from ..response import ok
 
 router = APIRouter(prefix="/api")
@@ -54,6 +54,11 @@ class RetryAnswerInput(BaseModel):
     attempt_id: int
     question_id: int
     answer: str
+
+
+class QuestionPushInput(BaseModel):
+    question_ids: list[int] = []
+    student_ids: list[int] = []
 
 
 def _normalize_choices(value: str) -> str:
@@ -135,7 +140,11 @@ def _stats(connection, user_id: int) -> dict:
         {"uid": user_id},
     ).mappings().first()
     total = connection.execute(
-        text("SELECT COUNT(*) FROM questions WHERE status=1 AND (parent_id>0 OR type<>'group')")
+        text(
+            "SELECT COUNT(*) FROM question_pushes qp JOIN questions q ON q.id=qp.question_id "
+            "WHERE qp.student_id=:uid AND q.status=1"
+        ),
+        {"uid": user_id},
     ).scalar()
     answered = row["answered_count"]
     correct = row["correct_count"]
@@ -170,7 +179,8 @@ def random_question(request: Request):
     with named_lock(f"practice:{actor_id(request)}") as connection:
         user_id = actor_id(request)
         params: dict = {"uid": user_id, "type": question_type}
-        where = ["q.type=:type", "q.status=1", "q.parent_id=0"]
+        where = ["q.type=:type", "q.status=1", "q.parent_id=0",
+                 "q.id IN (SELECT question_id FROM question_pushes WHERE student_id=:uid)"]
         if categories:
             placeholders = ",".join(f":cat{i}" for i in range(len(categories)))
             where.append(f"q.category_id IN ({placeholders})")
@@ -243,6 +253,14 @@ def submit_answer(payload: AnswerInput, request: Request):
         ).mappings().first()
         if question is None:
             raise not_found("题目不存在")
+        pushed = connection.execute(
+            text(
+                "SELECT COUNT(*) FROM question_pushes WHERE student_id=:uid AND question_id=:qid"
+            ),
+            {"uid": user_id, "qid": payload.question_id},
+        ).scalar()
+        if not pushed:
+            raise ApiError(403, "forbidden", "该题未推送给你")
         correct = _is_correct(question["type"], question["answer"], payload.answer)
         result = connection.execute(
             text(
@@ -310,7 +328,8 @@ def wrong_questions(request: Request):
         total = connection.execute(
             text(
                 "SELECT COUNT(*) FROM question_first_answers fa JOIN questions q ON q.id=fa.question_id "
-                "WHERE fa.user_id=:uid AND fa.is_correct=0 AND q.status=1"
+                "WHERE fa.user_id=:uid AND fa.is_correct=0 AND q.status=1 "
+                "AND q.id IN (SELECT question_id FROM question_pushes WHERE student_id=:uid)"
             ),
             {"uid": user_id},
         ).scalar()
@@ -319,6 +338,7 @@ def wrong_questions(request: Request):
                 "SELECT q.id, q.type, q.title, q.options, q.score, fa.answer, fa.answered_at "
                 "FROM question_first_answers fa JOIN questions q ON q.id=fa.question_id "
                 "WHERE fa.user_id=:uid AND fa.is_correct=0 AND q.status=1 "
+                "AND q.id IN (SELECT question_id FROM question_pushes WHERE student_id=:uid) "
                 "ORDER BY fa.answered_at DESC LIMIT :limit OFFSET :offset"
             ),
             {"uid": user_id, "limit": size, "offset": (page - 1) * size},
@@ -342,7 +362,8 @@ def wrong_detail(question_id: int, request: Request):
                 "SELECT q.id, q.type, q.title, q.options, q.answer correct_answer, "
                 "COALESCE(q.explanation,'') explanation, fa.answer user_answer, fa.is_correct "
                 "FROM questions q LEFT JOIN question_first_answers fa "
-                "ON fa.question_id=q.id AND fa.user_id=:uid WHERE q.id=:qid"
+                "ON fa.question_id=q.id AND fa.user_id=:uid WHERE q.id=:qid "
+                "AND q.id IN (SELECT question_id FROM question_pushes WHERE student_id=:uid)"
             ),
             {"uid": user_id, "qid": question_id},
         ).mappings().first()
@@ -360,7 +381,9 @@ def start_retry(request: Request):
             text(
                 "SELECT q.id, q.type, q.title, q.options, q.score, q.category_id "
                 "FROM question_first_answers fa JOIN questions q ON q.id=fa.question_id "
-                "WHERE fa.user_id=:uid AND fa.is_correct=0 AND q.status=1 ORDER BY fa.answered_at"
+                "WHERE fa.user_id=:uid AND fa.is_correct=0 AND q.status=1 "
+                "AND q.id IN (SELECT question_id FROM question_pushes WHERE student_id=:uid) "
+                "ORDER BY fa.answered_at"
             ),
             {"uid": user_id},
         ).mappings().all()
@@ -519,6 +542,78 @@ def admin_list(request: Request):
         ).mappings().all()
         connection.commit()
     return ok(page_result([dict(r) for r in rows], total, page, size))
+
+
+@admin_router.post("/question-push")
+def admin_push_questions(payload: QuestionPushInput, request: Request):
+    """题库推送：把选中的题目批量推送给选中的学员。
+
+    与岗位推送一致：每个（题目, 学员）组合写一条记录；已存在的组合跳过。
+    学员端练习/统计/错题仅可见被推送的题目。
+    """
+    question_ids = sorted({int(q) for q in payload.question_ids if int(q) > 0})
+    student_ids = sorted({int(s) for s in payload.student_ids if int(s) > 0})
+    if not question_ids:
+        raise validation("请选择要推送的题目")
+    if not student_ids:
+        raise validation("请选择要推送的学员")
+    with named_lock("question:push") as connection:
+        actor = actor_id(request)
+        valid_q = [
+            int(x)
+            for x in connection.execute(
+                text(
+                    "SELECT id FROM questions WHERE parent_id=0 AND status=1 AND id IN :ids"
+                ),
+                {"ids": tuple(question_ids)},
+            ).scalars().all()
+        ]
+        if not valid_q:
+            raise validation("所选题目无效或未启用")
+        valid_s = [
+            int(x)
+            for x in connection.execute(
+                text(
+                    "SELECT u.id FROM users u WHERE u.status=1 AND u.id IN :ids "
+                    "AND EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id "
+                    "WHERE ur.user_id=u.id AND r.code='student' AND r.status=1)"
+                ),
+                {"ids": tuple(student_ids)},
+            ).scalars().all()
+        ]
+        if not valid_s:
+            raise validation("所选学员无效")
+        existing = {
+            (int(row[0]), int(row[1]))
+            for row in connection.execute(
+                text(
+                    "SELECT question_id, student_id FROM question_pushes "
+                    "WHERE student_id IN :sids AND question_id IN :qids"
+                ),
+                {"sids": tuple(valid_s), "qids": tuple(valid_q)},
+            ).fetchall()
+        }
+        timestamp = now()
+        inserted = 0
+        for qid in valid_q:
+            for sid in valid_s:
+                if (qid, sid) in existing:
+                    continue
+                connection.execute(
+                    text(
+                        "INSERT INTO question_pushes(question_id, student_id, pushed_by, created_at) "
+                        "VALUES(:qid, :sid, :actor, :ts)"
+                    ),
+                    {"qid": qid, "sid": sid, "actor": actor, "ts": timestamp},
+                )
+                inserted += 1
+    return ok(
+        {
+            "pushed": inserted,
+            "question_count": len(valid_q),
+            "student_count": len(valid_s),
+        }
+    )
 
 
 @admin_router.get("/questions/options")

@@ -52,6 +52,8 @@ def admin_permissions(path: str, method: str) -> list[str]:
         return [PERM_COURSES_MANAGE]
     if resource == "questions" and path.endswith("/options") and upper == "GET":
         return [PERM_QUESTIONS_MANAGE, PERM_EXAMS_COMPOSE, PERM_EXAMS_EDIT]
+    if resource == "question-push":
+        return [PERM_QUESTIONS_MANAGE]
     if resource in ("question", "questions", "question-category", "question-categories"):
         return [PERM_QUESTIONS_MANAGE]
     if resource in ("exam", "exams"):

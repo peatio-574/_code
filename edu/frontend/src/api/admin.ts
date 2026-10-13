@@ -44,6 +44,8 @@ export const toggleQuestion = (id: number, status: number) =>
   send('post', '/api/admin/question/toggle-status', { id, status })
 export const batchDeleteQuestions = (ids: number[]) => send('post', '/api/admin/questions/batch-delete', { ids })
 export const listQuestionCategories = () => getData<{ items: any[] }>('/api/admin/question-categories')
+export const pushQuestions = (body: { question_ids: number[]; student_ids: number[] }) =>
+  send('post', '/api/admin/question-push', body)
 
 // ---------------- 考试 ----------------
 export const getExam = (id: number) => getData<Record<string, any>>(`/api/admin/exam/${id}`)

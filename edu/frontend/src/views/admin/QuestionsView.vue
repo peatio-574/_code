@@ -2,15 +2,18 @@
 // 题库管理：题目 CRUD、批量删除与导入。
 import { Download, Plus, Search, Upload } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 
 import {
   batchDeleteQuestions,
   createQuestion,
   deleteQuestion,
   importQuestions,
+  listCampuses,
   listQuestionCategories,
   listQuestions,
+  listStudents,
+  pushQuestions,
   toggleQuestion,
   updateQuestion,
 } from '@/api/admin'
@@ -138,6 +141,76 @@ async function batchRemove() {
   ElMessage.success('已删除')
   await load()
 }
+
+// ---------------- 题库推送 ----------------
+const pushVisible = ref(false)
+const pushLoading = ref(false)
+const pushSubmitting = ref(false)
+const pushCampuses = ref<Record<string, any>[]>([])
+const pushCampusId = ref<number | ''>('')
+const pushStudents = ref<Record<string, any>[]>([])
+const pushStudentSelection = ref<Record<string, any>[]>([])
+
+async function openPush() {
+  if (!selection.value.length) {
+    ElMessage.warning('请先选择要推送的题目')
+    return
+  }
+  pushVisible.value = true
+  pushCampusId.value = ''
+  pushStudentSelection.value = []
+  if (!pushCampuses.value.length) {
+    const page = await listCampuses({ p: 1, page_size: 200, status: 1 })
+    pushCampuses.value = page?.items ?? []
+  }
+  await loadPushStudents()
+}
+
+async function loadPushStudents() {
+  pushLoading.value = true
+  pushStudentSelection.value = []
+  try {
+    const page = await listStudents({
+      p: 1,
+      page_size: 200,
+      status: 1,
+      campus_id: pushCampusId.value || undefined,
+    })
+    pushStudents.value = page?.items ?? []
+  } finally {
+    pushLoading.value = false
+  }
+}
+
+async function submitPush() {
+  if (!pushStudentSelection.value.length) {
+    ElMessage.warning('请选择要推送的学员')
+    return
+  }
+  pushSubmitting.value = true
+  try {
+    const result = await pushQuestions({
+      question_ids: selection.value.map((row) => row.id),
+      student_ids: pushStudentSelection.value.map((row) => row.id),
+    })
+    if (result.success) {
+      const data: any = result.data || {}
+      ElMessage.success(
+        `已推送 ${data.question_count ?? selection.value.length} 道题给 ` +
+          `${data.student_count ?? pushStudentSelection.value.length} 名学员`,
+      )
+      pushVisible.value = false
+    } else {
+      ElMessage.error(result.message || '推送失败')
+    }
+  } finally {
+    pushSubmitting.value = false
+  }
+}
+
+watch(pushCampusId, () => {
+  loadPushStudents()
+})
 
 async function loadCategories() {
   const data = await listQuestionCategories()
@@ -456,6 +529,9 @@ onMounted(async () => {
       <el-button type="primary" @click="() => { query.p = 1; load() }">搜索</el-button>
       <el-button @click="reset">重置</el-button>
       <span class="toolbar-spacer" />
+      <el-button type="primary" plain :disabled="!selection.length" @click="openPush">
+        题库推送{{ selection.length ? `（${selection.length}）` : '' }}
+      </el-button>
       <el-button type="danger" plain :disabled="!selection.length" @click="batchRemove">
         批量删除{{ selection.length ? `（${selection.length}）` : '' }}
       </el-button>
@@ -552,6 +628,39 @@ onMounted(async () => {
       <el-button type="primary" @click="save">保存</el-button>
     </template>
   </el-dialog>
+
+  <!-- 题库推送：选择校区与学员，把选中的题目批量推送 -->
+  <el-dialog v-model="pushVisible" title="题库推送" width="760px" append-to-body>
+    <el-alert
+      type="info"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 12px"
+      :title="`已选 ${selection.length} 道题。选择校区与学员后推送，学员端仅能看到被推送的题目。`"
+    />
+    <div class="push-toolbar">
+      <el-select v-model="pushCampusId" placeholder="按校区筛选" clearable style="width: 220px">
+        <el-option v-for="campus in pushCampuses" :key="campus.id" :label="campus.name" :value="campus.id" />
+      </el-select>
+      <span class="cell-muted">共 {{ pushStudents.length }} 名学员</span>
+    </div>
+    <el-table
+      v-loading="pushLoading"
+      :data="pushStudents"
+      height="360"
+      empty-text="暂无学员"
+      @selection-change="(rows: any[]) => (pushStudentSelection = rows)"
+    >
+      <el-table-column type="selection" width="48" />
+      <el-table-column prop="display_name" label="姓名" min-width="120" />
+      <el-table-column prop="mobile" label="手机号" min-width="140" />
+      <el-table-column prop="campus_name" label="校区" min-width="140" />
+    </el-table>
+    <template #footer>
+      <el-button @click="pushVisible = false">取消</el-button>
+      <el-button type="primary" :loading="pushSubmitting" @click="submitPush">确认推送</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>
@@ -564,6 +673,12 @@ onMounted(async () => {
 }
 .question-type-tag {
   flex-shrink: 0;
+}
+.push-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 </style>
 

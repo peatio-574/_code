@@ -124,7 +124,8 @@ def api_certificates():
     if major:
         query = query.filter(Certificate.major == major)
 
-    pagination = query.order_by(Certificate.id.desc()).paginate(
+    pagination = query.order_by(Certificate.issue_date.desc(),
+                                Certificate.updated_at.desc()).paginate(
         page=page, per_page=per_page, error_out=False)
     data = [_serialize(c) for c in pagination.items]
     return ok(data, pagination=pagination_dict(pagination))

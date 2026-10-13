@@ -310,6 +310,16 @@ class Question(Base):
     updated_at: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
+class QuestionPush(Base):
+    __tablename__ = "question_pushes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    question_id: Mapped[int] = mapped_column(BigInteger)
+    student_id: Mapped[int] = mapped_column(BigInteger)
+    pushed_by: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
 class QuestionRecord(Base):
     __tablename__ = "question_records"
 
