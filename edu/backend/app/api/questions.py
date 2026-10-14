@@ -490,7 +490,7 @@ def submit_retry(payload: RetryAnswerInput, request: Request):
 
 @admin_router.get("/questions")
 def admin_list(request: Request):
-    page, size = page_params(request)
+    page, size = page_params(request, max_size=10000)
     keyword = (request.query_params.get("keyword") or "").strip()
     question_type = (request.query_params.get("type") or "").strip()
     categories = [int(c) for c in request.query_params.getlist("category_id") if c.isdigit()]
@@ -532,11 +532,11 @@ def admin_list(request: Request):
         ).scalar()
         rows = connection.execute(
             text(
-                "SELECT q.id, q.type, q.title, q.options, q.answer, COALESCE(q.explanation,'') explanation, "
-                "q.status, q.category_id, q.score, q.created_at, q.updated_at, "
-                "(SELECT di.name FROM dictionary_items di WHERE di.id=q.category_id) category_name, "
-                "(SELECT COUNT(*) FROM questions c WHERE c.parent_id=q.id) child_count "
-                f"FROM questions q WHERE {clause} ORDER BY q.id DESC LIMIT :limit OFFSET :offset"
+                "SELECT q.id, q.type, q.title, q.answer, q.status, q.category_id, q.score, "
+                "q.created_at, q.updated_at, di.name AS category_name "
+                "FROM questions q "
+                "LEFT JOIN dictionary_items di ON di.id = q.category_id "
+                f"WHERE {clause} ORDER BY q.id DESC LIMIT :limit OFFSET :offset"
             ),
             {**params, "limit": size, "offset": (page - 1) * size},
         ).mappings().all()

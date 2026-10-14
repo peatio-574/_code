@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // 题库管理：题目 CRUD、批量删除与导入。
 import { Download, Plus, Search, Upload } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
-import { onMounted, reactive, ref, watch } from 'vue'
+import { ElButton, ElCheckbox, ElMessage, ElMessageBox, ElLoading, ElTag, TableV2FixedDir } from 'element-plus'
+import type { Column } from 'element-plus'
+import { computed, h, onMounted, reactive, ref, watch } from 'vue'
 
 import {
   batchDeleteQuestions,
@@ -37,7 +38,140 @@ const items = ref<Record<string, any>[]>([])
 const total = ref(0)
 const categories = ref<Record<string, any>[]>([])
 const query = reactive({ p: 1, page_size: 20, keyword: '', type: '', category_id: '', status: '' })
-const selection = ref<Record<string, any>[]>([])
+// 勾选状态用 id 集合保存（虚拟滚动下不会因行重绘丢选择）
+const selectedIds = ref<Set<number>>(new Set())
+
+function isSelected(id: number): boolean {
+  return selectedIds.value.has(id)
+}
+
+function toggleRow(id: number, checked: boolean) {
+  const next = new Set(selectedIds.value)
+  if (checked) next.add(id)
+  else next.delete(id)
+  selectedIds.value = next
+}
+
+function toggleAll(checked: boolean) {
+  const next = new Set(selectedIds.value)
+  for (const row of items.value) {
+    if (checked) next.add(row.id)
+    else next.delete(row.id)
+  }
+  selectedIds.value = next
+}
+
+const allChecked = computed(
+  () => items.value.length > 0 && items.value.every((row) => selectedIds.value.has(row.id)),
+)
+const someChecked = computed(
+  () => items.value.some((row) => selectedIds.value.has(row.id)) && !allChecked.value,
+)
+
+/** 非题目列固定宽度合计（selection/type/category/score/answer/status/updated_at/actions）。 */
+const FIXED_COLUMNS_WIDTH = 48 + 96 + 130 + 76 + 96 + 116 + 176 + 130
+
+/** 按容器可用宽度动态生成列定义：题目列自动撑满剩余空间，避免右侧空白。 */
+function buildColumns(containerWidth: number): Column<any>[] {
+  const titleWidth = Math.max(240, Math.round(containerWidth - FIXED_COLUMNS_WIDTH))
+  return [
+  {
+    key: 'selection',
+    width: 48,
+    fixed: TableV2FixedDir.LEFT,
+    headerCellRenderer: () =>
+      h(
+        'div',
+        { style: 'display:flex;align-items:center;justify-content:center;height:100%' },
+        h(ElCheckbox, {
+          modelValue: allChecked.value,
+          indeterminate: someChecked.value,
+          'onUpdate:modelValue': (v: any) => toggleAll(v === true),
+        }),
+      ),
+    cellRenderer: ({ rowData }: { rowData: any }) =>
+      h(
+        'div',
+        { style: 'display:flex;align-items:center;justify-content:center;height:100%' },
+        h(ElCheckbox, {
+          modelValue: isSelected(rowData.id),
+          'onUpdate:modelValue': (v: any) => toggleRow(rowData.id, v === true),
+        }),
+      ),
+  },
+  {
+    key: 'title',
+    title: '题目',
+    dataKey: 'title',
+    width: titleWidth,
+    cellRenderer: ({ rowData }: { rowData: any }) =>
+      h('span', { class: 'question-cell__title', title: rowData.title }, rowData.title),
+  },
+  {
+    key: 'type',
+    title: '题型',
+    dataKey: 'type',
+    width: 96,
+    cellRenderer: ({ rowData }: { rowData: any }) =>
+      h(
+        ElTag,
+        { size: 'small', effect: 'plain', class: 'question-type-tag' },
+        () => QUESTION_TYPES.find((t) => t.value === rowData.type)?.label || rowData.type,
+      ),
+  },
+  {
+    key: 'category_name',
+    title: '题目方向',
+    dataKey: 'category_name',
+    width: 130,
+    cellRenderer: ({ rowData }: { rowData: any }) => rowData.category_name || '未分类',
+  },
+  {
+    key: 'score',
+    title: '分值',
+    dataKey: 'score',
+    width: 76,
+    align: 'right',
+    cellRenderer: ({ rowData }: { rowData: any }) => h('span', { class: 'tabular' }, `${rowData.score} 分`),
+  },
+  {
+    key: 'answer',
+    title: '答案',
+    dataKey: 'answer',
+    width: 96,
+    cellRenderer: ({ rowData }: { rowData: any }) =>
+      h('span', { class: 'cell-muted' }, rowData.answer || '—'),
+  },
+  {
+    key: 'status',
+    title: '状态',
+    dataKey: 'status',
+    width: 116,
+    cellRenderer: ({ rowData }: { rowData: any }) =>
+      h(StatusSwitch, { status: rowData.status, onChange: (next: number) => toggleStatus(rowData, next) }),
+  },
+  {
+    key: 'updated_at',
+    title: '更新时间',
+    dataKey: 'updated_at',
+    width: 176,
+    cellRenderer: ({ rowData }: { rowData: any }) =>
+      h('span', { class: 'cell-muted tabular' }, formatDateTime(rowData.updated_at)),
+  },
+  {
+    key: 'actions',
+    title: '操作',
+    width: 130,
+    fixed: TableV2FixedDir.RIGHT,
+    align: 'center',
+    cellRenderer: ({ rowData }: { rowData: any }) =>
+      h('div', { class: 'row-actions' }, [
+        h(ElButton, { link: true, type: 'primary', onClick: () => openEdit(rowData) }, () => '编辑'),
+        h(ElButton, { link: true, type: 'danger', onClick: () => remove(rowData) }, () => '删除'),
+      ]),
+  },
+  ]
+}
 
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
@@ -128,16 +262,18 @@ async function remove(row: Record<string, any>) {
 }
 
 async function batchRemove() {
-  if (!selection.value.length) {
+  const ids = [...selectedIds.value]
+  if (!ids.length) {
     ElMessage.warning('请选择要删除的题目')
     return
   }
   try {
-    await ElMessageBox.confirm(`确定删除选中的 ${selection.value.length} 道题吗？`, '批量删除', { type: 'warning' })
+    await ElMessageBox.confirm(`确定删除选中的 ${ids.length} 道题吗？`, '批量删除', { type: 'warning' })
   } catch {
     return
   }
-  await batchDeleteQuestions(selection.value.map((row) => row.id))
+  await batchDeleteQuestions(ids)
+  selectedIds.value = new Set()
   ElMessage.success('已删除')
   await load()
 }
@@ -152,7 +288,7 @@ const pushStudents = ref<Record<string, any>[]>([])
 const pushStudentSelection = ref<Record<string, any>[]>([])
 
 async function openPush() {
-  if (!selection.value.length) {
+  if (!selectedIds.value.size) {
     ElMessage.warning('请先选择要推送的题目')
     return
   }
@@ -189,14 +325,15 @@ async function submitPush() {
   }
   pushSubmitting.value = true
   try {
+    const questionIds = [...selectedIds.value]
     const result = await pushQuestions({
-      question_ids: selection.value.map((row) => row.id),
+      question_ids: questionIds,
       student_ids: pushStudentSelection.value.map((row) => row.id),
     })
     if (result.success) {
       const data: any = result.data || {}
       ElMessage.success(
-        `已推送 ${data.question_count ?? selection.value.length} 道题给 ` +
+        `已推送 ${data.question_count ?? questionIds.length} 道题给 ` +
           `${data.student_count ?? pushStudentSelection.value.length} 名学员`,
       )
       pushVisible.value = false
@@ -494,6 +631,7 @@ onMounted(async () => {
     :total="total"
     :page="query.p"
     :page-size="query.page_size"
+    :page-sizes="[20, 50, 100, 1000, 10000]"
     :loading="loading"
     @update:page="(value) => (query.p = value)"
     @update:page-size="(value) => (query.page_size = value)"
@@ -529,60 +667,34 @@ onMounted(async () => {
       <el-button type="primary" @click="() => { query.p = 1; load() }">搜索</el-button>
       <el-button @click="reset">重置</el-button>
       <span class="toolbar-spacer" />
-      <el-button type="primary" plain :disabled="!selection.length" @click="openPush">
-        题库推送{{ selection.length ? `（${selection.length}）` : '' }}
+      <el-button type="primary" plain :disabled="!selectedIds.size" @click="openPush">
+        题库推送{{ selectedIds.size ? `（${selectedIds.size}）` : '' }}
       </el-button>
-      <el-button type="danger" plain :disabled="!selection.length" @click="batchRemove">
-        批量删除{{ selection.length ? `（${selection.length}）` : '' }}
+      <el-button type="danger" plain :disabled="!selectedIds.size" @click="batchRemove">
+        批量删除{{ selectedIds.size ? `（${selectedIds.size}）` : '' }}
       </el-button>
     </template>
 
-    <el-table
-      :data="items"
-      row-key="id"
-      height="100%"
-      empty-text="暂无题目，点击右上角「添加题目」开始"
-      @selection-change="(rows: any[]) => (selection = rows)"
-    >
-      <el-table-column type="selection" width="48" />
-      <el-table-column label="题目" min-width="280">
-        <template #default="{ row }">
-          <span class="question-cell__title" :title="row.title">{{ row.title }}</span>
+    <div class="question-vtable">
+      <el-auto-resizer>
+        <template #default="{ height, width }">
+          <el-table-v2
+            :columns="buildColumns(width)"
+            :data="items"
+            :width="width"
+            :height="height"
+            :row-height="48"
+            :header-height="44"
+            :row-key="'id'"
+            fixed
+          >
+            <template #empty>
+              <div class="question-vtable__empty">暂无题目，点击右上角「添加题目」开始</div>
+            </template>
+          </el-table-v2>
         </template>
-      </el-table-column>
-      <el-table-column label="题型" min-width="120">
-        <template #default="{ row }">
-          <el-tag size="small" effect="plain" class="question-type-tag">
-            {{ QUESTION_TYPES.find((t) => t.value === row.type)?.label || row.type }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="category_name" label="题目方向" min-width="140">
-        <template #default="{ row }">{{ row.category_name || '未分类' }}</template>
-      </el-table-column>
-      <el-table-column label="分值" min-width="90" align="right">
-        <template #default="{ row }"><span class="tabular">{{ row.score }} 分</span></template>
-      </el-table-column>
-      <el-table-column label="答案" min-width="140">
-        <template #default="{ row }"><span class="cell-muted">{{ row.answer || '—' }}</span></template>
-      </el-table-column>
-      <el-table-column label="状态" min-width="160">
-        <template #default="{ row }">
-          <StatusSwitch :status="row.status" @change="(next) => toggleStatus(row, next)" />
-        </template>
-      </el-table-column>
-      <el-table-column label="更新时间" min-width="180">
-        <template #default="{ row }"><span class="cell-muted tabular">{{ formatDateTime(row.updated_at) }}</span></template>
-      </el-table-column>
-      <el-table-column label="操作" width="140" fixed="right">
-        <template #default="{ row }">
-          <div class="row-actions">
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click="remove(row)">删除</el-button>
-          </div>
-        </template>
-      </el-table-column>
-    </el-table>
+      </el-auto-resizer>
+    </div>
   </DataPage>
 
   <el-dialog v-model="dialogVisible" :lock-scroll="false" :title="editingId ? '编辑题目' : '新增题目'" width="680px" append-to-body>
@@ -636,7 +748,7 @@ onMounted(async () => {
       :closable="false"
       show-icon
       style="margin-bottom: 12px"
-      :title="`已选 ${selection.length} 道题。选择校区与学员后推送，学员端仅能看到被推送的题目。`"
+      :title="`已选 ${selectedIds.size} 道题。选择校区与学员后推送，学员端仅能看到被推送的题目。`"
     />
     <div class="push-toolbar">
       <el-select v-model="pushCampusId" placeholder="按校区筛选" clearable style="width: 220px">
@@ -679,6 +791,17 @@ onMounted(async () => {
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
+}
+/* 虚拟滚动表格容器：撑满父容器并允许内部滚动 */
+.question-vtable {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+.question-vtable__empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-secondary);
 }
 </style>
 

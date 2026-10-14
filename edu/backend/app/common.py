@@ -17,8 +17,8 @@ def now() -> int:
     return int(time.time())
 
 
-def page_params(request: Request) -> tuple[int, int]:
-    """解析分页参数：页码 p（最小1）与每页 page_size（1~200，默认20）。"""
+def page_params(request: Request, max_size: int = 200) -> tuple[int, int]:
+    """解析分页参数：页码 p（最小1）与每页 page_size（1~max_size，默认20）。"""
     try:
         page = max(1, int(request.query_params.get("p", 1) or 1))
     except ValueError:
@@ -27,8 +27,8 @@ def page_params(request: Request) -> tuple[int, int]:
         size = int(request.query_params.get("page_size", 20) or 20)
     except ValueError:
         size = 20
-    # 允许业务自定义每页条数（如课程中心 12 条/页），限定在合理范围内
-    size = max(1, min(size, 200))
+    # 允许业务自定义每页条数（如课程中心 12 条/页、题库管理大分页），限定在合理范围内
+    size = max(1, min(size, max_size))
     return page, size
 
 
