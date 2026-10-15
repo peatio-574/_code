@@ -15,6 +15,8 @@ class Admin(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    # 角色：admin=全部权限；user=仅可查看报名管理、机构管理
+    role = db.Column(db.String(20), default='admin', nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.now)
 
     def set_password(self, password):

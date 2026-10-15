@@ -86,11 +86,7 @@ def create_app(config_name='default'):
     with app.app_context():
         db.create_all()
         _ensure_columns()
-        if not Admin.query.first():
-            admin = Admin(username=app.config['ADMIN_USERNAME'])
-            admin.set_password(app.config['ADMIN_PASSWORD'])
-            db.session.add(admin)
-            db.session.commit()
+        _ensure_default_accounts(app)
 
     return app
 
@@ -100,7 +96,8 @@ def _ensure_columns():
     from sqlalchemy import inspect, text
     try:
         insp = inspect(db.engine)
-        if 'registration' in insp.get_table_names():
+        tables = insp.get_table_names()
+        if 'registration' in tables:
             cols = [c['name'] for c in insp.get_columns('registration')]
             stmts = []
             if 'institution_id' not in cols:
@@ -111,8 +108,34 @@ def _ensure_columns():
                 with db.engine.begin() as conn:
                     for stmt in stmts:
                         conn.execute(text(stmt))
+        if 'admin' in tables:
+            cols = [c['name'] for c in insp.get_columns('admin')]
+            if 'role' not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(text(
+                        "ALTER TABLE admin ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'admin'"))
     except Exception as exc:
-        print('[WARN] 补充 registration 字段失败：%s' % exc)
+        print('[WARN] 补充字段失败：%s' % exc)
+
+
+def _ensure_default_accounts(app):
+    """幂等确保默认账号存在：主管理员 + 受限账号 user。"""
+    admin = Admin.query.filter_by(username=app.config['ADMIN_USERNAME']).first()
+    if not admin:
+        admin = Admin(username=app.config['ADMIN_USERNAME'])
+        admin.set_password(app.config['ADMIN_PASSWORD'])
+        db.session.add(admin)
+    elif not admin.role:
+        admin.role = 'admin'
+    # 受限账号：仅可查看报名管理、机构管理
+    limited = Admin.query.filter_by(username='user').first()
+    if not limited:
+        limited = Admin(username='user', role='user')
+        limited.set_password('user1234')
+        db.session.add(limited)
+    elif not limited.role:
+        limited.role = 'user'
+    db.session.commit()
 
 
 def setup_logging(app):

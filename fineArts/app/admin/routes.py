@@ -25,19 +25,56 @@ FIELDS = [c[1] for c in COLUMNS]
 # --------------------------------------------------------------------------- #
 # 登录 / 退出
 # --------------------------------------------------------------------------- #
+def _home_endpoint(user):
+    """按角色返回登录后的首页：受限账号进入报名管理。"""
+    if getattr(user, 'role', 'admin') == 'user':
+        return url_for('admin.registrations')
+    return url_for('admin.certificates')
+
+
 @admin_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for('admin.certificates'))
+        return redirect(_home_endpoint(current_user))
     if request.method == 'POST':
         username = (request.form.get('username') or '').strip()
         password = request.form.get('password') or ''
         user = Admin.query.filter_by(username=username).first()
         if user and user.verify_password(password):
             login_user(user)
-            return redirect(request.args.get('next') or url_for('admin.certificates'))
+            return redirect(request.args.get('next') or _home_endpoint(user))
         flash('用户名或密码错误', 'error')
     return render_template('admin/login.html')
+
+
+@admin_bp.before_request
+def _restrict_limited_account():
+    """受限账号（role=user）仅可访问报名管理、机构管理相关页面与接口。"""
+    if not current_user.is_authenticated:
+        return None
+    if getattr(current_user, 'role', 'admin') != 'user':
+        return None
+
+    path = request.path
+    allowed_prefixes = (
+        '/admin/registrations',
+        '/admin/registration/',
+        '/admin/api/registrations',
+        '/admin/api/registration/',
+        '/admin/institutions',
+        '/admin/api/institution',
+        '/admin/institution/',
+        '/admin/password',
+        '/admin/logout',
+    )
+    if path.startswith(allowed_prefixes):
+        return None
+    if path in ('/admin', '/admin/'):
+        return redirect(url_for('admin.registrations'))
+    if path.startswith('/admin/api/'):
+        return fail('无权访问', status=403)
+    flash('无权访问该页面', 'error')
+    return redirect(url_for('admin.registrations'))
 
 
 @admin_bp.route('/logout')

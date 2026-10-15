@@ -29,16 +29,21 @@
     <div class="admin-body-row">
         <aside class="admin-sidebar">
             {% set ep = request.endpoint or '' %}
+            {% set is_full_admin = (current_user.role or 'admin') == 'admin' %}
             <nav class="menu">
+                {% if is_full_admin %}
                 <a class="menu-item {% if ep == 'admin.certificates' %}active{% endif %}"
                    href="{{ url_for('admin.certificates') }}">证书管理</a>
+                {% endif %}
                 <a class="menu-item {% if ep == 'admin.registrations' %}active{% endif %}"
                    href="{{ url_for('admin.registrations') }}">报名管理</a>
                 <a class="menu-item {% if ep == 'admin.institutions' %}active{% endif %}"
                    href="{{ url_for('admin.institutions') }}">机构管理</a>
                 <a class="menu-item {% if ep == 'admin.change_password' %}active{% endif %}"
                    href="{{ url_for('admin.change_password') }}">修改密码</a>
+                {% if is_full_admin %}
                 <a class="menu-item" href="{{ url_for('public.index') }}">前台查询</a>
+                {% endif %}
             </nav>
         </aside>
 
