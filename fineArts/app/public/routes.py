@@ -1,31 +1,76 @@
 # -*- coding: utf-8 -*-
-"""前台：证书查询"""
-from flask import (Response, jsonify, redirect, render_template,
-                   request, url_for)
+"""前台：证书查询、考试报名收集"""
+import re
+
+from flask import (Response, current_app, jsonify, redirect,
+                   render_template, request, url_for)
 
 from ..api import fail, ok, single_pagination
 from ..captcha import captcha_data_uri, create_captcha, render_png, verify_captcha
-from ..models import Certificate
+from ..models import Certificate, Institution, Registration, db
 from ..tokens import load_qr_token, load_token, make_token
 from . import public_bp
 
 
-# 微信扫码中转页：微信内打开时引导「在浏览器打开」，系统浏览器直接跳转
-# 默认目标为普通商品链接（商品 id），在手机浏览器中免登录直接打开商品详情页
-TAOBAO_JUMP_TARGET = 'https://item.taobao.com/item.htm?id=1088451299872'
+ID_CARD_RE = re.compile(r'^(\d{15}|\d{17}[\dXx])$')
 
 
-@public_bp.route('/tz', methods=['GET'])
-def jump():
-    """扫码中转页：用于微信内引导跳转到淘宝等外部页面。"""
-    target = request.args.get('u') or ''
-    # 仅允许跳转到淘宝/阿里相关域名，避免被滥用为开放重定向
-    low = target.lower()
-    allowed = low.startswith('https://') and any(
-        d in low for d in ('taobao.com', 'tb.cn', 'tmall.com', 'alicdn.com', 'alibaba.com'))
-    if not allowed:
-        target = TAOBAO_JUMP_TARGET
-    return render_template('public/jump.html', target=target)
+@public_bp.route('/baoming', methods=['GET', 'POST'])
+def signup():
+    """考试报名表单：GET 展示表单，POST 提交报名信息。
+
+    支持按机构链接填写：/baoming?i=<code>，报名数据会记录对应机构。
+    """
+    if request.method == 'GET':
+        code = (request.args.get('i') or '').strip()
+        institution = None
+        if code:
+            institution = Institution.query.filter_by(code=code, is_deleted=False).first()
+        return render_template('public/signup.html', institution=institution,
+                               institution_code=code if institution else '')
+
+    payload = request.form
+    name = (payload.get('name') or '').strip()
+    gender = (payload.get('gender') or '').strip()
+    ethnicity = (payload.get('ethnicity') or '').strip()
+    nationality = (payload.get('nationality') or '中国').strip()
+    id_card = (payload.get('id_card') or '').strip().upper()
+    subject = (payload.get('subject') or '').strip()
+    level = (payload.get('level') or '').strip()
+
+    # 所属机构：以链接中的机构编码为准（防止前端篡改），无链接则为空
+    code = (payload.get('institution_code') or '').strip()
+    institution = None
+    if code:
+        institution = Institution.query.filter_by(code=code, is_deleted=False).first()
+
+    errors = []
+    if not name:
+        errors.append('请填写考生姓名')
+    if len(name) > 50:
+        errors.append('姓名过长')
+    if not gender:
+        errors.append('请选择性别')
+    if not id_card:
+        errors.append('请填写身份证号')
+    elif not ID_CARD_RE.match(id_card):
+        errors.append('身份证号格式不正确')
+    if not subject:
+        errors.append('请填写报考科目')
+    if not level:
+        errors.append('请选择报考级别')
+    if errors:
+        return fail('；'.join(errors), errors=errors)
+
+    record = Registration(
+        name=name, gender=gender, ethnicity=ethnicity, nationality=nationality,
+        id_card=id_card, subject=subject, level=level,
+        institution_id=institution.id if institution else None,
+        institution=institution.name if institution else '',
+    )
+    db.session.add(record)
+    db.session.commit()
+    return ok({'id': record.id, 'name': record.name}, message='报名成功')
 
 
 @public_bp.route('/', methods=['GET'])

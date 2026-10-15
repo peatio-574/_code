@@ -31,6 +31,7 @@ def create_app(config_name='default'):
         app.config['JSON_AS_ASCII'] = False
 
     os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(app.config.get('SIGNUP_UPLOAD_DIR', os.path.join(DATA_DIR, 'uploads', 'signup')), exist_ok=True)
     setup_logging(app)
 
     db.init_app(app)
@@ -84,6 +85,7 @@ def create_app(config_name='default'):
 
     with app.app_context():
         db.create_all()
+        _ensure_columns()
         if not Admin.query.first():
             admin = Admin(username=app.config['ADMIN_USERNAME'])
             admin.set_password(app.config['ADMIN_PASSWORD'])
@@ -91,6 +93,26 @@ def create_app(config_name='default'):
             db.session.commit()
 
     return app
+
+
+def _ensure_columns():
+    """幂等补充新增字段（db.create_all 不会为已存在的表加列）。"""
+    from sqlalchemy import inspect, text
+    try:
+        insp = inspect(db.engine)
+        if 'registration' in insp.get_table_names():
+            cols = [c['name'] for c in insp.get_columns('registration')]
+            stmts = []
+            if 'institution_id' not in cols:
+                stmts.append('ALTER TABLE registration ADD COLUMN institution_id INT NULL')
+            if 'institution' not in cols:
+                stmts.append('ALTER TABLE registration ADD COLUMN institution VARCHAR(100) NULL')
+            if stmts:
+                with db.engine.begin() as conn:
+                    for stmt in stmts:
+                        conn.execute(text(stmt))
+    except Exception as exc:
+        print('[WARN] 补充 registration 字段失败：%s' % exc)
 
 
 def setup_logging(app):

@@ -166,7 +166,7 @@ select.form-input { cursor: pointer; }
     background: #fff; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
     display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;
 }
-.list-scroll { flex: 1; overflow: auto; min-height: 0; }
+.list-scroll { flex: 1; overflow: auto; min-height: 0; overflow-anchor: none; }
 .sticky-thead th { position: sticky; top: 0; z-index: 5; }
 .list-footer {
     display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
@@ -258,8 +258,7 @@ select.form-input { cursor: pointer; }
 .form-actions .btn-primary { width: auto; padding: 8px 28px; }
 
 /* Login */
-.login-body {
-    display: flex; align-items: center; justify-content: center;
+.login-body {    display: flex; align-items: center; justify-content: center;
     min-height: 100vh; background: #b60511;
     background-image: linear-gradient(135deg, #b60511 0%, #7d030b 100%);
 }
@@ -281,3 +280,21 @@ select.form-input { cursor: pointer; }
     .admin-sidebar .menu-item { border-left: none; border-bottom: 3px solid transparent; white-space: nowrap; }
     .admin-sidebar .menu-item.active { border-left: none; border-bottom-color: #d8010f; }
 }
+
+/* ---------- 报名管理 ---------- */
+/* 固定行高：配合虚拟滚动，避免大分页时渲染上万行导致卡顿 */
+.reg-table tbody td { height: 48px; }
+.reg-table .v-spacer td { height: auto; padding: 0; border: none; }
+.detail-box { width: 640px; }
+.reg-fields { min-width: 0; }
+.reg-fields li { display: flex; padding: 9px 0; border-bottom: 1px dashed #f0f0f0; font-size: 14px; }
+.reg-fields li .k { width: 90px; flex-shrink: 0; color: #909399; }
+.reg-fields li .v { color: #303133; word-break: break-all; }
+
+/* 编辑弹窗 */
+.edit-box { width: 640px; }
+.edit-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.edit-fields .form-field label { display: block; margin-bottom: 6px; font-size: 13px; color: #606266; }
+.edit-fields .form-field label em { color: #f56c6c; font-style: normal; }
+.edit-fields .form-field input,
+.edit-fields .form-field select { width: 100%; }

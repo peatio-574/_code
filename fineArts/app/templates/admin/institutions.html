@@ -1,0 +1,73 @@
+{% extends 'admin/base.html' %}
+{% block title %}机构管理{% endblock %}
+{% block crumb %}机构管理{% endblock %}
+
+{% block content %}
+<div class="list-page">
+
+    <div class="filter-card">
+        <form id="searchForm" onsubmit="return false;">
+            <div class="filter-row">
+                <div class="filter-field filter-field-keyword">
+                    <label class="form-label">机构名称：</label>
+                    <input class="form-input" type="text" id="new_name" placeholder="输入机构名称，如：XX美术培训中心">
+                </div>
+                <div class="filter-actions">
+                    <button type="button" class="btn btn-primary" id="btn_create">生成报名链接</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="list-card">
+        <div class="list-scroll">
+            <table class="data-table">
+                <thead class="sticky-thead">
+                <tr>
+                    <th>机构名称</th>
+                    <th>报名链接</th>
+                    <th>已报名</th>
+                    <th>创建时间</th>
+                    <th class="op">操作</th>
+                </tr>
+                </thead>
+                <tbody id="inst_tbody">
+                <tr><td colspan="5" class="empty">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="list-footer">
+            <span class="page-total">共 <strong id="total">0</strong> 条</span>
+        </div>
+    </div>
+</div>
+
+<!-- 二维码弹窗 -->
+<div class="modal-mask" id="qr_modal" style="display:none;">
+    <div class="modal-box qr-box">
+        <div class="modal-head">
+            <span id="qr_title">报名二维码</span>
+            <button type="button" class="modal-close" id="qr_modal_close">&times;</button>
+        </div>
+        <div class="modal-body qr-body">
+            <div class="qr-img-wrap">
+                <div class="qr-loading" id="qr_loading">正在生成二维码…</div>
+                <img id="qr_img" alt="报名二维码">
+            </div>
+            <div class="qr-link-row">
+                <input class="form-input" id="qr_url" type="text" readonly placeholder="报名链接">
+            </div>
+            <p class="qr-tip">把链接或二维码发给考生，扫码填写后数据将归属该机构。</p>
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="btn" id="qr_copy_link">复制链接</button>
+            <button type="button" class="btn btn-primary" id="qr_copy_img">复制二维码</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/admin_institutions.js') }}"></script>
+{% endblock %}

@@ -11,6 +11,9 @@ from dotenv import load_dotenv
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))       # fineArts/app
 PROJECT_ROOT = os.path.dirname(BASE_DIR)                    # fineArts
 DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+# 上传目录：报名电子照片等
+UPLOAD_FOLDER = os.path.join(DATA_DIR, 'uploads')
+SIGNUP_UPLOAD_DIR = os.path.join(UPLOAD_FOLDER, 'signup')
 
 # 自动加载项目根目录的 .env（不存在则使用下方默认值）
 load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
@@ -41,6 +44,11 @@ class Config(object):
     }
 
     MAX_CONTENT_LENGTH = 20 * 1024 * 1024  # 20MB
+
+    # 报名电子照片
+    SIGNUP_UPLOAD_DIR = SIGNUP_UPLOAD_DIR
+    ALLOWED_IMAGE_EXTS = {'jpg', 'jpeg', 'png', 'bmp', 'webp'}
+    MAX_PHOTO_SIZE = 8 * 1024 * 1024  # 8MB
 
     # 默认管理员（首次初始化数据库时创建）
     ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
