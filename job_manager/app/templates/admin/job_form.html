@@ -181,7 +181,7 @@ input.deadline-input:readonly, input.deadline-input[readonly] { background-color
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/gh/sentsin/laydate@v5.0.9/dist/laydate.js"></script>
+<script src="{{ url_for('static', filename='vendor/laydate/laydate.js') }}"></script>
 <script>
 const JOB_ID = {{ job_id|default(0) }};
 const JOB_DATA_URL = '{{ url_for("admin.job_data", id=0) }}';
@@ -250,7 +250,7 @@ function normalizeLevel(json) {
 function loadRegions() {
     var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     var timer = controller ? setTimeout(function() { controller.abort(); }, 4000) : null;
-    return fetch('https://unpkg.com/province-city-china@8/dist/level.json', controller ? { signal: controller.signal } : undefined)
+    return fetch('{{ url_for('static', filename='vendor/province-city/level.json') }}', controller ? { signal: controller.signal } : undefined)
         .then(function(r) { return r.json(); })
         .then(function(json) { REGION_DATA = normalizeLevel(json); })
         .catch(function() { REGION_DATA = REGION_FALLBACK; })

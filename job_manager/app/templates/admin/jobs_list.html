@@ -517,6 +517,21 @@
 </div>
 
 <!-- 岗位详情弹窗 -->
+<style>
+/* 详情内容可能很长：限制弹窗高度，头部/底部固定，中间滚动，避免小屏机器上标题被裁掉 */
+#jobDetailModal .modal-dialog {
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
+}
+#jobDetailModal .modal-content {
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
+}
+#jobDetailModal .modal-body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+</style>
 <div class="modal fade" id="jobDetailModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
@@ -871,7 +886,7 @@ document.getElementById('jobProvince').addEventListener('change', function() {
 });
 
 function loadRegions() {
-  return fetch('https://unpkg.com/province-city-china@8/dist/level.json')
+  return fetch('{{ url_for('static', filename='vendor/province-city/level.json') }}')
     .then(r => r.json())
     .then(json => { REGION_DATA = normalizeLevel(json); })
     .catch(() => { REGION_DATA = REGION_FALLBACK; })
@@ -1450,7 +1465,7 @@ async function showJobDetail(id) {
                 ${rows}
                 <div class="col-12">
                     <small class="text-muted d-block">职位描述</small>
-                    <div style="white-space:pre-wrap; background:#fafafa; border-radius:8px; padding:10px 12px;">${escapeHtml(data.job_detail || '暂无')}</div>
+                    <div style="white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; background:#fafafa; border-radius:8px; padding:10px 12px;">${escapeHtml(data.job_detail || '暂无')}</div>
                 </div>
             </div>`;
         new bootstrap.Modal(document.getElementById('jobDetailModal')).show();
