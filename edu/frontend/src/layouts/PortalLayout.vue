@@ -200,9 +200,9 @@ function handleCommand(command: string) {
       </router-view>
     </main>
 
-    <footer v-if="friendLinks.length && !isExamAttempt" class="portal-footer">
+    <footer v-if="!isExamAttempt" class="portal-footer">
       <div class="portal-footer__inner">
-        <div class="portal-footer__links">
+        <div v-if="friendLinks.length" class="portal-footer__links">
           <span class="portal-footer__links-label">友情链接</span>
           <span class="portal-footer__links-list">
             <el-tooltip
@@ -225,6 +225,13 @@ function handleCommand(command: string) {
               </a>
             </el-tooltip>
           </span>
+        </div>
+        <div class="portal-footer__beian">
+          <a
+            href="https://beian.miit.gov.cn/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >蜀ICP备2026052792号-1</a>
         </div>
       </div>
     </footer>
@@ -530,6 +537,25 @@ function handleCommand(command: string) {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+}
+.portal-footer__links + .portal-footer__beian {
+  margin-top: var(--space-2);
+}
+.portal-footer__beian {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+.portal-footer__beian a {
+  color: var(--text-tertiary);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.portal-footer__beian a:hover {
+  color: var(--brand-600);
+}
+.portal-footer__beian a:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 .footer-link {
   display: inline-flex;

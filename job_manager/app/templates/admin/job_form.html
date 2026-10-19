@@ -248,10 +248,13 @@ function normalizeLevel(json) {
     return map;
 }
 function loadRegions() {
-    return fetch('https://unpkg.com/province-city-china@8/dist/level.json')
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = controller ? setTimeout(function() { controller.abort(); }, 4000) : null;
+    return fetch('https://unpkg.com/province-city-china@8/dist/level.json', controller ? { signal: controller.signal } : undefined)
         .then(function(r) { return r.json(); })
         .then(function(json) { REGION_DATA = normalizeLevel(json); })
-        .catch(function() { REGION_DATA = REGION_FALLBACK; });
+        .catch(function() { REGION_DATA = REGION_FALLBACK; })
+        .then(function() { if (timer) clearTimeout(timer); });
 }
 
 function fillProvince(selected) {
@@ -296,9 +299,43 @@ function fillCity(province, selected) {
     }
 }
 
+// 当前选中的省/市：行政区划数据异步到达后据此重新渲染，避免覆盖已回填的值
+var currentProvince = '';
+var currentCity = '';
+
+function applyRegions() {
+    fillProvince(currentProvince);
+    fillCity(currentProvince, currentCity);
+}
+
 provinceSel.addEventListener('change', function() {
+    currentProvince = this.value;
+    currentCity = '';
     fillCity(this.value, '');
 });
+
+/** 历史“来源”字段形如 base64(简称|||id)，解码出简称用于展示。 */
+function legacySourceName(value) {
+    var raw = String(value || '');
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(raw) || raw.length < 6) return '';
+    try {
+        var text = decodeURIComponent(escape(atob(raw)));
+        var idx = text.indexOf('|||');
+        if (idx > 0) return text.slice(0, idx);
+    } catch (e) {}
+    return '';
+}
+
+var LEGACY_SOURCE_LABELS = { '智': '智联招聘', '国': '国聘' };
+
+/** 下拉项展示文案：来源历史值映射为可读名称，提交时仍保留原值。 */
+function optionLabel(name, value) {
+    if (name === 'source') {
+        var shortName = legacySourceName(value);
+        if (shortName) return LEGACY_SOURCE_LABELS[shortName] || shortName;
+    }
+    return value;
+}
 
 function setField(name, val, fallback) {
     var el = document.querySelector('[name="' + name + '"]');
@@ -306,10 +343,11 @@ function setField(name, val, fallback) {
     if (el.tagName === 'SELECT') {
         var target = String(val == null ? '' : val);
         var has = Array.prototype.some.call(el.options, function(o) { return o.value === target; });
-        // 字典下拉只允许选择字典里的枚举值：历史值若不在字典中，不追加为选项，回落到占位/默认项
-        if (!has && target && !el.dataset.dict) {
+        // 历史值不在当前字典中时追加为选项并选中，保证编辑页能看到原数据、保存时不丢失
+        if (!has && target) {
             var opt = document.createElement('option');
-            opt.value = target; opt.textContent = target;
+            opt.value = target;
+            opt.textContent = optionLabel(name, target);
             el.appendChild(opt);
             has = true;
         }
@@ -344,9 +382,9 @@ function populateJob(d) {
     setField('address', d.address);
     setField('job_detail', d.job_detail);
 
-    var pv = d.province || '';
-    fillProvince(pv);
-    fillCity(pv, d.city || '');
+    currentProvince = d.province || '';
+    currentCity = d.city || '';
+    applyRegions();
 
     if (d.deadline) document.getElementById('deadlinePicker').value = d.deadline;
 }
@@ -395,11 +433,15 @@ function loadDictOptions() {
         });
 }
 
-Promise.all([loadRegions(), loadDictOptions()]).then(function() {
-    fillProvince('');
-    fillCity('', '');
-    if (JOB_ID > 0) loadJobData();
+// 字典与岗位数据不依赖外部行政区划接口，避免 unpkg 不可达时表单一直空白
+loadDictOptions().then(function() {
+    if (JOB_ID > 0) {
+        loadJobData();
+    } else {
+        applyRegions();
+    }
 });
+loadRegions().then(applyRegions);
 
 // AJAX 提交
 document.getElementById('jobForm').addEventListener('submit', function(e) {
