@@ -5,6 +5,17 @@
     var tbody = document.getElementById('inst_tbody');
     var totalEl = document.getElementById('total');
     var nameInput = document.getElementById('new_name');
+    var expiresInput = document.getElementById('new_expires');
+
+    // 默认有效期 6 个月
+    function defaultExpiry() {
+        var d = new Date();
+        d.setMonth(d.getMonth() + 6);
+        var m = ('0' + (d.getMonth() + 1)).slice(-2);
+        var day = ('0' + d.getDate()).slice(-2);
+        return d.getFullYear() + '-' + m + '-' + day;
+    }
+    if (expiresInput) expiresInput.value = defaultExpiry();
 
     function escapeText(value) {
         return String(value === null || value === undefined ? '' : value)
@@ -33,7 +44,7 @@
                 if (!list.length) {
                     var tr = document.createElement('tr');
                     var cell = document.createElement('td');
-                    cell.colSpan = 5;
+                    cell.colSpan = 8;
                     cell.className = 'empty';
                     cell.textContent = '暂无机构，请在上方输入名称生成报名链接';
                     tr.appendChild(cell);
@@ -43,6 +54,23 @@
                 list.forEach(function (item) {
                     var row = document.createElement('tr');
                     row.appendChild(td(item.name));
+                    row.appendChild(td(item.account));
+                    row.appendChild(td(item.password));
+
+                    var expTd = document.createElement('td');
+                    if (item.expires_at) {
+                        expTd.textContent = item.expires_at;
+                        if (item.expired) {
+                            var warn = document.createElement('span');
+                            warn.className = 'tag tag-fail';
+                            warn.textContent = '已过期';
+                            warn.style.marginLeft = '6px';
+                            expTd.appendChild(warn);
+                        }
+                    } else {
+                        expTd.textContent = '长期';
+                    }
+                    row.appendChild(expTd);
 
                     var linkTd = document.createElement('td');
                     var a = document.createElement('a');
@@ -60,6 +88,7 @@
 
                     var op = document.createElement('td');
                     op.className = 'op nowrap';
+                    op.appendChild(button('编辑', function () { openEdit(item); }));
                     op.appendChild(button('链接二维码', function () { openQr(item); }));
                     op.appendChild(button('复制链接', function () { copyText(item.link); }));
                     op.appendChild(button('删除', function () { doDelete(item.id); }, true));
@@ -108,10 +137,14 @@
     var qrUrl = document.getElementById('qr_url');
     var qrLoading = document.getElementById('qr_loading');
     var qrTitle = document.getElementById('qr_title');
+    var qrAccount = document.getElementById('qr_account');
+    var qrPassword = document.getElementById('qr_password');
     var currentImage = '';
 
     function openQr(item) {
         if (qrTitle) qrTitle.textContent = item.name + ' · 报名二维码';
+        if (qrAccount) qrAccount.textContent = item.account || '—';
+        if (qrPassword) qrPassword.textContent = item.password || '—';
         currentImage = '';
         if (qrImg) qrImg.removeAttribute('src');
         if (qrUrl) qrUrl.value = item.link;
@@ -178,6 +211,47 @@
         document.body.appendChild(a); a.click(); a.remove();
     }
 
+    /* ---------- 编辑机构 ---------- */
+    var editModal = document.getElementById('edit_modal');
+    var editForm = document.getElementById('edit_form');
+    var editId = null;
+
+    function openEdit(item) {
+        editId = item.id;
+        if (!editForm) return;
+        editForm.elements['name'].value = item.name || '';
+        editForm.elements['expires_at'].value = item.expires_at || '';
+        editForm.elements['account'].value = item.account || '—';
+        editForm.elements['password'].value = item.password || '—';
+        if (editModal) editModal.style.display = 'flex';
+    }
+    function closeEdit() { if (editModal) editModal.style.display = 'none'; editId = null; }
+
+    function saveEdit() {
+        if (!editForm || editId === null) return;
+        var name = editForm.elements['name'].value.trim();
+        if (!name) { alert('请填写机构名称'); return; }
+        fetch('/admin/api/institution/' + editId, {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, expires_at: editForm.elements['expires_at'].value })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res.success) { closeEdit(); render(); }
+                else { alert(res.message || '保存失败'); }
+            })
+            .catch(function () { alert('保存失败，请重试'); });
+    }
+
+    var eClose = document.getElementById('edit_modal_close');
+    var eCancel = document.getElementById('edit_cancel');
+    var eSave = document.getElementById('edit_save');
+    if (eClose) eClose.addEventListener('click', closeEdit);
+    if (eCancel) eCancel.addEventListener('click', closeEdit);
+    if (eSave) eSave.addEventListener('click', saveEdit);
+    if (editModal) editModal.addEventListener('click', function (e) { if (e.target === editModal) closeEdit(); });
+
     /* ---------- 新增 ---------- */
     var btnCreate = document.getElementById('btn_create');
     if (btnCreate) btnCreate.addEventListener('click', function () {
@@ -187,13 +261,17 @@
         fetch('/admin/api/institution', {
             method: 'POST', credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: name })
+            body: JSON.stringify({
+                name: name,
+                expires_at: expiresInput ? expiresInput.value : ''
+            })
         })
             .then(function (r) { return r.json(); })
             .then(function (res) {
                 btnCreate.disabled = false;
                 if (res.success) {
                     if (nameInput) nameInput.value = '';
+                    if (expiresInput) expiresInput.value = defaultExpiry();
                     render();
                     openQr(res.data);
                 } else {

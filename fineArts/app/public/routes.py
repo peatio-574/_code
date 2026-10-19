@@ -26,6 +26,9 @@ def signup():
         institution = None
         if code:
             institution = Institution.query.filter_by(code=code, is_deleted=False).first()
+            if institution and institution.is_expired():
+                return render_template('public/signup.html', institution=None,
+                                       institution_code='', expired_message='该报名链接已过期')
         return render_template('public/signup.html', institution=institution,
                                institution_code=code if institution else '')
 
@@ -36,13 +39,15 @@ def signup():
     nationality = (payload.get('nationality') or '中国').strip()
     id_card = (payload.get('id_card') or '').strip().upper()
     subject = (payload.get('subject') or '').strip()
-    level = (payload.get('level') or '').strip()
+    level = (payload.get('level') or '').strip().replace('级', '')
 
     # 所属机构：以链接中的机构编码为准（防止前端篡改），无链接则为空
     code = (payload.get('institution_code') or '').strip()
     institution = None
     if code:
         institution = Institution.query.filter_by(code=code, is_deleted=False).first()
+        if institution and institution.is_expired():
+            return fail('该报名链接已过期，无法提交')
 
     errors = []
     if not name:

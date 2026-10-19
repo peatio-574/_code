@@ -15,12 +15,17 @@ class Admin(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
-    # 角色：admin=全部权限；user=仅可查看报名管理、机构管理
+    # 密码明文（仅用于超管在「账号管理」查看；实际登录校验仍用密码哈希）
+    password_plain = db.Column(db.String(100), default='')
+    # 角色：admin=全部权限；user=报名/机构管理；institution=仅本机构报名
     role = db.Column(db.String(20), default='admin', nullable=False)
+    # 机构账号绑定的机构ID（role=institution 时生效）
+    institution_id = db.Column(db.Integer, default=None)
     created_at = db.Column(db.DateTime, default=datetime.now)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
+        self.password_plain = password
 
     def verify_password(self, password):
         return check_password_hash(self.password_hash, password)
@@ -127,14 +132,21 @@ class Institution(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False, index=True)     # 机构名称
     code = db.Column(db.String(32), unique=True, index=True)         # 链接唯一编码
+    # 报名链接有效期（为空表示长期有效）
+    expires_at = db.Column(db.DateTime, default=None, nullable=True)
     is_deleted = db.Column(db.Boolean, default=False, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.now)
+
+    def is_expired(self):
+        return bool(self.expires_at and datetime.now() > self.expires_at)
 
     def to_dict(self):
         return {
             'id': self.id,
             'name': self.name,
             'code': self.code,
+            'expires_at': self.expires_at.strftime('%Y-%m-%d') if self.expires_at else '',
+            'expired': self.is_expired(),
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else '',
         }
 

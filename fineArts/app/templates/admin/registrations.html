@@ -40,15 +40,14 @@
                 <thead class="sticky-thead">
                 <tr>
                     <th class="check"><input type="checkbox" id="check_all" title="全选"></th>
-                    <th>所属机构</th>
-                    <th>姓名</th>
-                    <th>性别</th>
-                    <th>民族</th>
-                    <th>国籍</th>
-                    <th>身份证号</th>
-                    <th>报考科目</th>
-                    <th>报考级别</th>
-                    <th>报名时间</th>
+                    <th class="sortable" data-sort="name">姓名<span class="sort-ind"></span></th>
+                    <th class="sortable" data-sort="id_card">身份证号<span class="sort-ind"></span></th>
+                    <th class="sortable" data-sort="gender">性别<span class="sort-ind"></span></th>
+                    <th class="sortable" data-sort="subject">科目级别<span class="sort-ind"></span></th>
+                    <th class="sortable" data-sort="ethnicity">民族<span class="sort-ind"></span></th>
+                    <th class="sortable" data-sort="nationality">国籍<span class="sort-ind"></span></th>
+                    <th class="sortable" data-sort="institution">所属机构<span class="sort-ind"></span></th>
+                    <th class="sortable" data-sort="created_at">报名时间<span class="sort-ind"></span></th>
                     <th class="op">操作</th>
                 </tr>
                 </thead>
@@ -91,8 +90,7 @@
                 <li><span class="k">民族</span><span class="v" id="d_ethnicity"></span></li>
                 <li><span class="k">国籍</span><span class="v" id="d_nationality"></span></li>
                 <li><span class="k">身份证号</span><span class="v" id="d_id_card"></span></li>
-                <li><span class="k">报考科目</span><span class="v" id="d_subject"></span></li>
-                <li><span class="k">报考级别</span><span class="v" id="d_level"></span></li>
+                <li><span class="k">科目级别</span><span class="v" id="d_subject_level"></span></li>
                 <li><span class="k">报名时间</span><span class="v" id="d_created_at"></span></li>
             </ul>
         </div>
@@ -127,10 +125,8 @@
                         <input class="form-input" name="nationality"></div>
                     <div class="form-field"><label>身份证号</label>
                         <input class="form-input" name="id_card" maxlength="18"></div>
-                    <div class="form-field"><label>报考科目</label>
-                        <input class="form-input" name="subject"></div>
-                    <div class="form-field"><label>报考级别</label>
-                        <input class="form-input" name="level"></div>
+                    <div class="form-field"><label>科目级别</label>
+                        <input class="form-input" name="subject_level"></div>
                 </div>
             </div>
             <div class="modal-foot">

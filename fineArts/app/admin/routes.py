@@ -4,7 +4,7 @@ import base64
 import io
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import (current_app, flash, redirect, render_template, request,
                    send_file, url_for)
@@ -26,8 +26,8 @@ FIELDS = [c[1] for c in COLUMNS]
 # 登录 / 退出
 # --------------------------------------------------------------------------- #
 def _home_endpoint(user):
-    """按角色返回登录后的首页：受限账号进入报名管理。"""
-    if getattr(user, 'role', 'admin') == 'user':
+    """按角色返回登录后的首页：非超管进入报名管理。"""
+    if (getattr(user, 'role', 'admin') or 'admin') != 'admin':
         return url_for('admin.registrations')
     return url_for('admin.certificates')
 
@@ -49,14 +49,40 @@ def login():
 
 @admin_bp.before_request
 def _restrict_limited_account():
-    """受限账号（role=user）仅可访问报名管理、机构管理相关页面与接口。"""
+    """按角色限制后台访问权限。
+
+    - admin：全部页面
+    - user：报名管理、机构管理、修改密码
+    - institution：仅本机构报名管理
+    """
     if not current_user.is_authenticated:
         return None
-    if getattr(current_user, 'role', 'admin') != 'user':
+    role = getattr(current_user, 'role', 'admin') or 'admin'
+    if role == 'admin':
         return None
 
     path = request.path
-    allowed_prefixes = (
+
+    if role == 'institution':
+        allowed = (
+            '/admin/registrations',
+            '/admin/registration/',
+            '/admin/api/registrations',
+            '/admin/api/registration/',
+            '/admin/password',
+            '/admin/logout',
+        )
+        if path.startswith(allowed):
+            return None
+        if path in ('/admin', '/admin/'):
+            return redirect(url_for('admin.registrations'))
+        if path.startswith('/admin/api/'):
+            return fail('无权访问', status=403)
+        flash('无权访问该页面', 'error')
+        return redirect(url_for('admin.registrations'))
+
+    # role == 'user'：报名管理、机构管理、账号管理（不含证书管理）
+    allowed = (
         '/admin/registrations',
         '/admin/registration/',
         '/admin/api/registrations',
@@ -64,10 +90,13 @@ def _restrict_limited_account():
         '/admin/institutions',
         '/admin/api/institution',
         '/admin/institution/',
+        '/admin/accounts',
+        '/admin/api/accounts',
+        '/admin/api/account',
         '/admin/password',
         '/admin/logout',
     )
-    if path.startswith(allowed_prefixes):
+    if path.startswith(allowed):
         return None
     if path in ('/admin', '/admin/'):
         return redirect(url_for('admin.registrations'))
@@ -75,6 +104,26 @@ def _restrict_limited_account():
         return fail('无权访问', status=403)
     flash('无权访问该页面', 'error')
     return redirect(url_for('admin.registrations'))
+
+
+def _admin_only():
+    """仅超管可访问。"""
+    return (getattr(current_user, 'role', 'admin') or 'admin') == 'admin'
+
+
+def _reg_scope_query():
+    """报名数据范围：机构账号仅能看到本机构数据。"""
+    query = Registration.query.filter(Registration.is_deleted.is_(False))
+    if (getattr(current_user, 'role', '') or '') == 'institution':
+        query = query.filter(Registration.institution_id == current_user.institution_id)
+    return query
+
+
+def _can_access_reg(reg):
+    """判断当前账号是否有权访问该条报名。"""
+    if (getattr(current_user, 'role', '') or '') == 'institution':
+        return reg.institution_id == current_user.institution_id
+    return True
 
 
 @admin_bp.route('/logout')
@@ -410,10 +459,13 @@ def certificates_export():
 @login_required
 def registrations():
     """报名管理页面（固定 HTML，数据由 /admin/api/registrations 填充）"""
-    names = [row[0] for row in db.session.query(Registration.institution)
-             .filter(Registration.institution.isnot(None), Registration.institution != '',
-                     Registration.is_deleted.is_(False))
-             .distinct().all()]
+    if (getattr(current_user, 'role', '') or '') == 'institution':
+        names = []
+    else:
+        names = [row[0] for row in db.session.query(Registration.institution)
+                 .filter(Registration.institution.isnot(None), Registration.institution != '',
+                         Registration.is_deleted.is_(False))
+                 .distinct().all()]
     return render_template('admin/registrations.html', institutions=sorted(names))
 
 
@@ -432,7 +484,7 @@ def api_registrations():
     keyword = (request.args.get('q') or '').strip()
     subject = (request.args.get('subject') or '').strip()
 
-    query = Registration.query.filter(Registration.is_deleted.is_(False))
+    query = _reg_scope_query()
     if keyword:
         like = '%%%s%%' % keyword
         query = query.filter(db.or_(Registration.name.like(like),
@@ -444,7 +496,35 @@ def api_registrations():
     if institution:
         query = query.filter(Registration.institution == institution)
 
-    pagination = query.order_by(Registration.id.desc()).paginate(
+    # 排序：所有字段支持 asc/desc
+    sortable = {
+        'id': Registration.id,
+        'institution': Registration.institution,
+        'name': Registration.name,
+        'gender': Registration.gender,
+        'ethnicity': Registration.ethnicity,
+        'nationality': Registration.nationality,
+        'id_card': Registration.id_card,
+        # 科目级别：按科目、级别依次排序
+        'subject': Registration.subject,
+        'level': Registration.level,
+        'subject_level': Registration.subject,
+        'created_at': Registration.created_at,
+        'updated_at': Registration.updated_at,
+    }
+    sort_field = (request.args.get('sort') or '').strip()
+    sort_order = (request.args.get('order') or 'desc').strip().lower()
+    column = sortable.get(sort_field)
+    if column is not None:
+        order_exprs = [column.asc() if sort_order == 'asc' else column.desc()]
+        if sort_field in ('subject', 'subject_level'):
+            order_exprs.append(
+                Registration.level.asc() if sort_order == 'asc' else Registration.level.desc())
+        query = query.order_by(*order_exprs)
+    else:
+        query = query.order_by(Registration.id.desc())
+
+    pagination = query.paginate(
         page=page, per_page=per_page, error_out=False)
     data = [_reg_serialize(r) for r in pagination.items]
     return ok(data, pagination=pagination_dict(pagination))
@@ -456,6 +536,8 @@ def api_registration_get(rid):
     if not current_user.is_authenticated:
         return fail('未登录或登录已过期', status=401)
     reg = Registration.query.get_or_404(rid)
+    if not _can_access_reg(reg):
+        return fail('无权访问该报名', status=403)
     return ok(_reg_serialize(reg))
 
 
@@ -465,6 +547,8 @@ def api_registration_update(rid):
     if not current_user.is_authenticated:
         return fail('未登录或登录已过期', status=401)
     reg = Registration.query.get_or_404(rid)
+    if not _can_access_reg(reg):
+        return fail('无权访问该报名', status=403)
     payload = request.form
 
     name = (payload.get('name') or '').strip()
@@ -480,8 +564,20 @@ def api_registration_update(rid):
     reg.ethnicity = (payload.get('ethnicity') or '').strip()
     reg.nationality = (payload.get('nationality') or '').strip()
     reg.id_card = id_card
-    reg.subject = (payload.get('subject') or '').strip()
-    reg.level = (payload.get('level') or '').strip()
+    # 后台「科目级别」合并输入：拆分科目与级别（未传时保留原值）
+    if 'subject_level' in payload or 'subject' in payload:
+        subject_level = (payload.get('subject_level') or '').strip()
+        if subject_level:
+            m = re.match(r'^(.*?)[\s\-_/]*([0-9]{1,2})\s*级?$', subject_level)
+            if m and m.group(1).strip():
+                reg.subject = m.group(1).strip()
+                reg.level = m.group(2).strip()
+            else:
+                reg.subject = subject_level
+                reg.level = ''
+        else:
+            reg.subject = (payload.get('subject') or '').strip()
+            reg.level = (payload.get('level') or '').strip().replace('级', '')
 
     db.session.commit()
     return ok(_reg_serialize(reg), message='保存成功')
@@ -491,6 +587,9 @@ def api_registration_update(rid):
 @login_required
 def registration_delete(rid):
     reg = Registration.query.get_or_404(rid)
+    if not _can_access_reg(reg):
+        flash('无权操作该报名', 'error')
+        return redirect(url_for('admin.registrations'))
     reg.is_deleted = True
     reg.deleted_at = datetime.now()
     db.session.commit()
@@ -514,8 +613,8 @@ def registrations_batch_delete():
     if not ids:
         return fail('请选择要删除的报名')
 
-    regs = Registration.query.filter(Registration.id.in_(ids),
-                                     Registration.is_deleted.is_(False)).all()
+    query = _reg_scope_query().filter(Registration.id.in_(ids))
+    regs = query.all()
     now = datetime.now()
     for reg in regs:
         reg.is_deleted = True
@@ -542,7 +641,7 @@ def registrations_export():
         except (TypeError, ValueError):
             continue
 
-    query = Registration.query.filter(Registration.is_deleted.is_(False))
+    query = _reg_scope_query()
     if ids:
         query = query.filter(Registration.id.in_(ids))
     regs = query.order_by(Registration.id.desc()).all()
@@ -596,6 +695,9 @@ def _inst_serialize(inst):
     data['link'] = _signup_link(inst.code)
     data['count'] = Registration.query.filter(
         Registration.institution_id == inst.id, Registration.is_deleted.is_(False)).count()
+    account = Admin.query.filter_by(institution_id=inst.id, role='institution').first()
+    data['account'] = account.username if account else ''
+    data['password'] = (account.password_plain or '') if account else ''
     return data
 
 
@@ -619,13 +721,33 @@ def api_institutions():
         query = query.filter(Institution.name.like('%%%s%%' % keyword))
     pagination = query.order_by(Institution.id.desc()).paginate(
         page=page, per_page=per_page, error_out=False)
+    changed = False
+    for inst in pagination.items:
+        if not Admin.query.filter_by(institution_id=inst.id, role='institution').first():
+            account = Admin(username=inst.code, role='institution', institution_id=inst.id)
+            account.set_password('user123')
+            db.session.add(account)
+            changed = True
+    if changed:
+        db.session.commit()
     data = [_inst_serialize(i) for i in pagination.items]
     return ok(data, pagination=pagination_dict(pagination))
 
 
+def _parse_expiry(value):
+    """解析有效期（YYYY-MM-DD），空值返回 (None)；格式非法抛 ValueError。"""
+    value = (value or '').strip()
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value[:10], '%Y-%m-%d')
+    except ValueError:
+        raise ValueError('有效期格式应为 YYYY-MM-DD')
+
+
 @admin_bp.route('/api/institution', methods=['POST'])
 def api_institution_create():
-    """新增机构并生成报名链接"""
+    """新增机构并生成报名链接（含有效期，默认 6 个月）"""
     if not current_user.is_authenticated:
         return fail('未登录或登录已过期', status=401)
     payload = request.get_json(silent=True) or request.form
@@ -637,14 +759,56 @@ def api_institution_create():
     if Institution.query.filter(Institution.name == name, Institution.is_deleted.is_(False)).first():
         return fail('该机构已存在')
 
+    try:
+        expires_at = _parse_expiry(payload.get('expires_at'))
+    except ValueError as exc:
+        return fail(str(exc))
+    if expires_at is None:
+        expires_at = datetime.now() + timedelta(days=183)  # 默认 6 个月
+
     import secrets
     code = secrets.token_urlsafe(6).replace('-', 'A').replace('_', 'B')[:10]
     while Institution.query.filter_by(code=code).first():
         code = secrets.token_urlsafe(6).replace('-', 'A').replace('_', 'B')[:10]
-    inst = Institution(name=name, code=code)
+    inst = Institution(name=name, code=code, expires_at=expires_at)
     db.session.add(inst)
+    db.session.flush()
+
+    # 自动为该机构生成登录账号：账号即机构编码，默认密码 user123
+    account = Admin(username=code, role='institution', institution_id=inst.id)
+    account.set_password('user123')
+    db.session.add(account)
     db.session.commit()
-    return ok(_inst_serialize(inst), message='机构已创建')
+    return ok(_inst_serialize(inst), message='机构已创建，并已生成登录账号')
+
+
+@admin_bp.route('/api/institution/<int:iid>', methods=['POST'])
+def api_institution_update(iid):
+    """修改机构（名称、有效期）"""
+    if not current_user.is_authenticated:
+        return fail('未登录或登录已过期', status=401)
+    inst = Institution.query.get_or_404(iid)
+    payload = request.get_json(silent=True) or request.form
+
+    name = (payload.get('name') or '').strip()
+    if name:
+        exists = Institution.query.filter(
+            Institution.name == name, Institution.is_deleted.is_(False), Institution.id != iid).first()
+        if exists:
+            return fail('该机构名称已存在')
+        inst.name = name
+        # 同步更新报名记录中的机构名称
+        Registration.query.filter(Registration.institution_id == inst.id).update(
+            {Registration.institution: name}, synchronize_session=False)
+
+    if 'expires_at' in payload:
+        try:
+            inst.expires_at = _parse_expiry(payload.get('expires_at'))
+        except ValueError as exc:
+            return fail(str(exc))
+
+    db.session.commit()
+    return ok(_inst_serialize(inst), message='保存成功')
 
 
 @admin_bp.route('/institution/<int:iid>/delete', methods=['POST'])
@@ -670,3 +834,159 @@ def api_institution_qrcode(iid):
     buf = generate_qr_png(url, logo_path=logo_path, caption=caption)
     image = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode('ascii')
     return ok({'id': inst.id, 'name': inst.name, 'url': url, 'caption': caption, 'image': image})
+
+
+# --------------------------------------------------------------------------- #
+# 账号管理（仅超管可见）
+# --------------------------------------------------------------------------- #
+def _account_serialize(a):
+    inst = None
+    if a.institution_id:
+        obj = Institution.query.get(a.institution_id)
+        inst = obj.name if obj else ''
+    return {
+        'id': a.id,
+        'username': a.username,
+        'password': a.password_plain or '',
+        'role': a.role or 'admin',
+        'role_text': {'admin': '超级管理员', 'user': '运营账号', 'institution': '机构账号'}.get(
+            a.role or 'admin', a.role),
+        'institution': inst or '',
+        'created_at': a.created_at.strftime('%Y-%m-%d %H:%M:%S') if a.created_at else '',
+    }
+
+
+@admin_bp.route('/accounts', methods=['GET'])
+@login_required
+def accounts():
+    """账号管理页面（超管、运营账号可访问）"""
+    role = getattr(current_user, 'role', 'admin') or 'admin'
+    if role not in ('admin', 'user'):
+        flash('无权访问该页面', 'error')
+        return redirect(url_for('admin.registrations'))
+    return render_template('admin/accounts.html')
+
+
+@admin_bp.route('/api/accounts')
+def api_accounts():
+    if not current_user.is_authenticated:
+        return fail('未登录或登录已过期', status=401)
+    role = getattr(current_user, 'role', 'admin') or 'admin'
+    if role not in ('admin', 'user'):
+        return fail('无权访问', status=403)
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', current_app.config['PER_PAGE'], type=int)
+    keyword = (request.args.get('q') or '').strip()
+    institution_id = request.args.get('institution_id', type=int)
+    no_institution = (request.args.get('no_institution') or '') == '1'
+    query = Admin.query
+    # 运营账号看不到超级管理员账号
+    if role != 'admin':
+        query = query.filter(Admin.role != 'admin')
+    if keyword:
+        query = query.filter(Admin.username.like('%%%s%%' % keyword))
+    if no_institution:
+        query = query.filter(Admin.institution_id.is_(None))
+    elif institution_id:
+        query = query.filter(Admin.institution_id == institution_id)
+    pagination = query.order_by(Admin.id.desc()).paginate(
+        page=page, per_page=per_page, error_out=False)
+    data = [_account_serialize(a) for a in pagination.items]
+    return ok(data, pagination=pagination_dict(pagination))
+
+
+@admin_bp.route('/api/account-institutions')
+def api_account_institutions():
+    """账号筛选用的机构下拉列表。"""
+    if not current_user.is_authenticated:
+        return fail('未登录或登录已过期', status=401)
+    role = getattr(current_user, 'role', 'admin') or 'admin'
+    if role not in ('admin', 'user'):
+        return fail('无权访问', status=403)
+    rows = db.session.query(Institution.id, Institution.name).filter(
+        Institution.is_deleted.is_(False)).order_by(Institution.name).all()
+    return ok([{'id': r[0], 'name': r[1]} for r in rows])
+
+
+def _account_access_denied(account):
+    """运营账号不得操作超级管理员账号。"""
+    role = getattr(current_user, 'role', 'admin') or 'admin'
+    return role != 'admin' and (account.role or '') == 'admin'
+
+
+@admin_bp.route('/api/account/<int:aid>', methods=['GET'])
+def api_account_get(aid):
+    if not current_user.is_authenticated:
+        return fail('未登录或登录已过期', status=401)
+    role = getattr(current_user, 'role', 'admin') or 'admin'
+    if role not in ('admin', 'user'):
+        return fail('无权访问', status=403)
+    account = Admin.query.get_or_404(aid)
+    if _account_access_denied(account):
+        return fail('无权访问', status=403)
+    return ok(_account_serialize(account))
+
+
+@admin_bp.route('/api/account/<int:aid>', methods=['POST'])
+def api_account_update(aid):
+    """编辑账号（账号名、密码、角色）"""
+    if not current_user.is_authenticated:
+        return fail('未登录或登录已过期', status=401)
+    role = getattr(current_user, 'role', 'admin') or 'admin'
+    if role not in ('admin', 'user'):
+        return fail('无权访问', status=403)
+    account = Admin.query.get_or_404(aid)
+    if _account_access_denied(account):
+        return fail('无权访问', status=403)
+    payload = request.get_json(silent=True) or request.form
+
+    username = (payload.get('username') or '').strip()
+    if username:
+        if len(username) > 50:
+            return fail('账号过长')
+        exists = Admin.query.filter(Admin.username == username, Admin.id != aid).first()
+        if exists:
+            return fail('该账号已存在')
+        account.username = username
+
+    password = (payload.get('password') or '').strip()
+    if password:
+        if len(password) < 6:
+            return fail('密码至少 6 位')
+        account.set_password(password)
+
+    new_role = (payload.get('role') or '').strip()
+    if new_role in ('admin', 'user', 'institution'):
+        # 运营账号不能提升他人为超管
+        if role != 'admin' and new_role == 'admin':
+            return fail('无权设置超级管理员角色')
+        if account.role == 'admin' and new_role != 'admin':
+            remaining = Admin.query.filter(Admin.role == 'admin', Admin.id != account.id).count()
+            if remaining == 0:
+                return fail('至少需要保留一个超级管理员')
+        account.role = new_role
+
+    db.session.commit()
+    return ok(_account_serialize(account), message='保存成功')
+
+
+@admin_bp.route('/api/account/<int:aid>/delete', methods=['POST'])
+def api_account_delete(aid):
+    """删除账号（不可删除自己、不可删除最后一个超管）"""
+    if not current_user.is_authenticated:
+        return fail('未登录或登录已过期', status=401)
+    role = getattr(current_user, 'role', 'admin') or 'admin'
+    if role not in ('admin', 'user'):
+        return fail('无权访问', status=403)
+    account = Admin.query.get_or_404(aid)
+    if _account_access_denied(account):
+        return fail('无权访问', status=403)
+    if account.id == current_user.id:
+        return fail('不能删除当前登录账号')
+    if account.role == 'admin':
+        remaining = Admin.query.filter(Admin.role == 'admin', Admin.id != account.id).count()
+        if remaining == 0:
+            return fail('至少需要保留一个超级管理员')
+    db.session.delete(account)
+    db.session.commit()
+    return ok({'deleted': aid}, message='已删除')

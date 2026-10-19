@@ -110,10 +110,22 @@ def _ensure_columns():
                         conn.execute(text(stmt))
         if 'admin' in tables:
             cols = [c['name'] for c in insp.get_columns('admin')]
+            stmts = []
             if 'role' not in cols:
+                stmts.append("ALTER TABLE admin ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'admin'")
+            if 'password_plain' not in cols:
+                stmts.append("ALTER TABLE admin ADD COLUMN password_plain VARCHAR(100) DEFAULT ''")
+            if 'institution_id' not in cols:
+                stmts.append("ALTER TABLE admin ADD COLUMN institution_id INT NULL")
+            if stmts:
                 with db.engine.begin() as conn:
-                    conn.execute(text(
-                        "ALTER TABLE admin ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'admin'"))
+                    for stmt in stmts:
+                        conn.execute(text(stmt))
+        if 'institution' in tables:
+            cols = [c['name'] for c in insp.get_columns('institution')]
+            if 'expires_at' not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE institution ADD COLUMN expires_at DATETIME NULL"))
     except Exception as exc:
         print('[WARN] 补充字段失败：%s' % exc)
 
@@ -122,12 +134,15 @@ def _ensure_default_accounts(app):
     """幂等确保默认账号存在：主管理员 + 受限账号 user。"""
     admin = Admin.query.filter_by(username=app.config['ADMIN_USERNAME']).first()
     if not admin:
-        admin = Admin(username=app.config['ADMIN_USERNAME'])
+        admin = Admin(username=app.config['ADMIN_USERNAME'], role='admin')
         admin.set_password(app.config['ADMIN_PASSWORD'])
         db.session.add(admin)
     elif not admin.role:
         admin.role = 'admin'
-    # 受限账号：仅可查看报名管理、机构管理
+    # 历史账号若未记录明文，且仍是配置里的默认密码，则补记明文
+    if not admin.password_plain and admin.verify_password(app.config['ADMIN_PASSWORD']):
+        admin.password_plain = app.config['ADMIN_PASSWORD']
+    # 受限账号：报名管理 + 修改密码
     limited = Admin.query.filter_by(username='user').first()
     if not limited:
         limited = Admin(username='user', role='user')
@@ -135,6 +150,8 @@ def _ensure_default_accounts(app):
         db.session.add(limited)
     elif not limited.role:
         limited.role = 'user'
+    if not limited.password_plain and limited.verify_password('user1234'):
+        limited.password_plain = 'user1234'
     db.session.commit()
 
 

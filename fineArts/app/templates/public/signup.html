@@ -49,6 +49,10 @@
         }
         .field input:focus, .field select:focus { border-color: #d8010f; outline: none; }
         .note { font-size: 12px; color: #909399; line-height: 1.8; padding: 14px 16px; }
+        .signup-expired {
+            margin: 40px 16px; padding: 40px 20px; background: #fff; border-radius: 8px;
+            text-align: center; color: #f56c6c; font-size: 16px; line-height: 1.8;
+        }
         .note b { color: #f56c6c; }
         .submit-wrap { padding: 8px 16px calc(28px + env(safe-area-inset-bottom)); }
         .btn-submit {
@@ -91,6 +95,9 @@
         {% if institution %}<p class="signup-org">所属机构：{{ institution.name }}</p>{% endif %}
     </div>
 
+    {% if expired_message %}
+    <div class="signup-expired">{{ expired_message }}</div>
+    {% else %}
     <form id="signupForm" class="signup-form" onsubmit="return false;">
         <input type="hidden" name="institution_code" value="{{ institution_code }}">
         <div class="field">
@@ -125,16 +132,16 @@
             <div class="label">报考级别<em>*</em></div>
             <select name="level">
                 <option value="">请选择级别</option>
-                <option value="1级">1级</option>
-                <option value="2级">2级</option>
-                <option value="3级">3级</option>
-                <option value="4级">4级</option>
-                <option value="5级">5级</option>
-                <option value="6级">6级</option>
-                <option value="7级">7级</option>
-                <option value="8级">8级</option>
-                <option value="9级">9级</option>
-                <option value="10级">10级</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+                <option value="10">10</option>
             </select>
         </div>
     </form>
@@ -146,6 +153,7 @@
     <div class="submit-wrap">
         <button type="button" class="btn-submit" id="submitBtn">提交报名</button>
     </div>
+    {% endif %}
 </div>
 
 <div class="toast" id="toast"></div>
@@ -159,6 +167,7 @@
 <script>
 (function () {
     var form = document.getElementById('signupForm');
+    if (!form) { return; }
     var submitBtn = document.getElementById('submitBtn');
     var toast = document.getElementById('toast');
     var resultMask = document.getElementById('resultMask');

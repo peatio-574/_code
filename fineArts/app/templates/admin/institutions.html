@@ -12,6 +12,10 @@
                     <label class="form-label">机构名称：</label>
                     <input class="form-input" type="text" id="new_name" placeholder="输入机构名称，如：XX美术培训中心">
                 </div>
+                <div class="filter-field">
+                    <label class="form-label">有效期至：</label>
+                    <input class="form-input" type="date" id="new_expires">
+                </div>
                 <div class="filter-actions">
                     <button type="button" class="btn btn-primary" id="btn_create">生成报名链接</button>
                 </div>
@@ -25,6 +29,9 @@
                 <thead class="sticky-thead">
                 <tr>
                     <th>机构名称</th>
+                    <th>登录账号</th>
+                    <th>登录密码</th>
+                    <th>有效期至</th>
                     <th>报名链接</th>
                     <th>已报名</th>
                     <th>创建时间</th>
@@ -32,7 +39,7 @@
                 </tr>
                 </thead>
                 <tbody id="inst_tbody">
-                <tr><td colspan="5" class="empty">加载中...</td></tr>
+                <tr><td colspan="8" class="empty">加载中...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -58,12 +65,49 @@
             <div class="qr-link-row">
                 <input class="form-input" id="qr_url" type="text" readonly placeholder="报名链接">
             </div>
-            <p class="qr-tip">把链接或二维码发给考生，扫码填写后数据将归属该机构。</p>
+            <div class="qr-account">
+                <div class="qr-account-row">
+                    <span class="k">登录账号</span>
+                    <span class="v" id="qr_account"></span>
+                </div>
+                <div class="qr-account-row">
+                    <span class="k">登录密码</span>
+                    <span class="v" id="qr_password"></span>
+                </div>
+            </div>
+            <p class="qr-tip">把链接或二维码发给考生，扫码填写后数据将归属该机构。<br>机构可用上面的账号登录后台查看本机构报名数据。</p>
         </div>
         <div class="modal-foot">
             <button type="button" class="btn" id="qr_copy_link">复制链接</button>
             <button type="button" class="btn btn-primary" id="qr_copy_img">复制二维码</button>
         </div>
+    </div>
+</div>
+
+<!-- 编辑机构弹窗 -->
+<div class="modal-mask" id="edit_modal" style="display:none;">
+    <div class="modal-box edit-box">
+        <div class="modal-head">
+            <span>编辑机构</span>
+            <button type="button" class="modal-close" id="edit_modal_close">&times;</button>
+        </div>
+        <form id="edit_form" onsubmit="return false;">
+            <div class="modal-body">
+                <div class="form-field"><label>机构名称 <em>*</em></label>
+                    <input class="form-input" name="name"></div>
+                <div class="form-field">
+                    <label>报名链接有效期至 <span class="hint-red">（留空表示长期有效。）</span></label>
+                    <input class="form-input" type="date" name="expires_at"></div>
+                <div class="form-field"><label>登录账号</label>
+                    <input class="form-input" name="account" readonly></div>
+                <div class="form-field"><label>登录密码</label>
+                    <input class="form-input" name="password" readonly></div>
+            </div>
+            <div class="modal-foot">
+                <button type="button" class="btn" id="edit_cancel">取消</button>
+                <button type="button" class="btn btn-primary" id="edit_save">保存</button>
+            </div>
+        </form>
     </div>
 </div>
 {% endblock %}

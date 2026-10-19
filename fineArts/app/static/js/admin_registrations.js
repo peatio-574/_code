@@ -12,7 +12,7 @@
     var searchQ = document.getElementById('search_q');
     var searchInstitution = document.getElementById('search_institution');
 
-    var state = { page: 1, per_page: 20, q: '', institution: '' };
+    var state = { page: 1, per_page: 20, q: '', institution: '', sort: '', order: 'desc' };
     var ROW_H = 48;              // 与 .reg-table tbody td 高度一致
     var allItems = [];
     var selectedIds = {};        // 勾选集合（跨虚拟滚动保持）
@@ -61,14 +61,13 @@
     function buildRow(item) {
         var tr = document.createElement('tr');
         tr.appendChild(checkCell(item));
-        tr.appendChild(td(item.institution));
         tr.appendChild(td(item.name));
+        tr.appendChild(td(item.id_card));
         tr.appendChild(td(item.gender));
+        tr.appendChild(td(subjectLevel(item)));
         tr.appendChild(td(item.ethnicity));
         tr.appendChild(td(item.nationality));
-        tr.appendChild(td(item.id_card));
-        tr.appendChild(td(item.subject));
-        tr.appendChild(td(item.level));
+        tr.appendChild(td(item.institution));
         tr.appendChild(td(item.created_at));
         tr.appendChild(actionCell(item));
         return tr;
@@ -194,7 +193,8 @@
     function render() {
         var qs = 'page=' + state.page + '&per_page=' + state.per_page +
             '&q=' + encodeURIComponent(state.q) +
-            '&institution=' + encodeURIComponent(state.institution);
+            '&institution=' + encodeURIComponent(state.institution) +
+            (state.sort ? ('&sort=' + encodeURIComponent(state.sort) + '&order=' + state.order) : '');
         return fetch('/admin/api/registrations?' + qs, { credentials: 'same-origin' })
             .then(function (r) {
                 if (r.status === 401) { window.location = '/admin/login'; throw new Error('unauthorized'); }
@@ -225,6 +225,13 @@
         if (el) el.textContent = (value === null || value === undefined || value === '') ? '—' : value;
     }
 
+    function subjectLevel(item) {
+        var s = (item.subject || '').trim();
+        var l = (item.level || '').trim();
+        if (s && l) return s + ' ' + l;
+        return s || l || '';
+    }
+
     function openDetail(item) {
         currentDetailItem = item;
         setText('d_name', item.name);
@@ -233,8 +240,7 @@
         setText('d_nationality', item.nationality);
         setText('d_id_card', item.id_card);
         setText('d_institution', item.institution);
-        setText('d_subject', item.subject);
-        setText('d_level', item.level);
+        setText('d_subject_level', subjectLevel(item));
         setText('d_created_at', item.created_at);
         if (detailModal) detailModal.style.display = 'flex';
     }
@@ -263,8 +269,7 @@
         editForm.elements['ethnicity'].value = item.ethnicity || '';
         editForm.elements['nationality'].value = item.nationality || '';
         editForm.elements['id_card'].value = item.id_card || '';
-        editForm.elements['subject'].value = item.subject || '';
-        editForm.elements['level'].value = item.level || '';
+        editForm.elements['subject_level'].value = subjectLevel(item);
         if (editModal) editModal.style.display = 'flex';
     }
     function closeEdit() { if (editModal) editModal.style.display = 'none'; editId = null; }
@@ -279,8 +284,7 @@
         fd.append('ethnicity', editForm.elements['ethnicity'].value.trim());
         fd.append('nationality', editForm.elements['nationality'].value.trim());
         fd.append('id_card', editForm.elements['id_card'].value.trim().toUpperCase());
-        fd.append('subject', editForm.elements['subject'].value.trim());
-        fd.append('level', editForm.elements['level'].value.trim());
+        fd.append('subject_level', editForm.elements['subject_level'].value.trim());
         fetch('/admin/api/registration/' + editId, { method: 'POST', credentials: 'same-origin', body: fd })
             .then(function (r) { return r.json(); })
             .then(function (res) {
@@ -406,5 +410,37 @@
     if (btnGoto) btnGoto.addEventListener('click', gotoPage);
     if (gotoEl) gotoEl.addEventListener('keyup', function (e) { if (e.keyCode === 13) gotoPage(); });
 
+    /* ---------- 列排序 ---------- */
+    function updateSortIndicators() {
+        var ths = document.querySelectorAll('.reg-table th.sortable');
+        for (var i = 0; i < ths.length; i++) {
+            var th = ths[i];
+            var ind = th.querySelector('.sort-ind');
+            th.classList.remove('sort-asc', 'sort-desc');
+            if (ind) ind.textContent = '';
+            if (th.getAttribute('data-sort') === state.sort) {
+                th.classList.add(state.order === 'asc' ? 'sort-asc' : 'sort-desc');
+                if (ind) ind.textContent = state.order === 'asc' ? ' ▲' : ' ▼';
+            }
+        }
+    }
+
+    var sortThs = document.querySelectorAll('.reg-table th.sortable');
+    for (var si = 0; si < sortThs.length; si++) {
+        sortThs[si].addEventListener('click', function () {
+            var field = this.getAttribute('data-sort');
+            if (state.sort === field) {
+                state.order = state.order === 'asc' ? 'desc' : 'asc';
+            } else {
+                state.sort = field;
+                state.order = 'asc';
+            }
+            state.page = 1;
+            updateSortIndicators();
+            render();
+        });
+    }
+
     render();
+    updateSortIndicators();
 })();
