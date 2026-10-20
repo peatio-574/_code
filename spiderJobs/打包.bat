@@ -1,86 +1,131 @@
 @echo off
-setlocal
+chcp 936 >nul 2>nul
+setlocal EnableDelayedExpansion
 
-rem ============ Configurable ============
+rem ============================================================
+rem  Jobs ´ò°ü½Å±¾£¨PyInstaller£©
+rem
+rem  * ½âÊÍÆ÷£ºd:\_code\python\python.exe£¨¿ÉÓÃ PYTHON ¸²¸Ç£©
+rem  * config.ini ·ÅÔÚ exe Í¬Ä¿Â¼£ºÍâ²¿¿É¶Á¿É¸Ä£¬µÇÂ¼ºó Cookie ×Ô¶¯Ð´»Ø
+rem  * Ìå»ýÓÅ»¯£º²Ã¼ô playwright ÎÞÓÃÊý¾Ý + ÅÅ³ýÖØÐÍÒÀÀµ + µ¥ÎÄ¼þ + ×Ö½ÚÂëÓÅ»¯
+rem
+rem  ¿ÉÑ¡»·¾³±äÁ¿£º
+rem    PYTHON         Ö¸¶¨½âÊÍÆ÷£¨Â·¾¶»òÃüÁîÃû£©
+rem    PIP_MIRROR     pip ¾µÏñ£¬Ä¬ÈÏÇå»ª
+rem    OPTIMIZE       ×Ö½ÚÂëÓÅ»¯¼¶±ð£¬Ä¬ÈÏ 1£»Éè 2 ¸üÐ¡
+rem    UPX_DIR        UPX Ä¿Â¼£¬ÉèÖÃºóÆôÓÃ UPX Ñ¹Ëõ
+rem    KEEP_PW_FULL   ÉèÎª 1 Ôò²»²Ã¼ô playwright
+rem ============================================================
+
 set "APP_NAME=Jobs"
 set "ENTRY=getJobs.py"
 set "DIST_DIR=dist"
 set "BUILD_DIR=build"
-set "SPEC_FILE=%APP_NAME%.spec"
-set "PYTHON=d:\_code\python\python.exe"
-set "PIP_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple"
+set "WORK_DIR=%BUILD_DIR%\work"
+set "HOOK_DIR=%BUILD_DIR%\hooks"
+
+if not defined PYTHON set "PYTHON=d:\_code\python\python.exe"
+if not defined PIP_MIRROR set "PIP_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple"
+if not defined OPTIMIZE set "OPTIMIZE=1"
+if not defined KEEP_PW_FULL set "KEEP_PW_FULL=0"
 
 cd /d "%~dp0"
 
-rem ============ 1. Check Python ============
+rem ============ 1. ¼ì²é Python ============
 echo.
-echo [1/5] Checking Python...
-"%PYTHON%" --version >nul 2>nul
-if errorlevel 1 (
-    echo [ERROR] Python not found: %PYTHON%
-    pause
-    exit /b 1
-)
-"%PYTHON%" --version
+echo [1/6] ¼ì²é Python...
 
-rem ============ 2. Check PyInstaller ============
+set "PY_OK=0"
+if exist "%PYTHON%" set "PY_OK=1"
+if "%PY_OK%"=="0" (
+    where "%PYTHON%" >nul 2>nul
+    if not errorlevel 1 set "PY_OK=1"
+)
+if "%PY_OK%"=="0" goto :no_python
+
+"%PYTHON%" -c "import sys;sys.exit(0 if sys.version_info[:2]>=(3,8) else 1)" >nul 2>nul
+if errorlevel 1 goto :bad_python
+"%PYTHON%" -c "import sys;print('  Python ' + sys.version.split()[0] + '  (' + sys.executable + ')')"
+if errorlevel 1 goto :bad_python
+
+rem ============ 2. PyInstaller ============
 echo.
-echo [2/5] Checking PyInstaller...
-"%PYTHON%" -m pip show pyinstaller >nul 2>nul
+echo [2/6] ¼ì²é PyInstaller...
+"%PYTHON%" -m PyInstaller --version >nul 2>nul
 if errorlevel 1 (
-    echo [INFO] Installing PyInstaller...
-    "%PYTHON%" -m pip install pyinstaller -i "%PIP_MIRROR%"
-    if errorlevel 1 (
-        echo [ERROR] PyInstaller install failed.
-        pause
-        exit /b 1
-    )
+    echo   Î´°²×°£¬ÕýÔÚ°²×°...
+    "%PYTHON%" -m pip install --upgrade pyinstaller -i "%PIP_MIRROR%"
+    if errorlevel 1 goto :fail
+)
+"%PYTHON%" -c "import PyInstaller;print('  PyInstaller', PyInstaller.__version__)"
+
+rem ============ 3. ÔËÐÐÒÀÀµ ============
+echo.
+echo [3/6] ¼ì²éÔËÐÐÒÀÀµ...
+"%PYTHON%" -c "import requests, openpyxl, bs4, playwright, screeninfo" >nul 2>nul
+if errorlevel 1 (
+    echo   È±ÉÙÒÀÀµ£¬ÕýÔÚ°²×°...
+    "%PYTHON%" -m pip install requests openpyxl beautifulsoup4 playwright screeninfo -i "%PIP_MIRROR%"
+    if errorlevel 1 goto :fail
+)
+echo   ÒÀÀµ¾ÍÐ÷
+
+rem ============ 4. ÇåÀí¾É²úÎï ============
+rem Ö»ÇåÀí build Óë¾É exe£»dist ÏÂµÄ config.ini / logs / zp_profile ±£Áô
+echo.
+echo [4/6] ÇåÀí¾É²úÎï...
+if exist "%WORK_DIR%" rmdir /s /q "%WORK_DIR%"
+if exist "%BUILD_DIR%\*.spec" del /f /q "%BUILD_DIR%\*.spec" >nul 2>nul
+if not exist "%HOOK_DIR%" mkdir "%HOOK_DIR%" >nul 2>nul
+if not exist "%DIST_DIR%" mkdir "%DIST_DIR%" >nul 2>nul
+if exist "%DIST_DIR%\%APP_NAME%.exe" del /f /q "%DIST_DIR%\%APP_NAME%.exe" >nul 2>nul
+
+rem ============ 5. playwright ²Ã¼ô hook ============
+rem ¹Ù·½ hook »áÈ«Á¿ collect_data_files('playwright')£¬driver Ô¼ 100MB¡£
+rem ÒÔÏÂÄÚÈÝ±¾¹¤¾ßÓÃ²»µ½£¬ÅÅ³ýºó exe Ã÷ÏÔ±äÐ¡£º
+rem   driver\package\types       1.8MB  TypeScript ÀàÐÍÉùÃ÷
+rem   driver\package\bin         °²×°½Å±¾£¨.ps1/.sh£©
+rem   driver\package\lib\vite    3.5MB  ½ö trace viewer / codegen / UI Ä£Ê½Ê¹ÓÃ
+echo.
+echo [5/6] ×¼±¸ playwright ²Ã¼ô hook...
+if "%KEEP_PW_FULL%"=="1" (
+    echo   Ìø¹ý²Ã¼ô£¨KEEP_PW_FULL=1£©
 ) else (
-    echo PyInstaller OK.
+    call :write_hook "hook-playwright.async_api.py"
+    call :write_hook "hook-playwright.sync_api.py"
+    echo   ÒÑÅÅ³ý types / bin / lib\vite
 )
 
-rem ============ 3. Check dependencies ============
+rem ============ 6. ´ò°ü ============
 echo.
-echo [3/5] Checking dependencies...
-"%PYTHON%" -c "import requests, openpyxl, playwright, tkinter" >nul 2>nul
-if errorlevel 1 (
-    echo [INFO] Installing dependencies...
-    "%PYTHON%" -m pip install requests openpyxl playwright -i "%PIP_MIRROR%"
-    if errorlevel 1 (
-        echo [ERROR] Dependency install failed.
-        pause
-        exit /b 1
-    )
-    echo [INFO] Dependencies installed.
-) else (
-    echo Dependencies OK.
-)
+echo [6/6] ´ò°üÖÐ£¨µ¥ÎÄ¼þ£¬Ô¼ 1-3 ·ÖÖÓ£©...
+set "UPX_ARG=--noupx"
+if defined UPX_DIR set "UPX_ARG=--upx-dir %UPX_DIR%"
 
-rem ============ 4. Prune bundled browsers + clean old output ============
-rem ä¸å†å†…ç½® Chromiumï¼šåˆ é™¤ playwright åŒ…å†…çš„ .local-browsersï¼ˆçº¦ 680MBï¼‰ï¼Œ
-rem è¿è¡Œæ—¶æ”¹ç”¨ç³»ç»Ÿè‡ªå¸¦çš„ Edge/Chromeï¼Œä»Žè€Œå¤§å¹…ç¼©å° exe ä½“ç§¯ã€‚
-echo.
-echo [4/5] Pruning bundled browsers and cleaning old output...
-"%PYTHON%" -c "import playwright, os, shutil; p=os.path.join(os.path.dirname(playwright.__file__),'driver','package','.local-browsers'); existed=os.path.isdir(p); shutil.rmtree(p, ignore_errors=True); print('[INFO] removed bundled browsers' if existed else '[INFO] no bundled browsers found')"
-if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
-if exist "%DIST_DIR%\%APP_NAME%.exe" del /f /q "%DIST_DIR%\%APP_NAME%.exe"
-if exist "%SPEC_FILE%" del /f /q "%SPEC_FILE%"
-
-rem ============ 5. Build ============
-echo.
-echo [5/5] Building single-file EXE...
 "%PYTHON%" -m PyInstaller ^
     --noconfirm ^
     --clean ^
     --onefile ^
     --windowed ^
     --name "%APP_NAME%" ^
+    --distpath "%DIST_DIR%" ^
+    --workpath "%WORK_DIR%" ^
+    --specpath "%BUILD_DIR%" ^
+    --additional-hooks-dir "%HOOK_DIR%" ^
+    --optimize %OPTIMIZE% ^
+    --log-level WARN ^
     --paths "." ^
     --paths ".." ^
-    --collect-all "playwright" ^
     --hidden-import "Logger" ^
+    --hidden-import "Config" ^
+    --hidden-import "newPlayWright" ^
+    --hidden-import "guopin" ^
+    --hidden-import "ncss" ^
+    --hidden-import "zhipin" ^
     --hidden-import "requests" ^
     --hidden-import "openpyxl" ^
+    --hidden-import "bs4" ^
+    --hidden-import "screeninfo" ^
     --hidden-import "tkinter" ^
     --hidden-import "tkinter.ttk" ^
     --hidden-import "tkinter.simpledialog" ^
@@ -91,35 +136,106 @@ echo [5/5] Building single-file EXE...
     --exclude-module "PIL" ^
     --exclude-module "IPython" ^
     --exclude-module "jupyter" ^
+    --exclude-module "notebook" ^
     --exclude-module "pytest" ^
     --exclude-module "setuptools" ^
-    --exclude-module "ReadFile" ^
+    --exclude-module "pkg_resources" ^
+    --exclude-module "pip" ^
+    --exclude-module "unittest" ^
+    --exclude-module "doctest" ^
     --exclude-module "lib2to3" ^
     --exclude-module "test" ^
-    --exclude-module "doctest" ^
     --exclude-module "pydoc_data" ^
     --exclude-module "xlsxwriter" ^
+    --exclude-module "ensurepip" ^
+    --exclude-module "venv" ^
+    --exclude-module "idlelib" ^
+    --exclude-module "turtle" ^
+    --exclude-module "turtledemo" ^
+    %UPX_ARG% ^
     "%ENTRY%"
 
-if errorlevel 1 (
-    echo.
-    echo [ERROR] Build failed.
-    pause
-    exit /b 1
-)
+if errorlevel 1 goto :fail
+if not exist "%DIST_DIR%\%APP_NAME%.exe" goto :fail
+
+rem ============ 7. ÍâÖÃ config.ini ============
+call :ensure_config
+
+for %%F in ("%DIST_DIR%\%APP_NAME%.exe") do set "EXE_SIZE=%%~zF"
+set /a EXE_MB=%EXE_SIZE%/1048576
 
 echo.
 echo ============================================================
-echo [DONE] Build success!
-echo EXE : %cd%\%DIST_DIR%\%APP_NAME%.exe
+echo  ´ò°üÍê³É
+echo    EXE      : %cd%\%DIST_DIR%\%APP_NAME%.exe  (%EXE_MB% MB)
+echo    ÅäÖÃÎÄ¼þ : %cd%\%DIST_DIR%\config.ini
 echo.
-echo Notes:
-echo   * No bundled browser: the EXE uses the system Edge/Chrome at runtime.
-echo     Windows 10/11 ships Edge, so no extra install is needed.
-echo   * Force a specific browser via env PLAYWRIGHT_CHANNEL (msedge/chrome/chromium).
-echo   * Login state zp_profile is created/reused next to the EXE; keep that dir writable.
-echo   * If the "removed bundled browsers" line above said "no bundled browsers found",
-echo     the EXE may still be large because a browser is present in the package.
+echo  Ê¹ÓÃËµÃ÷£º
+echo    * config.ini Óë exe Í¬Ä¿Â¼£¬¿ÉÖ±½ÓÓÃ¼ÇÊÂ±¾±à¼­£»
+echo      Ñ§ÐÅÍøµÇÂ¼³É¹¦ºó Cookie ×Ô¶¯Ð´»Ø¸ÃÎÄ¼þ£¬ÏÂ´ÎÆô¶¯ÈÔÓÐÐ§¡£
+echo    * ÈÕÖ¾£ºexe Í¬Ä¿Â¼ logs\ÈÕÆÚ.log
+echo    * ÖÇÁªµÇÂ¼Ì¬£ºexe Í¬Ä¿Â¼ zp_profile£¨É¾³ýºóÐèÖØÐÂµÇÂ¼£©
+echo    * Ê¹ÓÃÏµÍ³ Edge/Chrome£¬²»ÄÚÖÃä¯ÀÀÆ÷£»PLAYWRIGHT_CHANNEL ¿ÉÖ¸¶¨¡£
 echo ============================================================
 echo.
 pause
+exit /b 0
+
+rem ==================== ×Ó¹ý³Ì ====================
+
+:write_hook
+rem Éú³É½öº¬ ASCII µÄ hook£¬±ÜÃâ±àÂëÎÊÌâ
+> "%HOOK_DIR%\%~1" echo from PyInstaller.utils.hooks import collect_data_files
+>>"%HOOK_DIR%\%~1" echo datas = collect_data_files(
+>>"%HOOK_DIR%\%~1" echo     "playwright",
+>>"%HOOK_DIR%\%~1" echo     excludes=[
+>>"%HOOK_DIR%\%~1" echo         "driver/package/types/**/*",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/bin/*",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/lib/vite/**/*",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.d.ts",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.map",
+>>"%HOOK_DIR%\%~1" echo         "**/__pycache__/**",
+>>"%HOOK_DIR%\%~1" echo         "**/*.ps1",
+>>"%HOOK_DIR%\%~1" echo         "**/*.sh",
+>>"%HOOK_DIR%\%~1" echo     ],
+>>"%HOOK_DIR%\%~1" echo )
+exit /b 0
+
+:ensure_config
+if not exist "%DIST_DIR%" mkdir "%DIST_DIR%" >nul 2>nul
+if exist "%DIST_DIR%\config.ini" (
+    echo   ÒÑ±£ÁôÏÖÓÐ config.ini£¨²»¸²¸Ç£©
+    exit /b 0
+)
+if exist "config.ini" (
+    copy /y "config.ini" "%DIST_DIR%\config.ini" >nul
+    echo   ÒÑ¸´ÖÆÏÖÓÐ config.ini µ½ dist
+    exit /b 0
+)
+> "%DIST_DIR%\config.ini" echo [login]
+>>"%DIST_DIR%\config.ini" echo nscc_cookie =
+>>"%DIST_DIR%\config.ini" echo nscc_cookie_api =
+echo   ÒÑ´´½¨¿Õ°× config.ini Ä£°å
+exit /b 0
+
+:no_python
+echo.
+echo [ERROR] Î´ÕÒµ½ Python£º%PYTHON%
+echo         Çë°²×° 3.8+£¬»òÉèÖÃ»·¾³±äÁ¿ PYTHON Ö¸Ïò½âÊÍÆ÷¡£
+echo.
+pause
+exit /b 1
+
+:bad_python
+echo.
+echo [ERROR] Python °æ±¾¹ýµÍ£¨Ðè 3.8+£©£º%PYTHON%
+echo.
+pause
+exit /b 1
+
+:fail
+echo.
+echo [ERROR] ´ò°üÊ§°Ü£¬Çë²é¿´ÉÏ·½ÈÕÖ¾¡£
+echo.
+pause
+exit /b 1
