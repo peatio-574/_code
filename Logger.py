@@ -26,6 +26,8 @@ class Logger(object):
 
     def __init__(self, name='main', con_level='info', file_level='debug'):
         filename = os.path.join(dirname, time.strftime('%Y-%m-%d') + '.log')
+        # 记录当前日志文件路径，便于界面展示/排查问题
+        self.filename = filename
 
         # 创建一个logger
         self.logger = logging.getLogger(name)
