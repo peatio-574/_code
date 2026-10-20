@@ -649,8 +649,7 @@ def registrations_export():
     wb = Workbook()
     ws = wb.active
     ws.title = '报名数据'
-    headers = ['所属机构', '考生姓名', '性别', '民族', '国籍', '身份证号', '报考科目', '报考级别',
-               '报名时间']
+    headers = ['姓名', '身份证号', '性别', '报考科目', '报考级别', '民族', '国籍', '所属机构', '报名时间']
     header_fill = PatternFill('solid', fgColor='D9D9D9')
     header_font = Font(color='000000', bold=True)
     thin = Side(style='thin', color='D9D9D9')
@@ -665,13 +664,13 @@ def registrations_export():
         ws.column_dimensions[cell.column_letter].width = 18
 
     for r, reg in enumerate(regs, start=2):
-        values = [reg.institution, reg.name, reg.gender, reg.ethnicity, reg.nationality, reg.id_card,
-                  reg.subject, reg.level,
+        values = [reg.name, reg.id_card, reg.gender, reg.subject, reg.level, reg.ethnicity,
+                  reg.nationality, reg.institution,
                   reg.created_at.strftime('%Y-%m-%d %H:%M:%S') if reg.created_at else '']
         for c, value in enumerate(values, start=1):
             cell = ws.cell(row=r, column=c, value=value)
             cell.border = border
-            if c == 6:
+            if c == 2:
                 cell.number_format = '@'
 
     buf = io.BytesIO()
