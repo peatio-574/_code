@@ -261,7 +261,7 @@ def build_page(template: Path, image: Path, target: Path, number: int, prefix: s
     return target
 
 
-def output_dir_for(image_dir: Path, prefix: str, output_root: Path | None) -> Path:
+def output_dir_for(image_dir: Path, prefix: str, output_root: Optional[Path]) -> Path:
     name = f'{prefix}{OUTPUT_SUFFIX}'
     return (output_root / name) if output_root else (image_dir.parent / name)
 
