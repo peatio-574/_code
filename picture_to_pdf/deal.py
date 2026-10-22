@@ -83,13 +83,19 @@ IMAGE_SUFFIXES = {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp'}
 DIR_SUFFIXES = ('图片集', '图片', '照片', '作品', '图')
 OUTPUT_SUFFIX = '附证'
 
-# 字体：仅需数字与连字符，打包时用宋体子集（约 10KB）避免把 17MB 字体塞进 exe
-FONT_FILE = resource_path('simsun_num.ttf')
-if not FONT_FILE.is_file():
-    FONT_FILE = resource_path('simsun.ttc')
-if not FONT_FILE.is_file():
-    FONT_FILE = Path(r'C:\Windows\Fonts\simsun.ttc')
-FONT_NAME = 'SimSun'
+# 字体：模板正文已改为黑体，这里同步用黑体，保证“作品编号（NO）：”后的数字字形一致。
+# 打包时用子集（simhei_num.ttf，约 5KB），避免把 9MB 的完整黑体塞进 exe。
+FONT_CANDIDATES = (
+    (resource_path('simhei_num.ttf'), 'SimHei'),      # 打包内置的黑体子集（首选）
+    (resource_path('simhei.ttf'), 'SimHei'),          # 内置完整黑体（兜底）
+    (Path(r'C:\Windows\Fonts\simhei.ttf'), 'SimHei'),  # 系统黑体
+    (resource_path('simsun_num.ttf'), 'SimSun'),       # 旧版宋体子集（兼容）
+    (Path(r'C:\Windows\Fonts\simsun.ttc'), 'SimSun'),  # 系统宋体（最后兜底）
+)
+FONT_FILE, FONT_NAME = next(
+    ((path, name) for path, name in FONT_CANDIDATES if path.is_file()),
+    (FONT_CANDIDATES[0][0], FONT_CANDIDATES[0][1]),
+)
 
 # ==================== 版面坐标（单位 pt，A4 页面 595.276 × 841.89） ====================
 # 中间照片固定为 5 寸（12.7cm × 8.9cm，比例 3:2），竖向 8.9×12.7，横向 12.7×8.9
@@ -101,12 +107,14 @@ PHOTO_LONG = 12.7 * PT_PER_CM    # 360.00 pt
 PHOTO_TOP = 246.6
 PHOTO_BOTTOM = PHOTO_TOP + PHOTO_LONG
 
-NO_ORIGIN = (224.43, 690.65)   # “作品编号（NO）：”后文字的基线起点
-NO_FONT_SIZE = 12.0
+# “作品编号（NO）：”标签实测：黑体 14.05pt，起点 x=103.38，结束 x=201.53，基线 y=693.37
+# 数字紧接标签末尾书写，字号/基线与之对齐
+NO_ORIGIN = (202.6, 693.37)
+NO_FONT_SIZE = 14.0
 
 MARK_FONT_SIZE = 12.0    # 照片右下角标号字号
-MARK_RIGHT_PAD = 0.10    # 标号距照片右边 = 照片宽度 × 该比例
-MARK_BOTTOM_PAD = 12.0   # 标号距照片底边（pt）
+MARK_RIGHT_PAD = 10.0    # 标号距照片右边的距离（pt）
+MARK_BOTTOM_PAD = 10.0   # 标号基线距照片底边的距离（pt）
 
 PHOTO_JPEG_QUALITY = 95  # 裁切后的照片质量
 
@@ -220,6 +228,15 @@ def crop_to_ratio(image: Path, ratio: float):
     return buffer.getvalue(), photo.width, photo.height
 
 
+def text_width(text: str, fontsize: float) -> float:
+    """测量文本宽度（pt），用于把照片标号贴齐右下角。"""
+    try:
+        return fitz.get_text_length(text, fontname=FONT_NAME, fontsize=fontsize)
+    except (AttributeError, TypeError, ValueError):
+        # 兜底估算：黑体数字约为 0.5 字宽
+        return len(text) * fontsize * 0.5
+
+
 # ==================== 生成单页 ====================
 def build_page(template: Path, image: Path, target: Path, number: int, prefix: str):
     """把一张 5 寸照片贴到模板上并保存为单页 PDF。"""
@@ -237,7 +254,7 @@ def build_page(template: Path, image: Path, target: Path, number: int, prefix: s
         page.insert_image(rect, stream=data, keep_proportion=False)
 
         # 照片右下角标注图片标号
-        mark_x = rect.x1 - rect.width * MARK_RIGHT_PAD - len(label) * MARK_FONT_SIZE * 0.5
+        mark_x = rect.x1 - MARK_RIGHT_PAD - text_width(label, MARK_FONT_SIZE)
         mark_y = rect.y1 - MARK_BOTTOM_PAD
         page.insert_text((mark_x, mark_y), label, fontname=FONT_NAME,
                          fontfile=str(FONT_FILE), fontsize=MARK_FONT_SIZE,

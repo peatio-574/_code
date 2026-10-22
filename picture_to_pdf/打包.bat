@@ -28,7 +28,7 @@ rem ============================================================
 set "APP_NAME=证书附件生成"
 set "ENTRY=deal.py"
 set "TEMPLATE=空白副证图片.pdf"
-set "FONT=simsun_num.ttf"
+set "FONT=simhei_num.ttf"
 set "DIST_DIR=dist"
 set "BUILD_DIR=build"
 
