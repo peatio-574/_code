@@ -71,7 +71,7 @@ PROXIES = []
 API = 'https://app.ravenpack.com/api/thread/metadata'
 
 COOKIE = (
-    'cookie_consent=1; vdp_known="Haoyan.Chen@anu.edu.au"; vizsid=.eJwlz0tuwzAMBNC7aB0YpH6UsupNDJIi4aCtAzjxIih696rI_g1m5iesfthjC9fncdolrLcRroFaBgKRiiMRuraWJWuj0mMXdkQQr5gTMVDHCiw4uIAmaBSlFshcmMRyrnVo7z21Zuwk1DRJbUPS6Chdu2vKYnEAah-eOQJ6kXAJ-jh8fd4_bZ97oKbJOBoXjWkgOLeq0fNAj4VolqllSTNn33z7mpGN7y_eF91s_-D9XGycC58TnA873i_f5F-E3z_eH033.athJcw.EQCTNOYWvAvbyvHsfqP-JgAuK34; _ga=GA1.2.1672970193.1792559476; _gid=GA1.2.647707326.1792559476; _twpid=tw.1792559476257.8916625631284528; _hjSessionUser_444256=eyJpZCI6IjE0MWQ5MjM1LWY3OGMtNTRhYi04NWM5LTc5OGJkZmEwOWIxNCIsImNyZWF0ZWQiOjE3OTI1NTk0ODkxNzUsImV4aXN0aW5nIjp0cnVlfQ==; _gat_UA-94068430-1=1; _twsid=1792647943038-162856929.5.1792647943038; _hjSession_444256=eyJpZCI6Ijk3Mjg5NzY4LWEzMzMtNGYzNC05NDYyLTY2M2RhMGU1MDlkMiIsImMiOjE3OTI2NDc5NDM2MTEsInMiOjEsInIiOjEsInNiIjowLCJzciI6MCwic2UiOjAsImZzIjowLCJzcCI6MH0='
+    'cookie_consent=1; vdp_known="Haoyan.Chen@anu.edu.au"; vizsid=.eJwlz0tuwzAMBNC7aB0YpH6UsupNDJIi4aCtAzjxIih696rI_g1m5iesfthjC9fncdolrLcRroFaBgKRiiMRuraWJWuj0mMXdkQQr5gTMVDHCiw4uIAmaBSlFshcmMRyrnVo7z21Zuwk1DRJbUPS6Chdu2vKYnEAah-eOQJ6kXAJ-jh8fd4_bZ97oKbJOBoXjWkgOLeq0fNAj4VolqllSTNn33z7mpGN7y_eF91s_-D9XGycC58TnA873i_f5F-E3z_eH033.athJcw.EQCTNOYWvAvbyvHsfqP-JgAuK34; _ga=GA1.2.1672970193.1792559476; _gid=GA1.2.647707326.1792559476; _twpid=tw.1792559476257.8916625631284528; _hjSessionUser_444256=eyJpZCI6IjE0MWQ5MjM1LWY3OGMtNTRhYi04NWM5LTc5OGJkZmEwOWIxNCIsImNyZWF0ZWQiOjE3OTI1NTk0ODkxNzUsImV4aXN0aW5nIjp0cnVlfQ==; _gat_UA-94068430-1=1; _hjSession_444256=eyJpZCI6IjE1NTgwN2M4LTVjYTMtNDg1Yy1hOGRhLWFlNGQ3NWI3MGUyMyIsImMiOjE3OTI2Njk5OTQzMTEsInMiOjAsInIiOjAsInNiIjowLCJzciI6MCwic2UiOjAsImZzIjowLCJzcCI6MX0=; _twsid=1792669993940-500541082.7.1792670008206'
 )
 
 HEADERS = {
@@ -80,7 +80,8 @@ HEADERS = {
     'accept': 'application/json, text/plain, */*',
     'content-type': 'application/json',
     'origin': 'https://app.ravenpack.com',
-    'referer': 'https://app.ravenpack.com/datasets/',
+    'host': 'app.ravenpack.com',
+    'referer': 'https://app.ravenpack.com/dataset/A322EC0AE7D40734B6E586CABA440F41/?start_date=2000-01-01&end_date=2026-01-01',
 }
 
 _session = None
