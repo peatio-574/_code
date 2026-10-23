@@ -77,8 +77,8 @@ if __name__ == '__main__':
     firstAnd = float(first) - 49877.18
     firstAnd = f"{firstAnd:.2f}"
 
-    second = '78060.76'
-    secondAnd = float(second) - 76369.53
+    second = '83060.76'
+    secondAnd = float(second) - 81369.53
     secondAnd = f"{secondAnd:.2f}"
 
     newAmounts = {
