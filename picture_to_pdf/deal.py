@@ -6,9 +6,9 @@
   2. 选择图片根目录，程序会遍历其下所有“图片目录”（直接含图片的子目录）。
   3. 每个图片目录按其名称推断作品编号前缀（如 029-021-011图片 -> 029-021-011），
      在同级生成 “029-021-011附证” 目录，并逐张图片生成 PDF：
-         - 照片固定按 5 寸输出（12.7cm × 8.9cm，比例 3:2）：
-           竖图 8.9cm × 12.7cm，横图 12.7cm × 8.9cm；
-         - 图片按 3:2 居中裁切后贴合，不拉伸变形；
+         - 照片按原图比例等比缩放后贴入 5 寸画幅（长边 12.7cm、短边 8.9cm 为上限），
+           3:2 的图正好是 5 寸，其它比例只缩小，完整显示不裁切；
+         - 横图、竖图同一套规则，绝不拉伸变形；
          - 照片右下角标注图片标号（如 004）；
          - “作品编号（NO）：”处填写 前缀-序号（如 029-021-011-004）。
 
@@ -98,10 +98,12 @@ FONT_FILE, FONT_NAME = next(
 )
 
 # ==================== 版面坐标（单位 pt，A4 页面 595.276 × 841.89） ====================
-# 中间照片固定为 5 寸（12.7cm × 8.9cm，比例 3:2），竖向 8.9×12.7，横向 12.7×8.9
+# 照片以 5 寸（长边 12.7cm）为上限，短边按原图比例自适应：
+#   3:2 竖图正好 8.9×12.7，3:2 横图正好 12.7×8.9；
+#   其他比例的图只缩小、不裁切，保证整张照片完整显示。
 PT_PER_CM = 72.0 / 2.54
-PHOTO_SHORT = 8.9 * PT_PER_CM    # 252.28 pt
-PHOTO_LONG = 12.7 * PT_PER_CM    # 360.00 pt
+PHOTO_SHORT = 8.9 * PT_PER_CM    # 252.28 pt，3:2 时的短边
+PHOTO_LONG = 12.7 * PT_PER_CM    # 360.00 pt，长边上限
 
 # 照片纵向可用区间：顶边压住模板“考级作品照片”占位，底边留出下方说明文字
 PHOTO_TOP = 246.6
@@ -139,19 +141,6 @@ def collect_images(image_dir: Path):
     return sorted(files, key=natural_key)
 
 
-def image_size(path: Path):
-    """读取图片像素尺寸（已考虑 EXIF 方向）。"""
-    with Image.open(path) as im:
-        width, height = im.size
-        try:
-            orientation = im.getexif().get(274)
-        except (OSError, ValueError, AttributeError):
-            orientation = None
-    if orientation in (5, 6, 7, 8):
-        width, height = height, width
-    return width, height
-
-
 def prefix_from_dir(name: str) -> str:
     """从目录名推断作品编号前缀：029-021-011图片 -> 029-021-011。"""
     match = NUMBER_RE.search(name)
@@ -185,22 +174,32 @@ def find_image_dirs(root: Path):
     return sorted(found, key=lambda p: str(p).lower())
 
 
-def photo_area(page_width: float, portrait: bool):
-    """5 寸照片在页面上的位置（pt），水平居中、纵向居中于照片带内。
+def photo_area(page_width: float, image_width: float, image_height: float):
+    """按原图比例算出照片在页面上的位置（pt），等比缩放、完整显示。
 
-    竖向 8.9cm × 12.7cm，横向 12.7cm × 8.9cm。
+    缩放时同时受两条限制，保证照片放进 5 寸画幅内且不裁切：
+      · 长边不超过 12.7cm
+      · 短边不超过 8.9cm
+    两者取更小的缩放系数，因此 3:2 的图正好是 5 寸，其它比例的图只会变小。
+    水平居中，纵向居中于照片带内。
     """
-    width = PHOTO_SHORT if portrait else PHOTO_LONG
-    height = PHOTO_LONG if portrait else PHOTO_SHORT
+    if image_width <= 0 or image_height <= 0:
+        raise ValueError('图片尺寸无效')
+
+    scale = min(PHOTO_LONG / max(image_width, image_height),
+                PHOTO_SHORT / min(image_width, image_height))
+    width = image_width * scale
+    height = image_height * scale
+
     x0 = (page_width - width) / 2
     y0 = PHOTO_TOP + (PHOTO_LONG - height) / 2
     return fitz.Rect(x0, y0, x0 + width, y0 + height)
 
 
-def crop_to_ratio(image: Path, ratio: float):
-    """按目标长宽比居中裁切，返回 (JPEG 字节, 宽, 高)。
+def prepare_photo(image: Path):
+    """转成 RGB JPEG，返回 (JPEG 字节, 宽, 高)。
 
-    裁切而不是拉伸，保证照片不变形且保持 3:2。
+    只做色彩空间转换和 EXIF 方向校正，不裁切、不缩放，保留完整画面。
     """
     from io import BytesIO
 
@@ -212,16 +211,6 @@ def crop_to_ratio(image: Path, ratio: float):
     width, height = photo.size
     if width <= 0 or height <= 0:
         raise ValueError('图片尺寸无效')
-    current = width / height
-    if abs(current - ratio) > 1e-4:
-        if current > ratio:                     # 太宽，裁左右
-            new_w = max(1, int(round(height * ratio)))
-            left = (width - new_w) // 2
-            photo = photo.crop((left, 0, left + new_w, height))
-        else:                                   # 太高，裁上下
-            new_h = max(1, int(round(width / ratio)))
-            top = (height - new_h) // 2
-            photo = photo.crop((0, top, width, top + new_h))
 
     buffer = BytesIO()
     photo.save(buffer, 'JPEG', quality=PHOTO_JPEG_QUALITY, subsampling=0)
@@ -239,18 +228,21 @@ def text_width(text: str, fontsize: float) -> float:
 
 # ==================== 生成单页 ====================
 def build_page(template: Path, image: Path, target: Path, number: int, prefix: str):
-    """把一张 5 寸照片贴到模板上并保存为单页 PDF。"""
+    """把一张照片等比缩放后贴到模板上，保存为单页 PDF。
+
+    横图、竖图统一按原图比例缩放，同时受 5 寸画幅的长短边约束，
+    因此不会拉伸变形，也不会裁掉画面。
+    """
     label = f'{number:03d}'
     doc = fitz.open(template)
     try:
         page = doc[0]
-        width, height = image_size(image)
-        portrait = height >= width
 
-        rect = photo_area(page.rect.width, portrait)
-        data, _, _ = crop_to_ratio(image, rect.width / rect.height)
+        # 先转换图片，用转换后的真实尺寸算比例，避免 EXIF 方向导致比例反了
+        data, img_w, img_h = prepare_photo(image)
+        rect = photo_area(page.rect.width, img_w, img_h)
 
-        # 照片覆盖在模板“考级作品照片”占位文字之上，尺寸即 5 寸
+        # 照片覆盖在模板“考级作品照片”占位文字之上
         page.insert_image(rect, stream=data, keep_proportion=False)
 
         # 照片右下角标注图片标号
