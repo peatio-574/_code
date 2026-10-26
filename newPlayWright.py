@@ -17,7 +17,6 @@ from playwright.sync_api import sync_playwright
 from screeninfo import get_monitors
 from Logger import logger
 import requests
-from patchright.sync_api import sync_playwright as patch_sync_playwright
 
 class PlayWrightClass(object):
     """playwright登录实例"""
@@ -726,71 +725,6 @@ class SpecialPlayWright(PlayWrightClass):
 
         self.page.set_viewport_size({"width": self.width, "height": self.height})
         return True
-
-
-class PatchRight(PlayWrightClass):
-    def __init__(self):
-        super().__init__()
-        self.playwright = None
-        self.browser = None
-        self.context = None
-        self.page = None
-
-        self.timeout = 30 * 1000  # 默认超时(ms)
-        self.user_agent = (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
-
-    def start_browser(self, proxy=None, headless=False):
-        """打开浏览器（patchright + 反检测参数）"""
-        if self.playwright:
-            return
-
-        self.playwright = patch_sync_playwright().start()
-        browser_args = [
-            "--disable-blink-features=AutomationControlled",  # 去掉 enable-automation
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--lang=zh-CN,zh",
-            "--disable-gpu",
-            "--no-first-run",
-            "--no-default-browser-check",
-        ]
-
-        self.browser = self.playwright.chromium.launch(
-            headless=headless,
-            args=browser_args,
-            ignore_default_args=["--enable-automation"],
-        )
-
-        self.context = self.browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            locale="zh-CN",
-            timezone_id="Asia/Shanghai",
-            user_agent=self.user_agent,
-            accept_downloads=True,
-            proxy=proxy,
-        )
-        self.page = self.context.new_page()
-
-        # 反检测注入脚本
-        self.page.add_init_script(r"""
-            () => {
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined,
-                    configurable: true,
-                    enumerable: false,
-                });
-                if (!window.chrome) { window.chrome = { runtime: {} }; }
-                Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
-                Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN','zh','en'] });
-            }
-        """)
-
-    def start_borwser(self, proxy=None):
-        """兼容基类 goto/add_cookie/new_goto 对 start_borwser 的调用，统一走 patchright"""
-        self.start_browser(proxy)
 
 
 PlayWright = PlayWrightClass()
