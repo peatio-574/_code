@@ -3,8 +3,8 @@
 
 与 GuoPin 保持一致的调用方式（get_page_info / parser_page_info / get_single_page / run）。
 
-Cookie 唯一来源：config.ini 的 login.nscc_cookie_api
-（由 newPlayWright.PlayWright.login 登录后写入，也可手工填写）；失效时自动拉起浏览器登录。
+Cookie 唯一来源：config/config.ini 的 login.nscc_cookie_api
+（由 PatchRight.login 登录后写入，也可手工填写）；失效时自动拉起浏览器登录。
 """
 import os
 import re
@@ -14,7 +14,7 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 
-from getJobs import BaseSpider, _BASE_DIR
+from getJobs import BaseSpider, _BASE_DIR, create_session
 from Logger import logger
 
 
@@ -33,8 +33,8 @@ class Ncss(BaseSpider):
     与 GuoPin 保持一致的调用方式（get_page_info / parser_page_info / get_single_page / run），
     便于 GUI 与命令行共用同一套逻辑。
 
-    Cookie 唯一来源：config.ini 的 login.nscc_cookie_api
-    （由 PlayWright.login 登录后写入，也可手工填写）；失效时自动拉起浏览器登录。
+    Cookie 唯一来源：config/config.ini 的 login.nscc_cookie_api
+    （由 PatchRight.login 登录后写入，也可手工填写）；失效时自动拉起浏览器登录。
     """
     # 网站名称（写入「来源」列，同时用于界面标题）
     web_name = '国家大学生就业服务平台'
@@ -75,13 +75,13 @@ class Ncss(BaseSpider):
     RETRY_TIMES = 3               # 单次请求最大尝试次数
     RETRY_BACKOFF = 2.0           # 重试退避基数（秒）
     MAX_PAGE_FAILS = 3            # 连续多少页列表失败后停止
-    REQUEST_TIMEOUT = 15          # 单次请求超时（秒）
+    REQUEST_TIMEOUT = 8           # 单次请求超时（秒）；过长会让「停止」等很久
     SAVE_INTERVAL = 10            # 两次写盘的最小间隔（秒），避免每页都重写整本 xlsx
 
     # 登录
     CONFIG_SECTION = 'login'
     CONFIG_OPTION = 'nscc_cookie'                 # Cookie 实际取 login.nscc_cookie_api
-    CONFIG_FILE = os.path.join(_BASE_DIR, 'config.ini')
+    CONFIG_FILE = os.path.join(_BASE_DIR, 'config', 'config.ini')
     AUTO_LOGIN = True                             # Cookie 失效时是否自动弹出浏览器登录
     LOGIN_URL = ('https://account.chsi.com.cn/passport/login'
                  '?service=https://www.ncss.cn/student/connect/chsi&entrytype=stu')
@@ -92,6 +92,8 @@ class Ncss(BaseSpider):
 
     _session = None
     _total_pages = 0
+    # 登录用的浏览器实例（PatchRight，惰性创建，登录完成后立即关闭）
+    _browser = None
     # 当前任务状态（供请求重试/逐条抓取详情时判断是否该中止）
     _pause_event = None
     # 运行状态探针：存的是可调用对象（如 lambda: panel.is_running），不是布尔值
@@ -102,7 +104,7 @@ class Ncss(BaseSpider):
 
     @classmethod
     def load_cookie(cls):
-        """读取 config.ini 的 login.nscc_cookie_api（PlayWright.login 写入的 api cookie 串）。"""
+        """读取 config/config.ini 的 login.nscc_cookie_api（PatchRight.login 写入的 api cookie 串）。"""
         try:
             from Config import get_config_value
         except Exception as e:
@@ -116,32 +118,37 @@ class Ncss(BaseSpider):
             return ''
 
     @classmethod
+    def login_browser(cls):
+        """获取登录用浏览器（PatchRight 实例，惰性创建并复用）。"""
+        if cls._browser is None:
+            from PatchRightClass import PatchRightClass
+            cls._browser = PatchRightClass()
+        return cls._browser
+
+    @classmethod
     def close_browser(cls):
         """关闭登录用浏览器，并重置单例状态，便于下次重新启动。"""
-        try:
-            from newPlayWright import PlayWright
-        except Exception:
+        if cls._browser is None:
             return
         try:
-            PlayWright.close()
+            cls._browser.close()
         except Exception as e:
             logger.info(f'{cls.web_name} 关闭浏览器失败：{e}')
         finally:
-            for attr in ('playwright', 'browser', 'context', 'page'):
-                setattr(PlayWright, attr, None)
+            cls._browser = None
 
     @classmethod
     def login(cls):
-        """打开浏览器登录学信网；成功后 PlayWright.login 把 Cookie 写入 config.ini。"""
+        """打开浏览器登录学信网；成功后把 Cookie 写入 config/config.ini。"""
         try:
-            from newPlayWright import PlayWright
+            browser = cls.login_browser()
         except Exception as e:
-            logger.error(f'{cls.web_name} 无法加载 PlayWright（请安装 playwright/screeninfo）：{e}')
+            logger.error(f'{cls.web_name} 无法加载 PatchRight（请安装 patchright/playwright）：{e}')
             return False
 
         logger.info(f'{cls.web_name} 正在打开浏览器，请完成学信网登录（最长等待 3 分钟）…')
         try:
-            ok = PlayWright.login(
+            ok = browser.login(
                 cls.LOGIN_URL,
                 cls.LOGIN_ELEMENT,
                 f'{cls.CONFIG_SECTION}.{cls.CONFIG_OPTION}',
@@ -160,7 +167,7 @@ class Ncss(BaseSpider):
             logger.error(f'{cls.web_name} 登录成功但 {os.path.basename(cls.CONFIG_FILE)} '
                          f'中没有 login.{cls.CONFIG_OPTION}_api，请检查写入权限')
             return False
-        logger.info(f'{cls.web_name} 登录成功，Cookie 已写入 config.ini')
+        logger.info(f'{cls.web_name} 登录成功，Cookie 已写入 config/config.ini')
         return True
 
     @classmethod
@@ -189,7 +196,7 @@ class Ncss(BaseSpider):
     @classmethod
     def session(cls):
         if cls._session is None:
-            s = requests.Session()
+            s = create_session()
             s.headers.update({
                 'user-agent': cls.USER_AGENT,
                 'accept-language': 'zh-CN,zh;q=0.9',
@@ -218,8 +225,8 @@ class Ncss(BaseSpider):
         if cls._session is not None:
             try:
                 cls._session.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning('【%s】关闭旧会话异常：%r' % (cls.web_name, e))
         cls._session = None
 
     @classmethod
@@ -236,7 +243,8 @@ class Ncss(BaseSpider):
         }
         params = {'offset': 1, 'limit': 1, '_': int(time.time() * 1000)}
         try:
-            resp = requests.get(cls.LIST_API, params=params, headers=headers, timeout=timeout)
+            resp = cls.session().get(cls.LIST_API, params=params, headers=headers,
+                                     timeout=timeout)
             payload = resp.json()
         except (requests.RequestException, ValueError):
             return False
@@ -296,13 +304,20 @@ class Ncss(BaseSpider):
 
     @classmethod
     def get_page_info(cls, page_id=1, page_size=None, source=None):
-        """获取某页岗位列表；失败返回 False（与 GuoPin 保持一致）。"""
+        """获取某页岗位列表；失败返回 False（与 GuoPin 保持一致）。
+
+        注意 offset 语义：接口用「记录偏移量」而非页码。
+        必须用 (page_id - 1) * size，否则第 2 页 offset=2 会返回
+        「第 2 条到第 21 条」，与第 1 页几乎完全相同（历史 bug）。
+        """
         size = page_size or cls.DEFAULT_PAGE_SIZE
         name, sources_type, sources_name = cls.resolve_source(source)
         params = {
             'jobType': '', 'areaCode': '', 'jobName': '', 'monthPay': '',
             'industrySectors': '', 'property': '', 'categoryCode': '',
-            'memberLevel': '', 'recruitType': '', 'offset': page_id, 'limit': size,
+            'memberLevel': '', 'recruitType': '',
+            'offset': max(0, (int(page_id) - 1) * size),
+            'limit': size,
             'keyUnits': '', 'degreeCode': '',
             'sourcesName': sources_name, 'sourcesType': sources_type,
             '_': int(time.time() * 1000),
@@ -522,7 +537,11 @@ class Ncss(BaseSpider):
 
     @classmethod
     def build_row(cls, item, detail, source_name=None, crawl_date=None):
-        """把列表项 + 详情合并成一行（列顺序见 XLSX_HEADERS）。"""
+        """把列表项 + 详情合并成一行（列顺序见 XLSX_HEADERS）。
+
+        source_name: 子来源名（前程无忧/中华英才网…），只用于日志；
+                     「来源」列固定写 cls.source_code（NCSS 的密文）。
+        """
         province, city, district = cls.split_area(
             detail.get('location'), item.get('areaCodeName', ''))
 
@@ -554,10 +573,13 @@ class Ncss(BaseSpider):
 
         return [
             crawl_date or datetime.now().strftime('%Y-%m-%d'),
-            source_name or cls.web_name,
+            # 「来源」统一为 NCSS：该平台聚合了前程无忧、中华英才网等多个子来源，
+            # 子来源名只用于筛选与日志，不写入表格，避免同一平台出现多种来源值
+            cls.source_code,
             province,
             city,
             job_name,
+            str(item.get('jobId') or ''),                # 岗位编号（NCSS jobId）
             item.get('recName') or detail.get('company_name') or '',
             property_name,
             cls.normalize_scale(item.get('recScale') or detail.get('company_scale')),
@@ -620,7 +642,7 @@ class Ncss(BaseSpider):
         """采集单页；write=False 时只返回不写盘。on_row 用于逐条回调。"""
         all_rows = []
         if seen is None:
-            seen = set(tuple(r) for r in (yesterday_data or []))
+            seen = cls.init_seen(yesterday_data)
 
         # 暂停时阻塞；点停止立即返回
         if not cls._wait():
@@ -653,6 +675,7 @@ class Ncss(BaseSpider):
 
     @classmethod
     def run(cls, data_file='国家大学生就业服务平台.xlsx', delay=None, max_pages=None,
+            update_duplicate=None,
             auto_login=None, pause_event=None, is_running=None, sources=None,
             on_progress=None, on_page=None, on_data=None, on_complete=None, on_error=None):
         """采集入口：按来源平台逐个翻页 -> 逐条取详情 -> 写入 xlsx。
@@ -670,13 +693,14 @@ class Ncss(BaseSpider):
 
         wb, ws = cls.set_column_style(data_file)
         yesterday_data = cls.load_yesterday_data(data_file)
-        cls._begin_run(pause_event, is_running)
+        cls._begin_run(pause_event, is_running,
+                            update_duplicate=update_duplicate)
         cls._total_pages = 0        # 清掉上一轮残留，避免页数错乱
 
         source_list = list(sources) if sources else list(cls.CRAWL_SOURCES)
         total_sources = len(source_list)
         all_rows = []
-        seen = set(tuple(r) for r in yesterday_data)
+        seen = cls.init_seen(yesterday_data)
         failed_sources = []
 
         try:

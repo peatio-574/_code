@@ -6,6 +6,7 @@
 对外暴露与 GuoPin 风格一致的类方法（get_page_info / parser_page_info / get_single_city / run）。
 """
 import asyncio
+import ast
 import json
 import os
 import random
@@ -17,10 +18,39 @@ import uuid
 from datetime import datetime
 from html import unescape as html_unescape
 
-from playwright.async_api import async_playwright
+# 浏览器驱动：优先用 patchright（与 playwright API 完全兼容）。
+# 这样打包时只需捆绑一份驱动（约 100MB），可裁掉 playwright 驱动，显著减小体积。
+# patchright 是 playwright 的反检测 fork，对普通站点同样可用。
+try:
+    from patchright.async_api import async_playwright
+except ImportError:                                    # 未装 patchright 时回退
+    from playwright.async_api import async_playwright
 
-from getJobs import XLSX_HEADERS, BaseSpider
+from getJobs import XLSX_HEADERS, BaseSpider, load_config
 from Logger import logger
+
+
+# ==================== 城市配置（config/zhipin_cities.json） ====================
+# 原先硬编码 21 个城市，现改为读 JSON；文件缺失时回退到内置默认值。
+_DEFAULT_ZHIPIN_CITIES = [
+    {'province': '四川', 'city': n, 'cityCode': c, 'cityFull': f}
+    for n, c, f in [
+        ('成都', 801, '成都市'), ('自贡', 802, '自贡市'),
+        ('攀枝花', 803, '攀枝花市'), ('泸州', 804, '泸州市'),
+        ('德阳', 805, '德阳市'), ('绵阳', 806, '绵阳市'),
+        ('广元', 807, '广元市'), ('遂宁', 808, '遂宁市'),
+        ('内江', 809, '内江市'), ('乐山', 810, '乐山市'),
+        ('南充', 811, '南充市'), ('眉山', 812, '眉山市'),
+        ('宜宾', 813, '宜宾市'), ('广安', 814, '广安市'),
+        ('达州', 815, '达州市'), ('雅安', 816, '雅安市'),
+        ('巴中', 817, '巴中市'), ('资阳', 818, '资阳市'),
+        ('阿坝', 819, '阿坝藏族羌族自治州'), ('甘孜', 820, '甘孜藏族自治州'),
+        ('凉山', 821, '凉山彝族自治州'), ('重庆', 551, '重庆市'),
+    ]
+]
+
+_CITY_CFG = load_config('zhipin_cities.json', {}) or {}
+ZHIPIN_CITIES = _CITY_CFG.get('cities') or _DEFAULT_ZHIPIN_CITIES
 
 
 class ZhiPin(BaseSpider):
@@ -35,19 +65,10 @@ class ZhiPin(BaseSpider):
     web_name = '智联招聘'
     API = "https://fe-api.zhaopin.com/c/i/search/positions"
 
-    # 四川 21 市 + 重庆（省份, 城市）
-    SC_CITIES = [("四川", n) for n in [
-        "成都", "自贡", "攀枝花", "泸州", "德阳", "绵阳", "广元", "遂宁",
-        "内江", "乐山", "南充", "眉山", "宜宾", "广安", "达州", "雅安",
-        "巴中", "资阳", "阿坝", "甘孜", "凉山"]]
-    CITY_ID = {"成都": 801, "自贡": 802, "攀枝花": 803, "泸州": 804, "德阳": 805,
-               "绵阳": 806, "广元": 807, "遂宁": 808, "内江": 809, "乐山": 810,
-               "南充": 811, "眉山": 812, "宜宾": 813, "广安": 814, "达州": 815,
-               "雅安": 816, "巴中": 817, "资阳": 818, "阿坝": 819, "甘孜": 820,
-               "凉山": 821, "重庆": 551}
-    CITY_FULL = {n: n + "市" for n in CITY_ID}
-    CITY_FULL.update({"阿坝": "阿坝藏族羌族自治州", "甘孜": "甘孜藏族自治州",
-                      "凉山": "凉山彝族自治州", "重庆": "重庆市"})
+    # 四川 21 市 + 重庆（来自 config/zhipin_cities.json，缺失时用内置默认）
+    SC_CITIES = [(c['province'], c['city']) for c in ZHIPIN_CITIES]
+    CITY_ID = {c['city']: c['cityCode'] for c in ZHIPIN_CITIES}
+    CITY_FULL = {c['city']: c['cityFull'] for c in ZHIPIN_CITIES}
 
     # 页面 / 抓取参数（越大越容易触发风控，可按需调整）
     DEFAULT_PAGE_SIZE = 20            # 每页条数（与接口 pageSize 一致）
@@ -57,29 +78,26 @@ class ZhiPin(BaseSpider):
     SAVE_INTERVAL = 10                # 两次写盘的最小间隔（秒），避免每页都重写整本 xlsx
 
     # xlsx 列顺序（与 XLSX_HEADERS 去掉「采集日期/来源/省份」后的部分一致）
-    ROW_ORDER = ["城市", "职位名称", "公司名称", "公司性质", "公司规模", "公司行业",
+    ROW_ORDER = ["城市", "职位名称", "岗位编号", "公司名称", "公司性质", "公司规模", "公司行业",
                  "招聘类型", "职位性质", "职位类别", "薪资范围", "招聘人数",
                  "学历要求", "经验要求", "专业要求", "工作地点", "详细地址",
                  "报名截止", "职位描述"]
 
-    # Chrome 登录态目录（兼顾源码运行与打包后的 exe）
-    # 打包后 __file__ 位于临时解压目录(_MEIPASS)，不可用；改为以 exe 所在目录为基准，
-    # 这样 zp_profile 就放在 exe 旁边，登录态可跨次运行持久化。
+    # 登录态：与其他平台一致，存 config\config.ini（不再用几十 MB 的 zp_profile 目录）
+    # 打包后 __file__ 位于临时解压目录(_MEIPASS)，不可用；以 exe 所在目录为基准。
     if getattr(sys, 'frozen', False):
         _base = os.path.dirname(sys.executable)
     else:
         _base = os.path.dirname(os.path.abspath(__file__))
-    _profile_candidates = [
-        os.path.join(_base, "zp_profile"),
-        os.path.join(_base, "..", "jobspider", "zp_profile"),
-    ]
-    PROFILE_DEFAULT = next((p for p in _profile_candidates if os.path.isdir(p)),
-                           _profile_candidates[0])
+    CONFIG_FILE = os.path.join(_base, "config", "config.ini")
+    CONFIG_SECTION = "login"
+    CONFIG_OPTION = "zhipin_cookie"    # 存 str([cookie, ...])，另存 zhipin_cookie_api
 
     # 类级浏览器/事件循环状态（懒加载，供同步方法复用）
     _loop = None
     _thread = None
     _pw = None
+    _browser = None
     _context = None
     _page = None
 
@@ -252,7 +270,8 @@ class ZhiPin(BaseSpider):
         dt = position.get("date") or {}
         de = position.get("desc") or {}
         jt = position.get("jobType") or {}
-        city_full = ZhiPin.CITY_FULL[city]
+        # 城市全称：优先查表，缺失时降级为原名（原写法直接索引会 KeyError）
+        city_full = ZhiPin.CITY_FULL.get(city, city)
         district = it.get("cityDistrict") or ""
         work_place = ("%s-%s" % (it.get("workCity") or city, district)) if district \
             else (it.get("workCity") or city)
@@ -269,12 +288,32 @@ class ZhiPin(BaseSpider):
 
         exp = ZhiPin._first_text(it.get("workingExp"), pb.get("positionWorkingExp"),
                                  pb.get("workingExp")) or "不限"
-        salary = it.get("salaryReal") or pb.get("salaryReal") or ""
-        matched = re.match(r"\s*(\d+)\s*[-~至]\s*(\d+)", str(salary))
+        # ---------- 薪资 ----------
+        # 取值优先级：salaryReal（结构化区间）> salary60（展示文案）> salary
+        # 智联部分岗位只给「面议」「薪资面议」这类文案，直接落到 0~0 会让
+        # 数据看起来像异常，这里统一规范化为「面议」。
+        salary_text = ""
+        raw_salary = it.get("salaryReal") or pb.get("salaryReal") or ""
+        matched = re.match(r"\s*(\d+)\s*[-~至]\s*(\d+)", str(raw_salary))
         if matched:
-            salary_text = "%s~%s 元/月" % (int(matched.group(1)), int(matched.group(2)))
+            low, high = int(matched.group(1)), int(matched.group(2))
+            salary_text = "%s~%s 元/月" % (low, high)
         else:
-            salary_text = it.get("salary60") or pb.get("salary") or "0~0 元/月"
+            text_salary = (it.get("salary60") or pb.get("salary") or "").strip()
+            # 文案里若带数字区间，提取出来
+            m2 = re.search(r"(\d+(?:\.\d+)?)\s*[-~至]\s*(\d+(?:\.\d+)?)\s*[kK千万]?",
+                           text_salary)
+            if m2:
+                salary_text = text_salary
+            elif text_salary and re.search(r"面议|商议|谈判|保密", text_salary):
+                salary_text = "面议"
+            elif text_salary and not re.fullmatch(r"0+[-~至]0+.*", text_salary):
+                salary_text = text_salary
+            else:
+                salary_text = "面议"
+        # 兜底：显式的 0~0 也当作未公开
+        if re.fullmatch(r"\s*0+\s*~\s*0+\s*(元/月)?\s*", salary_text):
+            salary_text = "面议"
         work_type = it.get("workType") or pb.get("workType") or ""
         is_intern = "实习" in work_type or (it.get("internshipMonths") or 0) > 0
         # 招聘类型：实习 / 校园招聘 / 社会招聘
@@ -315,6 +354,7 @@ class ZhiPin(BaseSpider):
         row = {
             "城市": city_full,
             "职位名称": it.get("name") or pb.get("positionName") or "",
+            "岗位编号": str(it.get("jobId") or it.get("positionId") or ""),
             "公司名称": it.get("companyName") or "",
             "公司性质": it.get("propertyName") or it.get("property") or "不限",
             "公司规模": it.get("companySize") or "不限",
@@ -376,7 +416,8 @@ class ZhiPin(BaseSpider):
         if cls._should_stop():
             return None
         try:
-            j = cls._submit(cls._fetch_positions_async(city_name, page_id), timeout=30)
+            # 超时不宜过长：点「停止」后最多等这一下
+            j = cls._submit(cls._fetch_positions_async(city_name, page_id), timeout=12)
             if j is None:
                 return None
             return (j.get("data") or {}).get("list") or []
@@ -393,7 +434,7 @@ class ZhiPin(BaseSpider):
         rows = []
         for it in (page_info or []):
             d = cls.item_to_row(it, province_name, city_name)
-            rows.append([crawl_date, cls.web_name, province_name]
+            rows.append([crawl_date, cls.source_code, province_name]
                         + [d.get(k, '') for k in cls.ROW_ORDER])
         return rows
 
@@ -401,16 +442,28 @@ class ZhiPin(BaseSpider):
 
     @classmethod
     def target_cities(cls, scope='all'):
-        if scope == "cq":
-            return [("重庆", "重庆")]
-        if scope == "sc":
-            return list(cls.SC_CITIES)
-        if scope == "all":
-            return list(cls.SC_CITIES) + [("重庆", "重庆")]
-        prov_of = {n: p for p, n in cls.SC_CITIES}
-        prov_of["重庆"] = "重庆"
-        return [(prov_of[n], n) for n in
-                [x.strip() for x in str(scope).split(",") if x.strip()] if n in prov_of]
+        """选定要采集的城市
+
+        scope:
+          'all'        全部城市（四川 21 市 + 重庆）
+          'sc'         仅四川
+          'cq'         仅重庆
+          '成都,绵阳'   按名称筛选（逗号分隔）
+        数据来自 config/zhipin_cities.json 的 province 字段，不再写死。
+        """
+        all_pairs = list(cls.SC_CITIES)
+
+        if scope in (None, '', 'all'):
+            return all_pairs
+        if scope == 'sc':
+            return [x for x in all_pairs if x[0] == '四川']
+        if scope == 'cq':
+            return [x for x in all_pairs if x[0] == '重庆']
+
+        # 逗号分隔的城市名
+        prov_of = {city: prov for prov, city in all_pairs}
+        picked = [x.strip() for x in str(scope).split(',') if x.strip()]
+        return [(prov_of[n], n) for n in picked if n in prov_of]
 
     # ==================== 单城市采集 ====================
 
@@ -428,7 +481,7 @@ class ZhiPin(BaseSpider):
         crawl_date = datetime.now().strftime('%Y-%m-%d')
         started = time.time()
         # 去重集合：整行(不含采集日期)作键；采集到一条就加入，避免本次分页重叠重复
-        seen = set(tuple(r) for r in (yesterday_data or []))
+        seen = cls.init_seen(yesterday_data)
         for page_id in range(1, pages + 1):
             # 暂停时阻塞；点停止立刻返回
             if not cls._wait():
@@ -494,15 +547,79 @@ class ZhiPin(BaseSpider):
         fut = asyncio.run_coroutine_threadsafe(coro, cls._loop)
         return fut.result(timeout=timeout)
 
+    # ==================== 登录态（config.ini） ====================
+
     @classmethod
-    async def _launch_async(cls, profile):
+    def load_cookies(cls):
+        """从 config.ini 读取智联 cookie 列表；没有或损坏时返回空列表。
+
+        存储格式与 BOSS 的 boss_cookie 一致（Playwright context.cookies()
+        的字符串形式，即 Python 列表字面量），便于人工查看和跨机迁移。
+        """
+        try:
+            from Config import get_config_value
+            raw = (get_config_value(cls.CONFIG_SECTION, cls.CONFIG_OPTION,
+                                    file=cls.CONFIG_FILE) or '').strip()
+        except Exception as e:
+            logger.warning('【智联招聘】读取 config.ini 失败：%s' % e)
+            return []
+        if not raw:
+            return []
+        try:
+            cookies = ast.literal_eval(raw)
+        except (ValueError, SyntaxError) as e:
+            logger.warning('【智联招聘】config.ini 里的 %s 无法解析：%s'
+                           % (cls.CONFIG_OPTION, e))
+            return []
+        if not isinstance(cookies, list):
+            return []
+        return [c for c in cookies if isinstance(c, dict) and c.get('name')]
+
+    @classmethod
+    def save_cookies(cls, cookies):
+        """把当前 context 的智联 cookie 写回 config.ini（同时存一份 api 串）。"""
+        try:
+            from Config import write_config_value
+            zp = [c for c in (cookies or [])
+                  if 'zhaopin' in (c.get('domain') or '')]
+            if not zp:
+                logger.warning('【智联招聘】登录后没有智联 cookie，未写入 config.ini')
+                return False
+            api = '; '.join('%s=%s' % (c.get('name'), c.get('value')) for c in zp)
+            write_config_value(cls.CONFIG_SECTION,
+                               {cls.CONFIG_OPTION: str(zp),
+                                cls.CONFIG_OPTION + '_api': api},
+                               file=cls.CONFIG_FILE)
+            logger.info('【智联招聘】已保存 %d 条 cookie 到 config.ini' % len(zp))
+            return True
+        except Exception as e:
+            logger.error('【智联招聘】写入 config.ini 失败：%s' % e)
+            return False
+
+    @classmethod
+    def clear_saved_cookies(cls):
+        """清空 config.ini 里保存的智联 cookie。"""
+        try:
+            from Config import write_config_value
+            write_config_value(cls.CONFIG_SECTION,
+                               {cls.CONFIG_OPTION: '',
+                                cls.CONFIG_OPTION + '_api': ''},
+                               file=cls.CONFIG_FILE)
+            logger.info('【智联招聘】已清空 config.ini 中的智联 cookie')
+        except Exception as e:
+            logger.warning('【智联招聘】清空 config.ini 失败：%s' % e)
+
+    # ==================== 浏览器 / 事件循环（Playwright） ====================
+
+    @classmethod
+    async def _launch_async(cls):
         if cls._page is not None:
             return cls._page
         cls._pw = await async_playwright().start()
+        # 只传 launch 支持的参数；viewport/locale 属于 context 选项，不能放在这里
+        launch_kwargs = dict(headless=False)
         # 优先使用系统浏览器（不随包内置，减小体积）：
         # 未指定 PLAYWRIGHT_CHANNEL 时依次尝试 系统 Edge -> 系统 Chrome -> 内置 Chromium。
-        launch_kwargs = dict(headless=False, locale="zh-CN",
-                             viewport={"width": 1360, "height": 900})
         forced = (os.environ.get('PLAYWRIGHT_CHANNEL') or '').strip()
         channels = [forced] if forced else ['msedge', 'chrome', None]
         last_err = None
@@ -511,36 +628,68 @@ class ZhiPin(BaseSpider):
             if channel:
                 kwargs['channel'] = channel
             logger.info('【智联招聘】启动浏览器（channel=%s）' % (channel or 'bundled-chromium'))
+            browser = None
             try:
-                cls._context = await cls._pw.chromium.launch_persistent_context(profile, **kwargs)
-                cls._page = cls._context.pages[0] if cls._context.pages \
-                    else await cls._context.new_page()
+                browser = await cls._pw.chromium.launch(**kwargs)
+                # 与其他平台一致：普通上下文 + config.ini 里的 cookie
+                context = await browser.new_context(
+                    locale="zh-CN",
+                    viewport={"width": 1360, "height": 900},
+                )
+                cookies = cls.load_cookies()
+                if cookies:
+                    try:
+                        await context.add_cookies(cookies)
+                        logger.info('【智联招聘】已从 config.ini 注入 %d 条 cookie' % len(cookies))
+                    except Exception as e:
+                        logger.warning('【智联招聘】注入 cookie 失败（将走登录流程）：%r' % e)
+                else:
+                    logger.info('【智联招聘】config.ini 无智联 cookie，将走登录流程')
+                cls._browser = browser
+                cls._context = context
+                cls._page = await context.new_page()
                 return cls._page
             except Exception as e:
                 last_err = e
                 logger.warning('【智联招聘】channel=%s 启动失败：%r' % (channel or 'bundled', e))
-                cls._context = None
+                cls._browser = cls._context = None
+                # launch 成功但 new_context 失败时，浏览器进程会残留，这里关掉
+                if browser is not None:
+                    try:
+                        await browser.close()
+                    except Exception:
+                        pass
+        # 所有方式都失败：停掉 playwright，避免下次 launch 重复 start 造成泄漏
+        try:
+            await cls._pw.stop()
+        except Exception:
+            pass
+        cls._pw = None
         raise last_err if last_err else RuntimeError('未找到可用浏览器（Edge/Chrome/Chromium）')
 
     @classmethod
-    def launch(cls, profile=None):
-        profile = profile or cls.PROFILE_DEFAULT
-        logger.info('【智联招聘】启动 Chrome（登录态目录：%s）' % profile)
-        return cls._submit(cls._launch_async(profile), timeout=120)
+    def launch(cls):
+        logger.info('【智联招聘】启动浏览器（登录态：%s）' % cls.CONFIG_FILE)
+        return cls._submit(cls._launch_async(), timeout=120)
 
     @classmethod
     async def _close_async(cls):
         try:
             if cls._context is not None:
                 await cls._context.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning('【智联招聘】关闭浏览器上下文异常：%r' % (e,))
+        try:
+            if cls._browser is not None:
+                await cls._browser.close()
+        except Exception as e:
+            logger.warning('【智联招聘】关闭浏览器异常：%r' % (e,))
         if cls._pw is not None:
             try:
                 await cls._pw.stop()
-            except Exception:
-                pass
-        cls._page = cls._context = cls._pw = None
+            except Exception as e:
+                logger.warning('【智联招聘】停止 Playwright 异常：%r' % (e,))
+        cls._page = cls._context = cls._browser = cls._pw = None
 
     @classmethod
     def close(cls):
@@ -641,6 +790,8 @@ class ZhiPin(BaseSpider):
                 logger.info('[登录] 已清除 %d 条智联登录 cookie（强制重新登录）' % len(zp))
         except Exception as e:
             logger.info('[登录] 清除 cookie 失败（可忽略）: %r' % (e,))
+        # config.ini 里存的也一并清掉，避免下次启动又被注入回去
+        cls.clear_saved_cookies()
 
     @classmethod
     async def _click_code_button(cls):
@@ -744,10 +895,22 @@ class ZhiPin(BaseSpider):
                 break
         if confirmed:
             logger.info('[登录] 登录成功，当前页: ' + str(cls._page.url))
+            # 关键：把登录后的 cookie 写入 config.ini，下次启动直接注入，
+            # 不再依赖 zp_profile 目录
+            try:
+                await cls._save_cookies_async()
+            except Exception as e:
+                logger.warning('[登录] 保存 cookie 到 config.ini 失败：%r' % (e,))
         else:
             logger.info('[登录] 警告：未能确认登录成功。请检查浏览器窗口，可能需要重新获取验证码。')
         await cls._page.wait_for_timeout(3000)
         return confirmed
+
+    @classmethod
+    async def _save_cookies_async(cls):
+        """异步取当前 context 的 cookie 并写盘（供登录流程调用）。"""
+        cookies = await cls._context.cookies()
+        return cls.save_cookies(cookies)
 
     @classmethod
     async def _ensure_login(cls, phone, force=False, ask=input):
@@ -764,6 +927,11 @@ class ZhiPin(BaseSpider):
         state = await cls._is_logged_in()
         if state is True and not force:
             logger.info('[登录] 检测到已有登录态，跳过手机号与短信验证，直接开始采集。')
+            # 顺手刷新 config.ini 里的 cookie（延长有效期）
+            try:
+                await cls._save_cookies_async()
+            except Exception as e:
+                logger.warning('[登录] 刷新 config.ini cookie 失败：%r' % (e,))
             return True
         if state is None:
             logger.info('[登录] 登录态无法判定，默认进入手机号 + 短信验证码登录流程。')
@@ -787,19 +955,25 @@ class ZhiPin(BaseSpider):
 
     @classmethod
     def _log_field_summary(cls, ws, total_rows):
-        """采集结束后统计关键字段覆盖率，便于确认「学历要求」等是否写入。"""
+        """采集结束后统计关键字段覆盖率，便于确认「学历要求」等是否写入。
+
+        列索引按 XLSX_HEADERS 动态查找，避免新增列后此处错位。
+        """
         try:
+            idx_edu = XLSX_HEADERS.index('学历要求')
+            idx_exp = XLSX_HEADERS.index('经验要求')
+            idx_salary = XLSX_HEADERS.index('薪资范围')
             empty_edu = empty_exp = empty_salary = 0
             count = 0
             for row in ws.iter_rows(min_row=2, values_only=True):
                 if not row or len(row) < len(XLSX_HEADERS):
                     continue
                 count += 1
-                if not str(row[14] or '').strip():
+                if not str(row[idx_edu] or '').strip():
                     empty_edu += 1
-                if not str(row[15] or '').strip():
+                if not str(row[idx_exp] or '').strip():
                     empty_exp += 1
-                if not str(row[12] or '').strip():
+                if not str(row[idx_salary] or '').strip():
                     empty_salary += 1
             if not count:
                 return
@@ -811,15 +985,18 @@ class ZhiPin(BaseSpider):
 
     @classmethod
     def run(cls, data_file='智联数据.xlsx', phone='', force=False, scope='all',
-            profile=None, delay=None, max_pages=None, ask=input,
+            update_duplicate=None,
+            delay=None, max_pages=None, ask=input,
             pause_event=None, is_running=None,
             on_progress=None, on_data=None, on_city_done=None, on_page=None,
             on_complete=None, on_error=None):
         """采集入口：登录 -> 逐城市采集 -> 增量写入 xlsx。
         pause_event: threading.Event（暂停时阻塞）；is_running: lambda 返回布尔，False 停止。
         on_progress(current, total, city) / on_data(row) / on_city_done(city)
-        on_complete(msg) / on_error(msg)；供 GUI 展示进度与数据。"""
-        profile = profile or cls.PROFILE_DEFAULT
+        on_complete(msg) / on_error(msg)；供 GUI 展示进度与数据。
+
+        登录态存 config/config.ini（[login] zhipin_cookie），与 BOSS/国聘一致，
+        不再使用浏览器 profile 目录。"""
         if delay is not None:
             cls.DEFAULT_DELAY = delay
         if max_pages is not None:
@@ -827,14 +1004,26 @@ class ZhiPin(BaseSpider):
 
         wb, ws = cls.set_column_style(data_file)
         yesterday_data = cls.load_yesterday_data(data_file)
-        cls._begin_run(pause_event, is_running)
+        cls._begin_run(pause_event, is_running,
+                            update_duplicate=update_duplicate)
 
         try:
-            cls.launch(profile)
+            cls.launch()
+            # 启动浏览器可能耗时若干秒，期间用户点了停止就别继续登录
+            if cls._should_stop():
+                logger.info('【智联招聘】用户终止采集')
+                if on_complete:
+                    on_complete('用户终止采集')
+                return
             if not cls.login(phone=phone, force=force, ask=ask):
                 logger.error('【智联招聘】登录未确认成功，停止采集。')
                 if on_complete:
                     on_complete('登录未确认成功，已停止')
+                return
+            if cls._should_stop():
+                logger.info('【智联招聘】用户终止采集')
+                if on_complete:
+                    on_complete('用户终止采集')
                 return
             cls.goto_jobs_page()
 

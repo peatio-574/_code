@@ -1,0 +1,137 @@
+{
+  "_comment": "智联招聘城市列表；cityCode 为智联接口 S_SOU_WORK_CITY 参数。四川 21 市 + 重庆，共 22 条",
+  "cities": [
+    {
+      "province": "四川",
+      "city": "成都",
+      "cityCode": 801,
+      "cityFull": "成都市"
+    },
+    {
+      "province": "四川",
+      "city": "自贡",
+      "cityCode": 802,
+      "cityFull": "自贡市"
+    },
+    {
+      "province": "四川",
+      "city": "攀枝花",
+      "cityCode": 803,
+      "cityFull": "攀枝花市"
+    },
+    {
+      "province": "四川",
+      "city": "泸州",
+      "cityCode": 804,
+      "cityFull": "泸州市"
+    },
+    {
+      "province": "四川",
+      "city": "德阳",
+      "cityCode": 805,
+      "cityFull": "德阳市"
+    },
+    {
+      "province": "四川",
+      "city": "绵阳",
+      "cityCode": 806,
+      "cityFull": "绵阳市"
+    },
+    {
+      "province": "四川",
+      "city": "广元",
+      "cityCode": 807,
+      "cityFull": "广元市"
+    },
+    {
+      "province": "四川",
+      "city": "遂宁",
+      "cityCode": 808,
+      "cityFull": "遂宁市"
+    },
+    {
+      "province": "四川",
+      "city": "内江",
+      "cityCode": 809,
+      "cityFull": "内江市"
+    },
+    {
+      "province": "四川",
+      "city": "乐山",
+      "cityCode": 810,
+      "cityFull": "乐山市"
+    },
+    {
+      "province": "四川",
+      "city": "南充",
+      "cityCode": 811,
+      "cityFull": "南充市"
+    },
+    {
+      "province": "四川",
+      "city": "眉山",
+      "cityCode": 812,
+      "cityFull": "眉山市"
+    },
+    {
+      "province": "四川",
+      "city": "宜宾",
+      "cityCode": 813,
+      "cityFull": "宜宾市"
+    },
+    {
+      "province": "四川",
+      "city": "广安",
+      "cityCode": 814,
+      "cityFull": "广安市"
+    },
+    {
+      "province": "四川",
+      "city": "达州",
+      "cityCode": 815,
+      "cityFull": "达州市"
+    },
+    {
+      "province": "四川",
+      "city": "雅安",
+      "cityCode": 816,
+      "cityFull": "雅安市"
+    },
+    {
+      "province": "四川",
+      "city": "巴中",
+      "cityCode": 817,
+      "cityFull": "巴中市"
+    },
+    {
+      "province": "四川",
+      "city": "资阳",
+      "cityCode": 818,
+      "cityFull": "资阳市"
+    },
+    {
+      "province": "四川",
+      "city": "阿坝",
+      "cityCode": 819,
+      "cityFull": "阿坝藏族羌族自治州"
+    },
+    {
+      "province": "四川",
+      "city": "甘孜",
+      "cityCode": 820,
+      "cityFull": "甘孜藏族自治州"
+    },
+    {
+      "province": "四川",
+      "city": "凉山",
+      "cityCode": 821,
+      "cityFull": "凉山彝族自治州"
+    },
+    {
+      "province": "重庆",
+      "city": "重庆",
+      "cityCode": 551,
+      "cityFull": "重庆市"
+    }
+  ]
+}

@@ -3,18 +3,17 @@ chcp 936 >nul 2>nul
 setlocal EnableDelayedExpansion
 
 rem ============================================================
-rem  Jobs 打包脚本（PyInstaller）
+rem  Jobs 打包脚本（PyInstaller）—— 体积优先
 rem
-rem  * 解释器：d:\_code\python\python.exe（可用 PYTHON 覆盖）
-rem  * config.ini 放在 exe 同目录：外部可读可改，登录后 Cookie 自动写回
-rem  * 体积优化：裁剪 playwright 无用数据 + 排除重型依赖 + 单文件 + 字节码优化
+rem  体积优化要点：
+rem    * 只打包 patchright 一套驱动，排除 playwright（省约 106MB）
+rem    * 裁掉驱动里运行时不用的部分：types/*.d.ts、lib/vite/**（
+rem      traceViewer/recorder/dashboard，约 2.9MB）、*.map/*.md/*.sh 等
+rem    * --optimize 2 去掉 docstring 与 assert
+rem    * 排除 numpy/pandas/scipy/matplotlib/IPython 等重量级依赖
+rem    * 提供 UPX_DIR 可再压 30-50%%（可选）
 rem
-rem  可选环境变量：
-rem    PYTHON         指定解释器（路径或命令名）
-rem    PIP_MIRROR     pip 镜像，默认清华
-rem    OPTIMIZE       字节码优化级别，默认 1；设 2 更小
-rem    UPX_DIR        UPX 目录，设置后启用 UPX 压缩
-rem    KEEP_PW_FULL   设为 1 则不裁剪 playwright
+rem  登录凭证、日志、采集结果、config\ 全在 exe 同目录，不打进 exe
 rem ============================================================
 
 set "APP_NAME=Jobs"
@@ -26,15 +25,14 @@ set "HOOK_DIR=%BUILD_DIR%\hooks"
 
 if not defined PYTHON set "PYTHON=d:\_code\python\python.exe"
 if not defined PIP_MIRROR set "PIP_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple"
-if not defined OPTIMIZE set "OPTIMIZE=1"
-if not defined KEEP_PW_FULL set "KEEP_PW_FULL=0"
+rem 字节码优化级别：2 = 去掉 docstring + 断言（体积更小）
+if not defined OPTIMIZE set "OPTIMIZE=2"
 
 cd /d "%~dp0"
 
 rem ============ 1. 检查 Python ============
 echo.
 echo [1/6] 检查 Python...
-
 set "PY_OK=0"
 if exist "%PYTHON%" set "PY_OK=1"
 if "%PY_OK%"=="0" (
@@ -42,15 +40,13 @@ if "%PY_OK%"=="0" (
     if not errorlevel 1 set "PY_OK=1"
 )
 if "%PY_OK%"=="0" goto :no_python
-
 "%PYTHON%" -c "import sys;sys.exit(0 if sys.version_info[:2]>=(3,8) else 1)" >nul 2>nul
 if errorlevel 1 goto :bad_python
 "%PYTHON%" -c "import sys;print('  Python ' + sys.version.split()[0] + '  (' + sys.executable + ')')"
-if errorlevel 1 goto :bad_python
 
-rem ============ 2. PyInstaller ============
+rem ============ 2. 检查 PyInstaller 与依赖 ============
 echo.
-echo [2/6] 检查 PyInstaller...
+echo [2/6] 检查 PyInstaller 与依赖...
 "%PYTHON%" -m PyInstaller --version >nul 2>nul
 if errorlevel 1 (
     echo   未安装，正在安装...
@@ -58,49 +54,48 @@ if errorlevel 1 (
     if errorlevel 1 goto :fail
 )
 "%PYTHON%" -c "import PyInstaller;print('  PyInstaller', PyInstaller.__version__)"
-
-rem ============ 3. 运行依赖 ============
-echo.
-echo [3/6] 检查运行依赖...
-"%PYTHON%" -c "import requests, openpyxl, bs4, playwright, screeninfo" >nul 2>nul
+rem 用 patchright 作为唯一浏览器驱动（playwright 会被排除）
+"%PYTHON%" -c "import requests, openpyxl, patchright" >nul 2>nul
 if errorlevel 1 (
     echo   缺少依赖，正在安装...
-    "%PYTHON%" -m pip install requests openpyxl beautifulsoup4 playwright screeninfo -i "%PIP_MIRROR%"
+    "%PYTHON%" -m pip install requests openpyxl beautifulsoup4 patchright -i "%PIP_MIRROR%"
     if errorlevel 1 goto :fail
 )
-echo   依赖就绪
+"%PYTHON%" -c "import ttkbootstrap" >nul 2>nul
+if errorlevel 1 (
+    echo   安装 ttkbootstrap（界面主题）...
+    "%PYTHON%" -m pip install ttkbootstrap -i "%PIP_MIRROR%"
+)
+echo   依赖齐全
 
-rem ============ 4. 清理旧产物 ============
-rem 只清理 build 与旧 exe；dist 下的 config.ini / logs / zp_profile 保留
+rem ============ 3. 清理旧产物 ============
 echo.
-echo [4/6] 清理旧产物...
+echo [3/6] 清理旧产物...
 if exist "%WORK_DIR%" rmdir /s /q "%WORK_DIR%"
 if exist "%BUILD_DIR%\*.spec" del /f /q "%BUILD_DIR%\*.spec" >nul 2>nul
 if not exist "%HOOK_DIR%" mkdir "%HOOK_DIR%" >nul 2>nul
 if not exist "%DIST_DIR%" mkdir "%DIST_DIR%" >nul 2>nul
 if exist "%DIST_DIR%\%APP_NAME%.exe" del /f /q "%DIST_DIR%\%APP_NAME%.exe" >nul 2>nul
+echo   完成
 
-rem ============ 5. playwright 裁剪 hook ============
-rem 官方 hook 会全量 collect_data_files('playwright')，driver 约 100MB。
-rem 以下内容本工具用不到，排除后 exe 明显变小：
-rem   driver\package\types       1.8MB  TypeScript 类型声明
-rem   driver\package\bin         安装脚本（.ps1/.sh）
-rem   driver\package\lib\vite    3.5MB  仅 trace viewer / codegen / UI 模式使用
+rem ============ 4. 生成裁剪版 hook ============
+rem patchright 官方 hook 会 collect_data_files 整个 driver（约 103MB），
+rem 其中运行时用不到的：types（1.9MB 的 .d.ts）、lib\vite（2.9MB 的
+rem traceViewer/recorder/dashboard 前端页面）、各种 map/md/sh/css/ttf。
 echo.
-echo [5/6] 准备 playwright 裁剪 hook...
-if "%KEEP_PW_FULL%"=="1" (
-    echo   跳过裁剪（KEEP_PW_FULL=1）
-) else (
-    call :write_hook "hook-playwright.async_api.py"
-    call :write_hook "hook-playwright.sync_api.py"
-    echo   已排除 types / bin / lib\vite
-)
+echo [4/6] 生成驱动裁剪 hook...
+call :write_hook "hook-patchright.sync_api.py" "patchright"
+call :write_hook "hook-patchright.async_api.py" "patchright"
+call :write_hook "hook-patchright._impl.py" "patchright"
+call :write_pil_hook
+echo   已排除: types / lib\vite / *.d.ts / *.map / *.md / *.sh / *.css / *.ttf
+echo   PIL: 只保留必要插件（排除 AVIF/MPO）
 
-rem ============ 6. 打包 ============
+rem ============ 5. 打包 ============
 echo.
-echo [6/6] 打包中（单文件，约 1-3 分钟）...
+echo [5/6] 开始打包（约 1-3 分钟）...
 set "UPX_ARG=--noupx"
-if defined UPX_DIR set "UPX_ARG=--upx-dir %UPX_DIR%"
+if defined UPX_DIR if exist "%UPX_DIR%" set "UPX_ARG=--upx-dir \"%UPX_DIR%\""
 
 "%PYTHON%" -m PyInstaller ^
     --noconfirm ^
@@ -118,22 +113,32 @@ if defined UPX_DIR set "UPX_ARG=--upx-dir %UPX_DIR%"
     --paths ".." ^
     --hidden-import "Logger" ^
     --hidden-import "Config" ^
-    --hidden-import "newPlayWright" ^
+    --hidden-import "PatchRightClass" ^
     --hidden-import "guopin" ^
     --hidden-import "ncss" ^
     --hidden-import "zhipin" ^
+    --hidden-import "Boss" ^
     --hidden-import "requests" ^
     --hidden-import "openpyxl" ^
-    --hidden-import "bs4" ^
     --hidden-import "screeninfo" ^
+    --hidden-import "patchright" ^
+    --hidden-import "patchright.sync_api" ^
+    --hidden-import "patchright.async_api" ^
     --hidden-import "tkinter" ^
     --hidden-import "tkinter.ttk" ^
     --hidden-import "tkinter.simpledialog" ^
+    --hidden-import "tkinter.messagebox" ^
+    --hidden-import "tkinter.filedialog" ^
+    --hidden-import "ttkbootstrap" ^
+    --exclude-module "playwright" ^
+    --exclude-module "cryptography" ^
+    --exclude-module "cffi" ^
+    --exclude-module "bs4" ^
+    --exclude-module "lxml" ^
     --exclude-module "pandas" ^
     --exclude-module "numpy" ^
     --exclude-module "scipy" ^
     --exclude-module "matplotlib" ^
-    --exclude-module "PIL" ^
     --exclude-module "IPython" ^
     --exclude-module "jupyter" ^
     --exclude-module "notebook" ^
@@ -141,6 +146,7 @@ if defined UPX_DIR set "UPX_ARG=--upx-dir %UPX_DIR%"
     --exclude-module "setuptools" ^
     --exclude-module "pkg_resources" ^
     --exclude-module "pip" ^
+    --exclude-module "wheel" ^
     --exclude-module "unittest" ^
     --exclude-module "doctest" ^
     --exclude-module "lib2to3" ^
@@ -152,30 +158,53 @@ if defined UPX_DIR set "UPX_ARG=--upx-dir %UPX_DIR%"
     --exclude-module "idlelib" ^
     --exclude-module "turtle" ^
     --exclude-module "turtledemo" ^
+    --exclude-module "distutils" ^
+    --exclude-module "sqlite3" ^
+    --exclude-module "curses" ^
+    --exclude-module "multiprocessing" ^
+    --exclude-module "asyncio.tasks" ^
     %UPX_ARG% ^
     "%ENTRY%"
 
 if errorlevel 1 goto :fail
 if not exist "%DIST_DIR%\%APP_NAME%.exe" goto :fail
 
-rem ============ 7. 外置 config.ini ============
+rem ============ 6. 生成外部配置目录 ============
+echo.
+echo [6/6] 生成外部配置与说明...
 call :ensure_config
+call :ensure_config_dir
+call :ensure_readme
 
 for %%F in ("%DIST_DIR%\%APP_NAME%.exe") do set "EXE_SIZE=%%~zF"
 set /a EXE_MB=%EXE_SIZE%/1048576
+set /a EXE_KB=%EXE_SIZE%/1024
 
 echo.
 echo ============================================================
 echo  打包完成
-echo    EXE      : %cd%\%DIST_DIR%\%APP_NAME%.exe  (%EXE_MB% MB)
-echo    配置文件 : %cd%\%DIST_DIR%\config.ini
+echo ============================================================
+echo   EXE : %cd%\%DIST_DIR%\%APP_NAME%.exe
+echo         约 %EXE_MB% MB（%EXE_KB% KB）
+echo.
+echo  exe 同目录下的外部文件（可直接编辑）：
+echo    config\config.ini   登录 Cookie + [source] 来源显示值
+echo    config\           采集配置与数据字典
+echo      columns.json       表格列定义
+echo      ui.json            界面主题与布局
+echo      field_rules.json   字段规范化规则
+echo      guopin_area.json   国聘省市字典
+echo      zhipin_cities.json 智联城市字典
+echo      BossCity.json      BOSS 城市字典
+echo      BossJobType.json   BOSS 岗位字典
+echo    logs\              运行日志
+echo    *.xlsx             采集结果
 echo.
 echo  使用说明：
-echo    * config.ini 与 exe 同目录，可直接用记事本编辑；
-echo      学信网登录成功后 Cookie 自动写回该文件，下次启动仍有效。
-echo    * 日志：exe 同目录 logs\日期.log
-echo    * 智联登录态：exe 同目录 zp_profile（删除后需重新登录）
-echo    * 使用系统 Edge/Chrome，不内置浏览器；PLAYWRIGHT_CHANNEL 可指定。
+echo    * 首次运行会自动生成缺失的目录与配置
+echo    * 浏览器用系统自带的 Edge/Chrome，不需要额外安装
+echo      （可用环境变量 PLAYWRIGHT_CHANNEL 指定 msedge / chrome）
+echo    * config\config.ini 的 [source] 段留空时，运行会自动填入加密值
 echo ============================================================
 echo.
 pause
@@ -184,44 +213,151 @@ exit /b 0
 rem ==================== 子过程 ====================
 
 :write_hook
-rem 生成仅含 ASCII 的 hook，避免编码问题
+rem 生成驱动裁剪 hook：只排除「运行时确实用不到」的文件，避免把浏览器搞坏。
+rem 参数1 = hook 文件名，参数2 = 包名（patchright）
 > "%HOOK_DIR%\%~1" echo from PyInstaller.utils.hooks import collect_data_files
 >>"%HOOK_DIR%\%~1" echo datas = collect_data_files(
->>"%HOOK_DIR%\%~1" echo     "playwright",
+>>"%HOOK_DIR%\%~1" echo     "%~2",
 >>"%HOOK_DIR%\%~1" echo     excludes=[
+rem 类型声明：仅 IDE 用，运行时不需要（1.9MB）
 >>"%HOOK_DIR%\%~1" echo         "driver/package/types/**/*",
->>"%HOOK_DIR%\%~1" echo         "driver/package/bin/*",
+rem 前端页面：traceViewer / recorder / dashboard，本项目不用（2.9MB）
 >>"%HOOK_DIR%\%~1" echo         "driver/package/lib/vite/**/*",
+rem 浏览器下载器与 bin：用系统 Edge/Chrome，不需要（若用内置 Chromium 则不能排除）
+>>"%HOOK_DIR%\%~1" echo         "driver/package/bin/*",
+rem 纯文档/脚本/样式/字体
 >>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.d.ts",
 >>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.map",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.md",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.sh",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.ts",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.css",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.ttf",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.png",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.svg",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.license",
+>>"%HOOK_DIR%\%~1" echo         "driver/package/**/*.LICENSE",
+rem 字节码缓存与各平台脚本
 >>"%HOOK_DIR%\%~1" echo         "**/__pycache__/**",
 >>"%HOOK_DIR%\%~1" echo         "**/*.ps1",
->>"%HOOK_DIR%\%~1" echo         "**/*.sh",
 >>"%HOOK_DIR%\%~1" echo     ],
 >>"%HOOK_DIR%\%~1" echo )
 exit /b 0
 
+:write_pil_hook
+rem 覆盖 PyInstaller 自带的 hook-PIL.Image：它会把所有 ImagePlugin 都收进来，
+rem 其中 AVIF 解码器（PIL\_avif.pyd）有 7.5MB，本项目完全用不到。
+rem ttkbootstrap 只用到 ImageColor / ImageDraw / ImageFont，这些仍然保留。
+> "%HOOK_DIR%\hook-PIL.Image.py" echo from PyInstaller.utils.hooks import collect_submodules
+>>"%HOOK_DIR%\hook-PIL.Image.py" echo hiddenimports = collect_submodules(
+>>"%HOOK_DIR%\hook-PIL.Image.py" echo     "PIL", lambda name: "ImagePlugin" in name)
+>>"%HOOK_DIR%\hook-PIL.Image.py" echo excludedimports = [
+>>"%HOOK_DIR%\hook-PIL.Image.py" echo     "PIL.AvifImagePlugin",
+>>"%HOOK_DIR%\hook-PIL.Image.py" echo     "PIL.MpoImagePlugin",
+>>"%HOOK_DIR%\hook-PIL.Image.py" echo     "PIL.BlpImagePlugin",
+>>"%HOOK_DIR%\hook-PIL.Image.py" echo ]
+exit /b 0
+
 :ensure_config
-if not exist "%DIST_DIR%" mkdir "%DIST_DIR%" >nul 2>nul
-if exist "%DIST_DIR%\config.ini" (
-    echo   已保留现有 config.ini（不覆盖）
+rem config\config.ini 已存在则不覆盖（保留已登录的 Cookie）
+if not exist "%DIST_DIR%\config" mkdir "%DIST_DIR%\config" >nul 2>nul
+if exist "%DIST_DIR%\config\config.ini" (
+    echo   config\config.ini 已存在，保留原文件
     exit /b 0
 )
-if exist "config.ini" (
-    copy /y "config.ini" "%DIST_DIR%\config.ini" >nul
-    echo   已复制现有 config.ini 到 dist
+if exist "config\config.ini" (
+    copy /y "config\config.ini" "%DIST_DIR%\config\config.ini" >nul
+    echo   已复制 config\config.ini
     exit /b 0
 )
-> "%DIST_DIR%\config.ini" echo [login]
->>"%DIST_DIR%\config.ini" echo nscc_cookie =
->>"%DIST_DIR%\config.ini" echo nscc_cookie_api =
-echo   已创建空白 config.ini 模板
+rem 空白模板：[source] 段留空，首次运行会自动填入加密值
+> "%DIST_DIR%\config\config.ini" echo [login]
+>>"%DIST_DIR%\config\config.ini" echo nscc_cookie =
+>>"%DIST_DIR%\config\config.ini" echo nscc_cookie_api =
+>>"%DIST_DIR%\config\config.ini" echo boss_cookie =
+>>"%DIST_DIR%\config\config.ini" echo boss_cookie_api =
+>>"%DIST_DIR%\config\config.ini" echo zhipin_cookie =
+>>"%DIST_DIR%\config\config.ini" echo zhipin_cookie_api =
+>>"%DIST_DIR%\config\config.ini" echo.
+>>"%DIST_DIR%\config\config.ini" echo [source]
+>>"%DIST_DIR%\config\config.ini" echo BOSS直聘 =
+>>"%DIST_DIR%\config\config.ini" echo 智联招聘 =
+>>"%DIST_DIR%\config\config.ini" echo 国聘 =
+>>"%DIST_DIR%\config\config.ini" echo 国家大学生就业服务平台 =
+echo   已创建空白 config\config.ini 模板
+exit /b 0
+
+:ensure_config_dir
+rem 把 config\ 下的 JSON 复制到 dist\config\（已存在的不覆盖，保留用户修改）
+if not exist "%DIST_DIR%\config" mkdir "%DIST_DIR%\config" >nul 2>nul
+if not exist "config" (
+    echo   [警告] 未找到 config 目录
+    exit /b 0
+)
+set "COPIED=0"
+for %%F in ("config\*.json") do (
+    if not exist "%DIST_DIR%\config\%%~nxF" (
+        copy /y "%%F" "%DIST_DIR%\config\%%~nxF" >nul
+        set /a COPIED+=1
+        echo   + config\%%~nxF
+    )
+)
+if "!COPIED!"=="0" (
+    echo   config 目录已是最新，无需复制
+) else (
+    echo   已复制 !COPIED! 个配置文件
+)
+echo   注意：这些文件放在 dist\config，不打包进 exe
+exit /b 0
+
+:ensure_readme
+if exist "%DIST_DIR%\使用说明.txt" exit /b 0
+> "%DIST_DIR%\使用说明.txt" echo 招聘数据采集系统 - 使用说明
+>>"%DIST_DIR%\使用说明.txt" echo ========================================
+>>"%DIST_DIR%\使用说明.txt" echo.
+>>"%DIST_DIR%\使用说明.txt" echo 【启动】
+>>"%DIST_DIR%\使用说明.txt" echo   双击 Jobs.exe 即可，浏览器会自动弹出。
+>>"%DIST_DIR%\使用说明.txt" echo   浏览器用系统 Edge/Chrome，无需额外安装。
+>>"%DIST_DIR%\使用说明.txt" echo.
+>>"%DIST_DIR%\使用说明.txt" echo 【登录】
+>>"%DIST_DIR%\使用说明.txt" echo   国家大学生就业服务平台：首次需在浏览器里手动登录，
+>>"%DIST_DIR%\使用说明.txt" echo       Cookie 自动写入 config\config.ini 的 nscc_cookie_api。
+>>"%DIST_DIR%\使用说明.txt" echo   智联招聘：首次需手机号 + 短信验证码，
+>>"%DIST_DIR%\使用说明.txt" echo       Cookie 自动写入 config\config.ini 的 zhipin_cookie。
+>>"%DIST_DIR%\使用说明.txt" echo   BOSS直聘：Cookie 存于 config\config.ini 的 boss_cookie。
+>>"%DIST_DIR%\使用说明.txt" echo   国聘：无需登录。
+>>"%DIST_DIR%\使用说明.txt" echo.
+>>"%DIST_DIR%\使用说明.txt" echo 【可编辑配置】
+>>"%DIST_DIR%\使用说明.txt" echo    config\config.ini      登录 Cookie + [source] 来源显示值
+>>"%DIST_DIR%\使用说明.txt" echo    config\columns.json    表格列定义与列宽
+>>"%DIST_DIR%\使用说明.txt" echo    config\ui.json         界面主题、字体、颜色
+>>"%DIST_DIR%\使用说明.txt" echo    config\field_rules.json 字段规范化规则
+>>"%DIST_DIR%\使用说明.txt" echo    config\BossCity.json   BOSS 采集范围（城市/区县）
+>>"%DIST_DIR%\使用说明.txt" echo    config\BossJobType.json BOSS 采集范围（岗位）
+>>"%DIST_DIR%\使用说明.txt" echo.
+>>"%DIST_DIR%\使用说明.txt" echo 【来源列加密】
+>>"%DIST_DIR%\使用说明.txt" echo   config\config.ini 的 [source] 段留空时，
+>>"%DIST_DIR%\使用说明.txt" echo   首次运行会自动填入各平台的加密值。
+>>"%DIST_DIR%\使用说明.txt" echo   想改回明文：把右侧值删掉再运行（会重新填入），
+>>"%DIST_DIR%\使用说明.txt" echo   或整行删除该平台（则写原始中文名）。
+>>"%DIST_DIR%\使用说明.txt" echo.
+>>"%DIST_DIR%\使用说明.txt" echo 【常见问题】
+>>"%DIST_DIR%\使用说明.txt" echo   Q: 界面没起来？
+>>"%DIST_DIR%\使用说明.txt" echo   A: 查看 logs 目录当天的日志。
+>>"%DIST_DIR%\使用说明.txt" echo   Q: 登录失效？
+>>"%DIST_DIR%\使用说明.txt" echo   A: 删除 config\config.ini 里对应的 cookie 行，重跑即可。
+>>"%DIST_DIR%\使用说明.txt" echo   Q: 想换界面主题？
+>>"%DIST_DIR%\使用说明.txt" echo   A: 改 config\ui.json 的 themename 后重启。
+>>"%DIST_DIR%\使用说明.txt" echo   Q: 采集太慢？
+>>"%DIST_DIR%\使用说明.txt" echo   A: BOSS 的 BossJobType.json 里岗位越多越慢，可只留需要的。
+>>"%DIST_DIR%\使用说明.txt" echo ========================================
+echo   已生成 使用说明.txt
 exit /b 0
 
 :no_python
 echo.
 echo [ERROR] 未找到 Python：%PYTHON%
-echo         请安装 3.8+，或设置环境变量 PYTHON 指向解释器。
+echo         请安装 3.8+，或用环境变量 PYTHON 指定路径。
 echo.
 pause
 exit /b 1

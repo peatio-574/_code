@@ -1,0 +1,236 @@
+[
+  {
+    "code": "101402",
+    "name": "电气工程师",
+    "category": "电子/电气/通信",
+    "subcategory": "电气/自动化"
+  },
+  {
+    "code": "100803",
+    "name": "自动化工程师",
+    "category": "电子/电气/通信",
+    "subcategory": "电气/自动化"
+  },
+  {
+    "code": "300310",
+    "name": "机电工程师",
+    "category": "电子/电气/通信",
+    "subcategory": "电气/自动化"
+  },
+  {
+    "code": "220223",
+    "name": "建筑机电工程师",
+    "category": "电子/电气/通信",
+    "subcategory": "电气/自动化"
+  },
+  {
+    "code": "150207",
+    "name": "后勤",
+    "category": "人力/行政/法务",
+    "subcategory": "行政"
+  },
+  {
+    "code": "150205",
+    "name": "经理助理",
+    "category": "人力/行政/法务",
+    "subcategory": "行政"
+  },
+  {
+    "code": "150210",
+    "name": "文员",
+    "category": "人力/行政/法务",
+    "subcategory": "行政"
+  },
+  {
+    "code": "190312",
+    "name": "体育/体能老师",
+    "category": "零售/生活服务",
+    "subcategory": "运动健身"
+  },
+  {
+    "code": "100311",
+    "name": "无人机飞手",
+    "category": "零售/生活服务",
+    "subcategory": "驾驶员"
+  },
+  {
+    "code": "190301",
+    "name": "教师",
+    "category": "教育培训",
+    "subcategory": "教师"
+  },
+  {
+    "code": "190309",
+    "name": "英语教师",
+    "category": "教育培训",
+    "subcategory": "教师"
+  },
+  {
+    "code": "190317",
+    "name": "数学教师",
+    "category": "教育培训",
+    "subcategory": "教师"
+  },
+  {
+    "code": "190316",
+    "name": "语文教师",
+    "category": "教育培训",
+    "subcategory": "教师"
+  },
+  {
+    "code": "190303",
+    "name": "高中教师",
+    "category": "教育培训",
+    "subcategory": "教师"
+  },
+  {
+    "code": "190304",
+    "name": "初中教师",
+    "category": "教育培训",
+    "subcategory": "教师"
+  },
+  {
+    "code": "190305",
+    "name": "小学教师",
+    "category": "教育培训",
+    "subcategory": "教师"
+  },
+  {
+    "code": "190318",
+    "name": "物理教师",
+    "category": "教育培训",
+    "subcategory": "教师"
+  },
+  {
+    "code": "190319",
+    "name": "化学教师",
+    "category": "教育培训",
+    "subcategory": "教师"
+  },
+  {
+    "code": "190306",
+    "name": "幼教",
+    "category": "教育培训",
+    "subcategory": "幼少儿教师"
+  },
+  {
+    "code": "190204",
+    "name": "班主任/辅导员",
+    "category": "教育培训",
+    "subcategory": "教育行政"
+  },
+  {
+    "code": "190311",
+    "name": "美术教师",
+    "category": "教育培训",
+    "subcategory": "文化艺术"
+  },
+  {
+    "code": "190310",
+    "name": "音乐教师",
+    "category": "教育培训",
+    "subcategory": "文化艺术"
+  },
+  {
+    "code": "190716",
+    "name": "播音主持教师",
+    "category": "教育培训",
+    "subcategory": "文化艺术"
+  },
+  {
+    "code": "240204",
+    "name": "仓库管理员",
+    "category": "物流/仓储/司机",
+    "subcategory": "仓储"
+  },
+  {
+    "code": "240205",
+    "name": "仓库文员",
+    "category": "物流/仓储/司机",
+    "subcategory": "仓储"
+  },
+  {
+    "code": "210201",
+    "name": "护士",
+    "category": "医疗健康",
+    "subcategory": "护士/护理"
+  },
+  {
+    "code": "210503",
+    "name": "导医",
+    "category": "医疗健康",
+    "subcategory": "护士/护理"
+  },
+  {
+    "code": "210111",
+    "name": "医学检验",
+    "category": "医疗健康",
+    "subcategory": "医生/医技"
+  },
+  {
+    "code": "210113",
+    "name": "放射科医生",
+    "category": "医疗健康",
+    "subcategory": "医生/医技"
+  },
+  {
+    "code": "210114",
+    "name": "超声科医生",
+    "category": "医疗健康",
+    "subcategory": "医生/医技"
+  },
+  {
+    "code": "210308",
+    "name": "幼儿园保健医",
+    "category": "医疗健康",
+    "subcategory": "医生/医技"
+  },
+  {
+    "code": "210104",
+    "name": "药剂师",
+    "category": "医疗健康",
+    "subcategory": "医生/医技"
+  },
+  {
+    "code": "180403",
+    "name": "银行客户经理",
+    "category": "金融",
+    "subcategory": "银行"
+  },
+  {
+    "code": "180404",
+    "name": "银行大堂经理",
+    "category": "金融",
+    "subcategory": "银行"
+  },
+  {
+    "code": "180118",
+    "name": "投资助理",
+    "category": "金融",
+    "subcategory": "投融资"
+  },
+  {
+    "code": "260301",
+    "name": "英语翻译",
+    "category": "咨询/翻译/法律",
+    "subcategory": "翻译"
+  },
+  {
+    "code": "260204",
+    "name": "律师助理",
+    "category": "咨询/翻译/法律",
+    "subcategory": "法律服务"
+  },
+  {
+    "code": "150411",
+    "name": "总助/CEO助理/董事长助理",
+    "category": "高级管理",
+    "subcategory": "高级管理职位"
+  },
+  {
+    "code": "150414",
+    "name": "董事会秘书",
+    "category": "高级管理",
+    "subcategory": "高级管理职位"
+  }
+]

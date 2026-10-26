@@ -1,0 +1,41 @@
+{
+  "_comment": "XLSX 输出列顺序 = 以下 headers；GUI 表格按 visible 决定默认显示。id_column 指定岗位编号所在列（用于去重）",
+  "headers": [
+    "采集日期", "来源", "省份", "城市", "职位名称", "岗位编号",
+    "公司名称", "公司性质", "公司规模", "公司行业",
+    "招聘类型", "职位性质", "职位类别", "薪资范围", "招聘人数",
+    "学历要求", "经验要求", "专业要求", "工作地点", "详细地址",
+    "报名截止", "职位描述"
+  ],
+  "id_column": "岗位编号",
+  "columns": [
+    { "key": "date",        "header": "采集日期", "width": 90,  "visible": true  },
+    { "key": "source",      "header": "来源",     "width": 80,  "visible": true  },
+    { "key": "province",    "header": "省份",     "width": 70,  "visible": true  },
+    { "key": "city",        "header": "城市",     "width": 80,  "visible": true  },
+    { "key": "job_name",    "header": "职位名称", "width": 180, "visible": true  },
+    { "key": "job_id",      "header": "岗位编号", "width": 190, "visible": true  },
+    { "key": "company_name","header": "公司名称", "width": 200, "visible": true  },
+    { "key": "nature",      "header": "公司性质", "width": 90,  "visible": false },
+    { "key": "scale",       "header": "公司规模", "width": 100, "visible": true  },
+    { "key": "industry",    "header": "公司行业", "width": 120, "visible": false },
+    { "key": "recruit_type","header": "招聘类型", "width": 90,  "visible": false },
+    { "key": "job_type",    "header": "职位性质", "width": 80,  "visible": false },
+    { "key": "category",    "header": "职位类别", "width": 130, "visible": false },
+    { "key": "salary",      "header": "薪资范围", "width": 120, "visible": true  },
+    { "key": "amount",      "header": "招聘人数", "width": 80,  "visible": false },
+    { "key": "education",   "header": "学历要求", "width": 90,  "visible": true  },
+    { "key": "experience",  "header": "经验要求", "width": 90,  "visible": true  },
+    { "key": "major",       "header": "专业要求", "width": 150, "visible": false },
+    { "key": "location",    "header": "工作地点", "width": 160, "visible": true  },
+    { "key": "address",     "header": "详细地址", "width": 220, "visible": false },
+    { "key": "deadline",    "header": "报名截止", "width": 110, "visible": false },
+    { "key": "description", "header": "职位描述", "width": 300, "visible": false }
+  ],
+  "row_order": [
+    "城市", "职位名称", "岗位编号", "公司名称", "公司性质", "公司规模", "公司行业",
+    "招聘类型", "职位性质", "职位类别", "薪资范围", "招聘人数",
+    "学历要求", "经验要求", "专业要求", "工作地点", "详细地址",
+    "报名截止", "职位描述"
+  ]
+}

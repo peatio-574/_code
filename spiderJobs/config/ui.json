@@ -1,0 +1,47 @@
+{
+  "_comment": "界面主题配置；修改后重启生效。themename 可选 ttkbootstrap 主题：flatly / cosmo / litera / minty / darkly / superhero",
+  "themename": "flatly",
+  "window": {
+    "width": 1400,
+    "height": 920,
+    "min_width": 1120,
+    "min_height": 720
+  },
+  "font": {
+    "family": "微软雅黑",
+    "size": 10,
+    "size_small": 9,
+    "size_title": 16,
+    "size_card": 18,
+    "mono": "Consolas"
+  },
+  "colors": {
+    "header_bg": "#1e293b",
+    "header_bg2": "#334155",
+    "header_fg": "#f8fafc",
+    "header_sub": "#94a3b8",
+    "bg": "#f1f5f9",
+    "card_bg": "#ffffff",
+    "border": "#e2e8f0",
+    "text": "#0f172a",
+    "muted": "#64748b",
+    "accent": "#2563eb",
+    "success": "#059669",
+    "warning": "#d97706",
+    "danger": "#dc2626",
+    "row_odd": "#ffffff",
+    "row_even": "#f8fafc",
+    "log_bg": "#0f172a",
+    "log_fg": "#cbd5e1",
+    "log_info": "#94a3b8",
+    "log_warn": "#fbbf24",
+    "log_error": "#f87171"
+  },
+  "layout": {
+    "pad": 12,
+    "gap": 8,
+    "row_height": 28,
+    "log_height": 10,
+    "log_collapsed": false
+  }
+}
