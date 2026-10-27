@@ -1,14 +1,15 @@
 # coding='utf-8'
 """Google 关键词采集：搜索关键词 -> 抓取前 N 页搜索结果 -> 逐个访问网页 -> 提取联系方式
 
-输出字段：关键词、网站名称、网站地址、电话、邮箱
-    · 首页没有电话/邮箱时，会自动补看「联系我们 / 关于我们」页面；
-      若补看后仍然没有邮箱，「邮箱」列写入备注：
-      首页无联系方式，补看：https://xxx.com/contact
-      这样能看出这个站查过哪个页、以及确实没留邮箱。
+输出字段：关键词、网站名称、网站链接、邮箱、电话
+    · 首页缺电话或邮箱时，会自动补看「联系我们 / 关于我们」页面；
+      补看页同样用接口抓取（必要时用浏览器再分析），
+      若仍然没有数据，对应单元格写「暂无匹配数据」，不再输出补看链接。
 
 用法：
     python keyword_get_email.py
+    python keyword_get_email.py -k "灯具厂家,LED供应商" -p 127.0.0.1:7892
+    python keyword_get_email.py -k "灯饰" --no-proxy --pages 5 --max-sites 30 -o out.xlsx
 
 流程：
     1. 用 Google 搜索关键词，翻 MAX_SERP_PAGES 页（默认 10 页）
@@ -16,17 +17,11 @@
        注意 Google 结果页的 href 现在是 /goto?url=<protobuf 加密串>，解不出目标地址，
        必须用每条结果下方 <cite> 里显示的真实域名来还原（见 resolve_result_url），
        老格式 /url?q=<目标> 也能自动还原
-    3. 逐个打开网页，依次从 tel:/mailto: 链接、JSON-LD、页面正文里提取
-       电话 / 邮箱 / 公司名 / 地址
-    4. 首页三项全空时，自动再打开「联系我们 / 关于我们」页补抓
-       （很多企业站只在联系页写地址，见 VISIT_CONTACT_PAGE）
+    3. 优先用 requests 接口并发抓取网页（快）；JS 渲染 / 反爬站点
+       再用浏览器兜底（见 USE_HTTP_FIRST / HTTP_MAX_WORKERS），
+       从 tel:/mailto: 链接、JSON-LD、页面正文里提取电话 / 邮箱 / 公司名
+    4. 首页缺电话或邮箱时，自动再打开「联系我们 / 关于我们」页补抓（见 VISIT_CONTACT_PAGE）
     5. 同一域名合并成一条记录，写成 xlsx（每条落盘，中断不丢）
-
-地址提取顺序（extract_addresses）：
-    <address> 标签 → JSON-LD 结构化数据 → 正文「地址：」标签行
-    → 「地址」独占一行的下一行 → 无标签时按地址特征兜底
-    支持 公司地址/办公地址/详细地址/注册地址/工厂地址/厂址 等写法，
-    也支持标签在行中间、带括号注释、冒号后换行、全角空格。
 
 说明：
     * Google 需要代理，界面上会提示输入（格式 127.0.0.1:7892）
@@ -39,54 +34,95 @@ import sys
 import time
 import json
 import random
+import argparse
+import threading
+from html.parser import HTMLParser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from html import unescape as html_unescape
-from urllib.parse import urlparse, quote_plus, parse_qs
+from urllib.parse import urlparse, urljoin, quote_plus, parse_qs, unquote
 
-from pathlib import Path
+try:
+    import requests
+except ImportError:                       # 没装 requests 时退回纯浏览器模式
+    requests = None
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(str(Path(__file__).parent.parent))
+# 用 BASE_DIR 推出项目根目录：直接运行脚本时 __file__ 可能是相对路径，
+# Path(__file__).parent.parent 会指到当前目录，导致找不到 newPlayWright。
+sys.path.append(os.path.dirname(BASE_DIR))
 
-from PatchRightClass import PatchRightClass
-from Logger import logger          # 与 PatchRightClass 共用同一个日志实例
-PlayWright = PatchRightClass()
+from newPlayWright import PlayWright, logger
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-# 浏览器操作可能抛出的异常：Playwright/patchright 自己的 Error、超时、
-# 以及页面被关闭 / 导航中断等引起的 OSError / RuntimeError。
-# 单独收敛成元组，避免到处写 except Exception 把真正的代码错误也吞掉。
+# 浏览器操作可能抛出的异常：Playwright 自己的 Error、超时，以及页面被关闭 /
+# 导航中断等引起的 OSError / RuntimeError。收敛成元组，避免到处写
+# except Exception 把真正的代码错误也吞掉。
 try:
-    from patchright.sync_api import Error as _BrowserError
-except ImportError:                       # 兼容只装了 playwright 的环境
+    from playwright.sync_api import Error as _BrowserError
+except ImportError:                       # 兼容只装了 patchright 的环境
     try:
-        from playwright.sync_api import Error as _BrowserError
+        from patchright.sync_api import Error as _BrowserError
     except ImportError:
         _BrowserError = OSError
 
 BROWSER_ERRORS = (_BrowserError, OSError, RuntimeError, ValueError)
 
+if requests is not None:
+    try:
+        # 部分企业站证书过期，关闭校验时不想刷满警告
+        requests.packages.urllib3.disable_warnings()
+    except AttributeError:
+        pass
+
 
 # ==================== 采集参数（按需改这里） ====================
 MAX_SERP_PAGES = 10          # Google 搜索结果最多翻几页（每页约 10 条）
 MAX_SITES = 100              # 最多访问多少个网页（防止跑飞）
-PAGE_DELAY = (1.5, 3.5)      # 每访问一个网页后的随机等待（秒）
+PAGE_DELAY = (1.5, 3.5)      # 用浏览器访问时的随机等待（接口抓取不等待）
 SERP_DELAY = (2.5, 5.0)      # 每翻一页搜索结果的随机等待（秒）
 PAGE_TIMEOUT = 25000         # 单个网页加载超时（毫秒）
 OUT_NAME = 'google_contacts.xlsx'
 
-# 首页抓不到电话/邮箱时，是否再打开「联系我们 / 关于我们」页面补抓
+# 首页电话/邮箱任一项缺失时，是否再打开「联系我们 / 关于我们」页面补抓
 # 很多企业官网只在联系页留联系方式，这一步能明显提高命中率
 VISIT_CONTACT_PAGE = True
 CONTACT_PAGE_LIMIT = 2       # 每个网站最多补看几个联系页（别设太大，会变慢）
 
 # 既没有电话、也没有邮箱、还没补看过联系页的网站，是否也写入结果表
 #   False（默认）：不写入，日志会列出跳过了哪些站点
-#   True         ：写进表格（邮箱列留空），适合要「全量站点清单」时用
-# 注意：补看过联系页的站点无论有没有邮箱都会写入，
-#       邮箱列会写「首页无联系方式，补看：<url>」作为备注。
+#   True         ：写进表格（邮箱/电话列显示「暂无匹配数据」），适合要全量清单时用
+# 注意：补看过联系页的站点无论有没有联系方式都会写入。
 WRITE_NO_CONTACT = False
+
+# 同一域名只访问一个搜索结果。访站时本来就会自动补看「联系/关于」页，
+# 同一个站被搜到多个页面时重复访问收益很低，跳过可明显缩短整体耗时。
+ONE_RESULT_PER_DOMAIN = True
+
+# 表格里已经有相同链接时，不再访问该链接（忽略 www. 和末尾斜杠差异）
+SKIP_EXISTING_LINKS = True
+
+# ==================== 接口抓取（requests） ====================
+# 优先用 requests 直接抓 HTML，比浏览器快一个数量级；
+# 遇到 JS 渲染 / 反爬拦截 / 证书错误时再退回浏览器。
+USE_HTTP_FIRST = True
+HTTP_FALLBACK_TO_BROWSER = True   # 接口失败时是否用浏览器重试
+HTTP_FALLBACK_IF_EMPTY = False    # 接口成功但没采到联系方式时，是否再用浏览器兜底
+BROWSER_RETRY_CHECKED_PAGES = True  # 补看页接口仍无邮箱时，用浏览器再分析补看页
+HTTP_TIMEOUT = 12                 # 单次请求超时（秒）
+HTTP_MAX_WORKERS = 8              # 并发抓取的网站数（1 = 串行）
+HTTP_VERIFY_SSL = False           # 部分企业站证书异常，默认不校验
+
+# 最终没有采集到数据时，单元格显示的文字
+NO_DATA_TEXT = '暂无匹配数据'
+
+# 接口返回这些内容说明被反爬/人机验证拦住了，改用浏览器
+HTTP_BLOCK_MARKERS = (
+    'cf-browser-verification', 'just a moment', 'attention required',
+    'enable javascript and cookies', 'checking your browser',
+    'captcha', 'access denied', '人机验证', '安全验证', '请开启javascript',
+)
 
 # ==================== 弹窗处理 ====================
 # 很多网站一进去就是 Cookie 同意框、订阅弹窗、年龄验证、满屏广告遮罩，
@@ -132,6 +168,12 @@ BAD_EMAILS = {
     'your@email.com', 'user@example.com', 'info@example.com',
 }
 
+# 占位/示例域名与错误监控域名：这些地址不是真实联系方式
+BAD_EMAIL_DOMAINS = {
+    'example.com', 'example.org', 'example.net', 'domain.com',
+    'yourdomain.com', 'email.com', 'test.com', 'sentry.io',
+}
+
 # Google 各国家/地区站点域名。搜索结果页里的 <a href> 基本都是
 # https://www.google.com/url?q=<目标站> 这种跳转链接，
 # 必须先还原成真实地址，否则会被 SKIP_DOMAINS 里的 google.com 全部挡掉。
@@ -162,49 +204,6 @@ RE_LANDLINE = re.compile(
 # 国际号码：+国家码 后接 2~4 组数字
 RE_INTL = re.compile(
     r'(?<!\d)\+\d{1,3}[\-\s]?\(?\d{1,4}\)?[\-\s]?\d{3,4}[\-\s]?\d{3,4}(?!\d)')
-
-# 地址线索（用于从正文里补抓）
-# 常见地址标签。顺序很重要：长标签放前面，否则「公司地址」会被「地址」抢先匹配，
-# 导致标签识别不全。地\s*址 / 厂\s*址 兼容「地　址」这种中间加空格、加全角空格的写法。
-_ADDR_LABELS = (
-    '公司地址', '办公地址', '联系地址', '详细地址', '企业地址', '注册地址',
-    '生产地址', '工厂地址', '厂区地址', '总部地址', '门店地址', '通讯地址',
-    '收货地址', '项目地址', '地\\s*址', '厂\\s*址',
-    'Address', 'Addr', 'Add',
-)
-_ADDR_LABEL = '(?:%s)' % '|'.join(_ADDR_LABELS)
-
-# 英文标签要求前后不是字母，避免 "Email Address" 里的 "Address"、
-# "Add to cart" 里的 "Add" 被当成地址标签
-_ADDR_LABEL_EN_SAFE = (r'(?<![A-Za-z])(?:Address|Addr|Add)(?![A-Za-z])')
-
-# 行首的地址标签（用于兜底时把「联系地址 浙江省…」前面的标签去掉）
-RE_ADDR_LEAD_LABEL = re.compile(r'^\s*' + _ADDR_LABEL + r'\s*[:：]?\s*', re.I)
-
-# ① 标签 + 可选括号说明（如「地址（Address）」）+ 冒号 + 值
-#    值用 [^\n\r] 取当前行剩余内容；冒号后即使换行，也由 \s* 吃掉换行继续匹配下一行
-RE_ADDR_LABELED = re.compile(
-    '(?:' + _ADDR_LABEL + '|' + _ADDR_LABEL_EN_SAFE + ')' +
-    r'\s*(?:[（(][^）)\n]{0,24}[）)])?'
-    r'\s*[:：]\s*'
-    r'([^\n\r]{4,160})',
-    re.I)
-
-# ② 「地址」独占一行、没有冒号，值在下一行
-#    必须用 ^ 锚定行首：否则 "Email Address\nSign Up" 会从 "Address" 处开始匹配，
-#    把下一行的 "Sign Up" 当成地址（真实踩过的坑）
-RE_ADDR_NO_COLON = re.compile(
-    r'^[ \t]*'
-    '(?:' + _ADDR_LABEL + '|' + _ADDR_LABEL_EN_SAFE + ')' +
-    r'\s*(?:[（(][^）)\n]{0,24}[）)])?[ \t]*$[ \t]*\r?\n[ \t]*'
-    r'([^\n\r]{4,160})',
-    re.I | re.M)
-
-# ③ 地址值里出现这些词就截断（地址后面常紧跟电话 / 邮编 / 邮箱）
-RE_ADDR_STOP = re.compile(
-    r'\s*(?:电\s*话|联系电话|联系方式|Tel|TEL|Phone|传真|Fax|'
-    r'邮\s*编|邮政编码|Zip|E-?mail|邮\s*箱|手\s*机|Mobile|微\s*信)\s*[:：]?',
-    re.I)
 
 
 # ==================== 文本清洗 ====================
@@ -246,6 +245,8 @@ def clean_emails(candidates):
             continue
         tld = domain.rsplit('.', 1)[-1].lower()
         if tld in BAD_EMAIL_TLD:
+            continue
+        if domain.lower() in BAD_EMAIL_DOMAINS:
             continue
         if len(local) > 64 or len(email) > 100:
             continue
@@ -296,114 +297,7 @@ def find_contacts(text, extra_emails=None, extra_phones=None):
     return clean_emails(emails), clean_phones(phones)
 
 
-# ---------- 地址提取 ----------
-# 中文地址特征：省市区县等行政区划 + 路街号栋楼等门牌特征
-_ADDR_CN_HINT = ('省', '市', '区', '县', '镇', '乡', '街道', '路', '街',
-                 '巷', '弄', '号', '栋', '幢', '楼', '层', '室', '大厦',
-                 '广场', '园区', '工业园', '科技园', '大道', '村')
-# 英文地址特征：街道类关键词（前后补空格避免误匹配子串）
-_ADDR_EN_HINT = (' street', ' st.', ' st ', ' avenue', ' ave', ' road',
-                 ' rd ', ' boulevard', ' blvd', ' drive', ' dr.', ' lane',
-                 ' ln ', ' suite', ' floor', ' building', ' bldg', ' way ',
-                 ' highway', ' hwy', ' parkway', ' pkwy', ' court', ' ct ',
-                 ' place', ' pl.', ' plaza', ' square', ' unit ')
-RE_ADDR_ZIP = re.compile(r'\b\d{5}(?:-\d{4})?\b')
-
-
-# 地址值里出现这些词，说明抓到的不是真实地址（表单占位符、提示语等）
-_ADDR_JUNK = ('请输入', '请填写', '请选择', '暂无', '未填写', '待完善',
-              '点击查看', '了解更多', '详情请', '加载中', '地图导航',
-              '查看地图', '点击地图')
-
-
-def looks_like_address(value, max_len=160):
-    """判断一段文本像不像真实地址。
-
-    用来过滤「Sign Up」「Email Address」这类误命中：
-      · 中文：至少命中 2 个行政区划/道路门牌特征
-      · 英文：必须有门牌数字，且带街道词或邮编
-    """
-    s = str(value or '').strip()
-    if not (6 <= len(s) <= max_len):
-        return False
-    if re.search(r'[。！？!?]', s):            # 有句末标点，多半是正文句子
-        return False
-    if RE_EMAIL.search(s) or RE_MOBILE_CN.search(s):
-        return False
-
-    if re.search(r'[\u4e00-\u9fa5]', s):
-        return sum(1 for k in _ADDR_CN_HINT if k in s) >= 2
-
-    low = ' ' + s.lower() + ' '
-    has_digit = bool(re.search(r'\d', s))
-    has_street = any(k in low for k in _ADDR_EN_HINT)
-    has_zip = bool(RE_ADDR_ZIP.search(s))
-    return has_digit and (has_street or has_zip)
-
-
-def clean_address(value):
-    """清理地址值：压空白、截掉后面的电话/邮编/邮箱、去掉首尾多余符号"""
-    s = re.sub(r'\s+', ' ', str(value or '')).strip()
-    if not s:
-        return ''
-    # 表单占位符 / 提示语，不是真实地址
-    if any(j in s for j in _ADDR_JUNK):
-        return ''
-    # 地址后面常紧跟「电话：」「邮编：」等，从这些词开始全部丢弃
-    s = RE_ADDR_STOP.split(s)[0].strip()
-    # 「南京路100号（电话：xxx）」截断后会残留一个左括号，括号不配对就丢到括号前
-    for open_ch, close_ch in (('（', '）'), ('(', ')')):
-        if s.count(open_ch) > s.count(close_ch):
-            s = s[:s.rfind(open_ch)].strip()
-    s = s.strip(' ，,；;、|/\\-—:：.')
-    if not s:
-        return ''
-    # 最终校验：不像地址的一律丢弃（挡住「Sign Up」之类的误命中）
-    if not looks_like_address(s):
-        return ''
-    return s
-
-
-def extract_addresses(ld_addrs, tag_addrs, text):
-    """按可靠性依次提取地址。
-
-    顺序：<address> 语义标签 → JSON-LD 结构化数据 → 正文「地址：」标签行
-          → 「地址」独占一行的下一行 → 无标签时按地址特征兜底
-    <address> 排在 JSON-LD 前面，因为它是站点自己展示给人看的完整地址文本；
-    JSON-LD 里的地址常被拆成省/市/街道几段，拼接后反而不如原文本完整。
-    返回去重后的地址列表（第一个最可能是完整地址）。
-    """
-    out = []
-
-    def push(value):
-        v = clean_address(value)
-        if v and v not in out:
-            out.append(v)
-
-    for v in tag_addrs or []:
-        push(v)
-    for v in ld_addrs or []:
-        push(v)
-
-    body = text or ''
-    if body:
-        for m in RE_ADDR_LABELED.findall(body):
-            push(m)
-        for m in RE_ADDR_NO_COLON.findall(body):
-            push(m)
-
-    # 完全没有标签时，再从正文里找「长得像地址」的整行，避免漏采
-    if not out and body:
-        for line in body.splitlines():
-            if looks_like_address(line, max_len=80):
-                # 表格布局里 innerText 会把「联系地址」和值挤在同一行，去掉行首标签
-                push(RE_ADDR_LEAD_LABEL.sub('', line))
-                if len(out) >= 3:
-                    break
-
-    return out
-
-
+# ---------- 网站名称 ----------
 def pick_site_name(meta, title, url):
     """网站名称：优先 og:site_name，其次 <title> 去掉常见后缀，最后用域名"""
     name = (meta.get('og:site_name') or meta.get('application-name')
@@ -422,8 +316,8 @@ def pick_site_name(meta, title, url):
 
 
 def jsonld_contacts(ld_blocks):
-    """从 JSON-LD 结构化数据里取公司名 / 电话 / 邮箱 / 地址（最准）"""
-    names, phones, emails, addresses = [], [], [], []
+    """从 JSON-LD 结构化数据里取公司名 / 电话 / 邮箱（最准）"""
+    names, phones, emails = [], [], []
 
     def walk(node):
         if isinstance(node, dict):
@@ -435,24 +329,6 @@ def jsonld_contacts(ld_blocks):
                     phones.append(value.strip())
                 elif low == 'email' and isinstance(value, str):
                     emails.append(value.replace('mailto:', '').strip())
-                elif low in ('address', 'postaladdress'):
-                    if isinstance(value, str):
-                        addresses.append(value.strip())
-                    elif isinstance(value, dict):
-                        # 中文地址习惯「省市 + 街道门牌」，英文地址习惯「街道 + 城市 + 州」
-                        street = str(value.get('streetAddress') or '').strip()
-                        locality = str(value.get('addressLocality') or '').strip()
-                        region = str(value.get('addressRegion') or '').strip()
-                        postal = str(value.get('postalCode') or '').strip()
-                        has_cjk = any(re.search(r'[\u4e00-\u9fa5]', x)
-                                      for x in (street, locality, region))
-                        if has_cjk:
-                            pieces = [region, locality, street, postal]
-                        else:
-                            pieces = [street, locality, region, postal]
-                        pieces = [p for p in pieces if p]
-                        if pieces:
-                            addresses.append(' '.join(pieces))
                 walk(value)
         elif isinstance(node, list):
             for item in node:
@@ -463,10 +339,64 @@ def jsonld_contacts(ld_blocks):
             walk(json.loads(block))
         except (ValueError, TypeError):
             continue
-    return names, phones, emails, addresses
+    return names, phones, emails
 
 
 # ==================== 浏览器操作 ====================
+# 访问网页时拦截图片/视频/字体等无关资源，只保留 HTML/CSS/JS，明显加快加载
+BLOCK_HEAVY_RESOURCES = True
+BLOCKED_RESOURCE_TYPES = ('image', 'media', 'font')
+_RESOURCE_STATE = {'installed': False}
+
+
+def ensure_browser(proxy=None):
+    """确保浏览器已启动（兼容 newPlayWright / PatchRight 两种类）。"""
+    if getattr(PlayWright, 'playwright', None):
+        return True
+    starter = (getattr(PlayWright, 'start_borwser', None)
+               or getattr(PlayWright, 'start_browser', None))
+    if starter is None:
+        return False
+    try:
+        if proxy is not None:
+            starter(proxy)
+        else:
+            starter()
+        return True
+    except BROWSER_ERRORS as e:
+        logger.error('启动浏览器失败：%s' % e)
+        return False
+
+
+def _block_route(route):
+    """Playwright 路由回调：拦截非必要资源，其余放行。"""
+    try:
+        if route.request.resource_type in BLOCKED_RESOURCE_TYPES:
+            route.abort()
+        else:
+            route.continue_()
+    except BROWSER_ERRORS:
+        try:
+            route.continue_()
+        except BROWSER_ERRORS:
+            pass
+
+
+def setup_resource_blocking():
+    """给当前 context 挂上资源拦截（只挂一次）。"""
+    if not BLOCK_HEAVY_RESOURCES or _RESOURCE_STATE['installed']:
+        return
+    context = getattr(PlayWright, 'context', None)
+    if context is None:
+        return
+    try:
+        context.route('**/*', _block_route)
+        _RESOURCE_STATE['installed'] = True
+        logger.info('已启用资源拦截：%s' % '/'.join(BLOCKED_RESOURCE_TYPES))
+    except BROWSER_ERRORS as e:
+        logger.info('启用资源拦截失败：%s' % e)
+
+
 def safe_text(xpath, default=''):
     """取元素文本；元素不存在或取失败时返回默认值（get_text 会抛异常）"""
     try:
@@ -479,11 +409,12 @@ def safe_text(xpath, default=''):
 
 def wait_page_ready(seconds=2.0):
     """等页面基本加载完（PlayWright.goto 内部已 sleep(5)，这里补一点）"""
-    try:
-        PlayWright.page.wait_for_load_state('domcontentloaded',
-                                           timeout=PAGE_TIMEOUT)
-    except BROWSER_ERRORS:
-        pass
+    page = getattr(PlayWright, 'page', None)
+    if page is not None:
+        try:
+            page.wait_for_load_state('domcontentloaded', timeout=PAGE_TIMEOUT)
+        except BROWSER_ERRORS:
+            pass
     time.sleep(seconds)
 
 
@@ -493,6 +424,9 @@ def goto_fast(url, retry=2):
     批量访问几十上百个网站时，每页固定多等 5 秒会白耗好几分钟，
     这里直接用 page.goto，自己控制等待时长。
     """
+    if not ensure_browser():
+        return False
+    setup_resource_blocking()
     for _ in range(retry):
         try:
             PlayWright.page.goto(url, timeout=PAGE_TIMEOUT,
@@ -937,9 +871,16 @@ def resolve_result_url(href, cite=''):
 
 
 def google_search(keyword, max_pages=MAX_SERP_PAGES, proxy=None):
-    """搜索关键词，返回 [(url, title), ...]（已去重、已过滤）"""
+    """搜索关键词，返回 [(url, title, site_name), ...]（已去重、已过滤）"""
     results = []
     seen = set()
+    seen_domains = set()
+
+    # 先启动浏览器并挂上资源拦截，第一页搜索也能享受加速
+    if not ensure_browser(proxy):
+        logger.error('【搜索】浏览器启动失败')
+        return results
+    setup_resource_blocking()
 
     for page in range(max_pages):
         start = page * 10
@@ -947,7 +888,7 @@ def google_search(keyword, max_pages=MAX_SERP_PAGES, proxy=None):
                % (quote_plus(keyword), start))
         logger.info('【搜索】第 %d/%d 页：%s' % (page + 1, max_pages, keyword))
 
-        # 第一次访问要带代理（代理只在启动浏览器时生效）
+        # 代理只在启动浏览器时生效，这里传入保持兼容（已启动则忽略）
         ok = PlayWright.goto(url, proxy=proxy)
         if not ok:
             logger.error('【搜索】第 %d 页打开失败，停止翻页' % (page + 1))
@@ -981,7 +922,12 @@ def google_search(keyword, max_pages=MAX_SERP_PAGES, proxy=None):
             key = normalize_url(href)
             if key in seen:
                 continue
+            domain = site_domain(href)
+            if ONE_RESULT_PER_DOMAIN and domain and domain in seen_domains:
+                continue
             seen.add(key)
+            if domain:
+                seen_domains.add(domain)
             results.append((href, title, site_name))
             added += 1
 
@@ -1015,6 +961,35 @@ def normalize_url(url):
         return host + path
     except (ValueError, TypeError, AttributeError):
         return url
+
+
+def site_domain(url):
+    """取站点主域名（小写、去掉 www.），用于「同站只访问一次」去重"""
+    try:
+        return urlparse(url).netloc.lower().replace('www.', '')
+    except (ValueError, TypeError, AttributeError):
+        return ''
+
+
+def link_key(url):
+    """链接去重键：忽略协议、www.、末尾斜杠和锚点差异。
+
+    也兼容 normalize_url() 产出的「域名+路径」形式（没有协议）。
+    """
+    s = str(url or '').strip()
+    if not s:
+        return ''
+    if '://' not in s:
+        s = 'http://' + s
+    try:
+        p = urlparse(s)
+        host = (p.netloc or '').lower()
+        if host.startswith('www.'):
+            host = host[4:]
+        path = (p.path or '/').rstrip('/') or '/'
+        return host + path
+    except (ValueError, TypeError, AttributeError):
+        return s.lower()
 
 
 def is_acceptable(url):
@@ -1114,9 +1089,7 @@ JS_EXTRACT = r"""
         .map(a => a.getAttribute('href') || '');
     const ld = Array.from(document.querySelectorAll('script[type="application/ld+json"]'))
         .map(s => (s.textContent || '').slice(0, 300000));
-    const addrs = Array.from(document.querySelectorAll('address'))
-        .map(a => (a.innerText || '').trim());
-    // 站内链接：首页没有联系方式时，用来找「联系我们 / 关于我们」补抓
+    // 站内链接：首页缺联系方式时，用来找「联系我们 / 关于我们」补抓
     const links = Array.from(document.querySelectorAll('a[href]'))
         .slice(0, 400)
         .map(a => ({ href: a.href || '', text: (a.innerText || '').trim().slice(0, 40) }))
@@ -1130,7 +1103,6 @@ JS_EXTRACT = r"""
         tels: tels,
         mails: mails,
         ld: ld,
-        addrs: addrs,
         links: links,
         text: text.slice(0, 400000),
     };
@@ -1146,18 +1118,23 @@ def parse_page(data, url):
     text = data.get('text') or ''
 
     # tel: / mailto: 链接是最可靠的来源
-    tel_links = [t.split(':', 1)[-1] for t in (data.get('tels') or [])]
-    mail_links = [m.split(':', 1)[-1].split('?', 1)[0]
-                  for m in (data.get('mails') or [])]
+    # 链接里的值可能被 URL 编码（如 info%40abc.com），也可能一条 mailto
+    # 里带多个地址（a@x.com,b@y.com），这里一并拆开还原。
+    tel_links = [unquote(t.split(':', 1)[-1].split('?', 1)[0])
+                 for t in (data.get('tels') or [])]
+    mail_links = []
+    for m in data.get('mails') or []:
+        raw = unquote(m.split(':', 1)[-1].split('?', 1)[0])
+        for part in re.split(r'[,;]', raw):
+            part = part.strip()
+            if part:
+                mail_links.append(part)
 
     # JSON-LD 结构化数据
-    ld_names, ld_phones, ld_emails, ld_addrs = jsonld_contacts(data.get('ld'))
+    ld_names, ld_phones, ld_emails = jsonld_contacts(data.get('ld'))
 
     emails, phones = find_contacts(text, mail_links + ld_emails,
                                    tel_links + ld_phones)
-
-    # 地址：JSON-LD > <address> 标签 > 正文「地址：」行 > 整行兜底
-    addresses = extract_addresses(ld_addrs, data.get('addrs'), text)
 
     return {
         'url': final_url,
@@ -1166,8 +1143,7 @@ def parse_page(data, url):
                                     final_url),
         'emails': emails,
         'phones': phones,
-        'address': addresses[0] if addresses else '',
-        'checked_pages': [],      # 补看过的联系页，最终会写进「邮箱」列做备注
+        'checked_pages': [],      # 补看过的联系页（用于内部重试/日志）
     }
 
 
@@ -1198,51 +1174,355 @@ def contact_page_links(data, base_url):
     return out
 
 
-def visit_site(url):
-    """访问单个网页，返回提取到的联系人信息字典；失败返回 None
+# ==================== 接口抓取（requests） ====================
+class _HtmlPageParser(HTMLParser):
+    """把 HTML 解析成与浏览器 JS_EXTRACT 相同结构的数据（无需浏览器）。
 
-    首页三项（电话/邮箱/地址）全空时，会再打开最多 CONTACT_PAGE_LIMIT 个
-    「联系我们 / 关于我们」页面补抓——很多企业站只在联系页写地址。
+    只取采集需要的几类信息：标题、meta、tel:/mailto:、JSON-LD、
+    站内链接、可见文本。script/style 等节点会被跳过。
     """
+
+    SKIP_TAGS = {'script', 'style', 'noscript', 'template', 'svg'}
+    BLOCK_TAGS = {'p', 'div', 'br', 'li', 'tr', 'td', 'th', 'h1', 'h2',
+                  'h3', 'h4', 'h5', 'h6', 'section', 'article', 'header',
+                  'footer', 'address', 'table', 'ul', 'ol', 'form',
+                  'label', 'button', 'figure', 'nav', 'main'}
+
+    def __init__(self, base_url=''):
+        HTMLParser.__init__(self, convert_charrefs=True)
+        self.base_url = base_url or ''
+        self.title_parts = []
+        self.metas = {}
+        self.ld = []
+        self.tels = []
+        self.mails = []
+        self.links = []
+        self.text_parts = []
+        self.in_title = False
+        self.skip_depth = 0
+        self.in_ld = False
+        self._ld_buf = []
+        self._link_href = None
+        self._link_text = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        tag = (tag or '').lower()
+        if tag == 'title':
+            self.in_title = True
+        elif tag == 'meta':
+            key = (attrs.get('property') or attrs.get('name') or '').strip().lower()
+            content = (attrs.get('content') or '').strip()
+            if key and content and key not in self.metas:
+                self.metas[key] = content
+        elif tag == 'script':
+            if 'ld+json' in (attrs.get('type') or '').lower():
+                self.in_ld = True
+                self._ld_buf = []
+            self.skip_depth += 1
+        elif tag == 'a':
+            href = (attrs.get('href') or '').strip()
+            low = href.lower()
+            if low.startswith('tel:'):
+                self.tels.append(href)
+            elif low.startswith('mailto:'):
+                self.mails.append(href)
+            if href and not low.startswith(('javascript:', '#', 'data:')):
+                absolute = urljoin(self.base_url, html_unescape(href))
+                if absolute.lower().startswith('http'):
+                    self._link_href = absolute
+                    self._link_text = []
+        if tag in self.SKIP_TAGS and tag != 'script':
+            self.skip_depth += 1
+        if tag in self.BLOCK_TAGS and self.skip_depth == 0 and not self.in_ld:
+            self.text_parts.append('\n')
+
+    def handle_startendtag(self, tag, attrs):
+        # 自闭合标签（<br/>、<meta/> 等）按开始 + 结束处理
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+    def handle_endtag(self, tag):
+        tag = (tag or '').lower()
+        if tag == 'title':
+            self.in_title = False
+        elif tag == 'script':
+            if self.in_ld:
+                self.ld.append(''.join(self._ld_buf)[:300000])
+                self.in_ld = False
+                self._ld_buf = []
+            self.skip_depth = max(0, self.skip_depth - 1)
+        elif tag in self.SKIP_TAGS:
+            self.skip_depth = max(0, self.skip_depth - 1)
+        elif tag == 'a':
+            if self._link_href:
+                text = re.sub(r'\s+', ' ', ''.join(self._link_text)).strip()[:40]
+                self.links.append({'href': self._link_href, 'text': text})
+            self._link_href = None
+            self._link_text = []
+        if tag in self.BLOCK_TAGS and self.skip_depth == 0 and not self.in_ld:
+            self.text_parts.append('\n')
+
+    def handle_data(self, data):
+        if self.in_ld:
+            self._ld_buf.append(data)
+            return
+        if self.skip_depth > 0:
+            return
+        if self.in_title:
+            self.title_parts.append(data)
+            return
+        if self._link_href:
+            self._link_text.append(data)
+        self.text_parts.append(data)
+
+    def to_data(self):
+        text = ''.join(self.text_parts)
+        text = re.sub(r'[ \t\r\f\v]+', ' ', text)
+        text = re.sub(r'\n\s*\n+', '\n', text).strip()
+        return {
+            'url': self.base_url,
+            'title': re.sub(r'\s+', ' ', ''.join(self.title_parts)).strip(),
+            'metas': self.metas,
+            'tels': self.tels,
+            'mails': self.mails,
+            'ld': self.ld,
+            'links': self.links[:400],
+            'text': text[:400000],
+        }
+
+
+_thread_local = threading.local()
+_HTTP_PROXY = None          # {'http': ..., 'https': ...} 或 None
+
+
+def configure_http_proxy(proxy):
+    """把浏览器用的代理同步给 requests。
+
+    proxy 为 None 时必须关掉 trust_env，否则 requests 会读取系统里
+    可能失效的 HTTP_PROXY/HTTPS_PROXY 环境变量，导致全部站点抓取失败。
+    """
+    global _HTTP_PROXY
+    if proxy and proxy.get('server'):
+        server = proxy['server']
+        _HTTP_PROXY = {'http': server, 'https': server}
+    else:
+        _HTTP_PROXY = None
+
+
+def _http_session():
+    """每个线程一个 requests.Session，复用连接。"""
+    session = getattr(_thread_local, 'session', None)
+    if session is None:
+        session = requests.Session()
+        ua = getattr(PlayWright, 'user_agent', '') or (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        session.headers.update({
+            'User-Agent': ua,
+            'Accept': ('text/html,application/xhtml+xml,application/xml;'
+                       'q=0.9,*/*;q=0.8'),
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Connection': 'keep-alive',
+        })
+        _thread_local.session = session
+    session.trust_env = False
+    session.proxies.clear()
+    if _HTTP_PROXY:
+        session.proxies.update(_HTTP_PROXY)
+    return session
+
+
+def http_page_data(url):
+    """用 requests 抓取页面，返回与 JS_EXTRACT 同构的数据；失败返回 None。"""
+    if requests is None:
+        return None
+    try:
+        resp = _http_session().get(url, timeout=HTTP_TIMEOUT,
+                                   allow_redirects=True,
+                                   verify=HTTP_VERIFY_SSL)
+    except requests.RequestException as e:
+        logger.info('    接口抓取失败 %s：%s' % (url, e))
+        return None
+
+    if resp.status_code >= 400:
+        logger.info('    接口抓取失败 %s：HTTP %d' % (url, resp.status_code))
+        return None
+
+    ctype = (resp.headers.get('Content-Type') or '').lower()
+    if ctype and not any(t in ctype for t in
+                         ('text/html', 'application/xhtml', 'text/plain',
+                          'application/xml', 'text/xml')):
+        logger.info('    接口跳过 %s：非网页内容（%s）' % (url, ctype))
+        return None
+
+    # 中文站常用 GBK/GB2312，requests 猜错时 text 会乱码
+    if not resp.encoding or resp.encoding.lower() in ('iso-8859-1', 'ascii'):
+        resp.encoding = resp.apparent_encoding or 'utf-8'
+    html = resp.text or ''
+    if len(html) < 50:               # 基本是空响应，交给浏览器
+        return None
+
+    low = html[:5000].lower()
+    if any(m in low for m in HTTP_BLOCK_MARKERS):
+        logger.info('    接口疑似被拦截，改用浏览器：%s' % url)
+        return None
+
+    final_url = resp.url or url
+    parser = _HtmlPageParser(final_url)
+    try:
+        parser.feed(html)
+        parser.close()
+    except Exception as e:            # 外部 HTML 千奇百怪，解析失败直接放弃
+        logger.info('    接口解析失败 %s：%s' % (url, e))
+        return None
+
+    data = parser.to_data()
+    if len(data['text']) < 20 and not (data['tels'] or data['mails']
+                                      or data['ld']):
+        logger.info('    接口内容过少，改用浏览器：%s' % url)
+        return None
+    return data
+
+
+def _follow_contact_pages(info, data, loader, delay=0.0):
+    """电话或邮箱任一缺失时，用 loader 补看联系页并合并结果。"""
+    if not (VISIT_CONTACT_PAGE and not (info['emails'] and info['phones'])):
+        return
+    for sub_url in contact_page_links(data, info['url'])[:CONTACT_PAGE_LIMIT]:
+        if delay:
+            time.sleep(random.uniform(delay, delay + 0.7))
+        logger.info('    补看联系页：%s' % sub_url)
+        info['checked_pages'].append(sub_url)
+        sub_data = loader(sub_url)
+        if not sub_data:
+            logger.info('    补看页暂未取到内容：%s' % sub_url)
+            continue
+        sub = parse_page(sub_data, sub_url)
+        for e in sub['emails']:
+            if e not in info['emails']:
+                info['emails'].append(e)
+        for p in sub['phones']:
+            if p not in info['phones']:
+                info['phones'].append(p)
+        if info['emails'] and info['phones']:
+            break                # 电话邮箱都拿到了，不用再看下一个
+
+
+def _browser_page_data(url):
+    """用浏览器打开页面并取数据；失败返回 None。"""
     if not goto_fast(url):
+        return None
+    try:
+        return PlayWright.page.evaluate(JS_EXTRACT) or None
+    except BROWSER_ERRORS as e:
+        logger.info('【解析失败】%s：%s' % (url, e))
+        return None
+
+
+def _smart_page_data(url):
+    """补看页优先走接口，接口取不到再用浏览器（仅主线程调用）。"""
+    data = http_page_data(url) if USE_HTTP_FIRST else None
+    if data:
+        return data
+    return _browser_page_data(url)
+
+
+def _retry_checked_pages_with_browser(info):
+    """接口补看后仍没邮箱时，用浏览器重新分析补看页。"""
+    if not info.get('checked_pages'):
+        return False
+    gained = False
+    for sub_url in info['checked_pages'][:CONTACT_PAGE_LIMIT]:
+        logger.info('    浏览器重查补看页：%s' % sub_url)
+        sub_data = _browser_page_data(sub_url)
+        if not sub_data:
+            continue
+        sub = parse_page(sub_data, sub_url)
+        before = (len(info['emails']), len(info['phones']))
+        for e in sub['emails']:
+            if e not in info['emails']:
+                info['emails'].append(e)
+        for p in sub['phones']:
+            if p not in info['phones']:
+                info['phones'].append(p)
+        if (len(info['emails']), len(info['phones'])) != before:
+            gained = True
+        if info['emails'] and info['phones']:
+            break
+    return gained
+
+
+def visit_site_http(url):
+    """只用 requests 抓取并解析；失败返回 None（不含 keyword 字段）。"""
+    data = http_page_data(url)
+    if not data:
+        return None
+    info = parse_page(data, url)
+    _follow_contact_pages(info, data, http_page_data)
+    return info
+
+
+def visit_site_browser(url):
+    """用浏览器抓取（JS 渲染 / 反爬站点兜底）。"""
+    data = _browser_page_data(url)
+    if not data:
         logger.warning('【访问失败】%s' % url)
         return None
-
-    try:
-        data = PlayWright.page.evaluate(JS_EXTRACT) or {}
-    except BROWSER_ERRORS as e:
-        logger.warning('【解析失败】%s：%s' % (url, e))
-        return None
-
     info = parse_page(data, url)
-
-    # 需要补看联系页的条件：没有电话，且没有邮箱
-    need_more = not (info['emails'] or info['phones'])
-    if VISIT_CONTACT_PAGE and need_more:
-        for sub_url in contact_page_links(data, info['url'])[:CONTACT_PAGE_LIMIT]:
-            time.sleep(random.uniform(0.5, 1.2))
-            logger.info('    首页无联系方式，补看：%s' % sub_url)
-            # 无论补看成功与否都记下来，最终写进「邮箱」列当备注
-            info['checked_pages'].append(sub_url)
-            if not goto_fast(sub_url):
-                continue
-            try:
-                sub_data = PlayWright.page.evaluate(JS_EXTRACT) or {}
-            except BROWSER_ERRORS:
-                continue
-            sub = parse_page(sub_data, sub_url)
-            for e in sub['emails']:
-                if e not in info['emails']:
-                    info['emails'].append(e)
-            for p in sub['phones']:
-                if p not in info['phones']:
-                    info['phones'].append(p)
-            if not info['address'] and sub['address']:
-                info['address'] = sub['address']
-            if info['emails'] and info['phones']:
-                break            # 电话邮箱都拿到了，不用再看下一个
-
+    _follow_contact_pages(info, data, _smart_page_data, delay=0.5)
     return info
+
+
+def visit_site(url):
+    """访问单个网页：优先接口，失败再退回浏览器。"""
+    if USE_HTTP_FIRST:
+        info = visit_site_http(url)
+        if info:
+            return info
+        if not HTTP_FALLBACK_TO_BROWSER:
+            return None
+        logger.info('    接口未取到，改用浏览器：%s' % url)
+    return visit_site_browser(url)
+
+
+def prefetch_http(links):
+    """并发用接口抓取第一层页面，返回 {url: info}。
+
+    只做 HTTP，不碰 Playwright（非线程安全）；失败的站点留给主流程用
+    浏览器逐个兜底。links = [(url, title, site_name), ...]
+    """
+    if not (USE_HTTP_FIRST and requests is not None
+            and HTTP_MAX_WORKERS > 0):
+        return {}
+    urls = [u for u, _t, _s in links]
+    if not urls:
+        return {}
+    if len(urls) == 1:
+        info = visit_site_http(urls[0])
+        return {urls[0]: info} if info else {}
+
+    results = {}
+    total = len(urls)
+    logger.info('【接口】开始并发抓取 %d 个网站（%d 线程）'
+                % (total, HTTP_MAX_WORKERS))
+    with ThreadPoolExecutor(max_workers=min(HTTP_MAX_WORKERS, total)) as pool:
+        future_map = {pool.submit(visit_site_http, u): u for u in urls}
+        for done, fut in enumerate(as_completed(future_map), 1):
+            url = future_map[fut]
+            try:
+                info = fut.result()
+            except Exception as e:       # 线程内异常不能中断整批
+                logger.info('    接口抓取异常 %s：%s' % (url, e))
+                info = None
+            if info:
+                results[url] = info
+            if done % 10 == 0 or done == total:
+                logger.info('【接口】进度 %d/%d，成功 %d'
+                            % (done, total, len(results)))
+    logger.info('【接口】完成：%d/%d 个网站可用，其余走浏览器'
+                % (len(results), total))
+    return results
 
 
 def merge_by_domain(records):
@@ -1267,7 +1547,6 @@ def merge_by_domain(records):
                 'url': rec['url'],
                 'phones': list(rec['phones']),
                 'emails': list(rec['emails']),
-                'address': rec['address'],
                 'title': rec['title'],
                 'checked_pages': checked,
                 'serp_name': rec.get('serp_name') or '',
@@ -1284,8 +1563,6 @@ def merge_by_domain(records):
         for c in checked:
             if c not in cur['checked_pages']:
                 cur['checked_pages'].append(c)
-        if not cur['address'] and rec['address']:
-            cur['address'] = rec['address']
         # 有 serp_name 就用它覆盖（Google 的站点名更准）
         if rec.get('serp_name'):
             cur['serp_name'] = rec['serp_name']
@@ -1298,7 +1575,10 @@ def merge_by_domain(records):
 
 
 # ==================== xlsx ====================
-HEADERS = ['关键词', '网站名称', '网站地址', '电话', '邮箱']
+HEADERS = ['关键词', '网站名称', '网站链接', '邮箱', '电话']
+
+# 旧版本的 5 列格式（电话在前、邮箱在后），读取时自动迁移到新列顺序
+LEGACY_HEADERS = ['关键词', '网站名称', '网站地址', '电话', '邮箱']
 
 HEADER_FONT = Font(name='微软雅黑', size=11, bold=True, color='FFFFFF')
 HEADER_FILL = PatternFill(start_color='4472C4', end_color='4472C4',
@@ -1335,7 +1615,6 @@ def safe_email_cell(values):
         s = str(v or '').strip().strip('.,;:<>()[]{}"\'')
         if not s:
             continue
-        # 必须是纯 ASCII 的标准邮箱，且整串完全匹配
         if not s.isascii():
             continue
         if not RE_EMAIL_STRICT.match(s):
@@ -1345,37 +1624,47 @@ def safe_email_cell(values):
     return '; '.join(out)
 
 
-def email_cell_with_note(rec):
-    """「邮箱」列最终内容。
+def email_cell(rec):
+    """「邮箱」列：有邮箱写邮箱（多个用 ; 分隔），没有则写暂无匹配数据。"""
+    return safe_email_cell(rec.get('emails')) or NO_DATA_TEXT
 
-    有邮箱：只写邮箱（多个用 ; 分隔）。
-    没邮箱但有补看过联系页：写「首页无联系方式，补看：<url>」作为备注，
-    方便事后知道查过哪个页、以及该站确实没留邮箱。
-    """
-    emails = safe_email_cell(rec.get('emails'))
-    if emails:
-        return emails
-    checked = rec.get('checked_pages') or []
-    if checked:
-        return '首页无联系方式，补看：%s' % '；'.join(checked)
-    return ''
+
+def phone_cell(rec):
+    """「电话」列：有电话写电话（多个用 ; 分隔），没有则写暂无匹配数据。"""
+    return safe_phone_cell(rec.get('phones')) or NO_DATA_TEXT
 
 
 def open_workbook(path):
     """打开或新建结果表，返回 (wb, ws, 已存在的数据键集合)。
 
-    如果已有的 xlsx 表头与当前 HEADERS 不一致（例如旧版本的 8 列），
-    会把旧文件改名备份后重建，避免新旧列错位把数据写到错误的列里。
+    · 表头与当前 HEADERS 一致：直接复用。
+    · 旧版 5 列（电话/邮箱顺序不同）：原地迁移列顺序后复用。
+    · 其他结构（如更早的 8 列）：备份旧文件后重建，避免列错位。
     """
     if os.path.exists(path):
         try:
             wb = load_workbook(path)
             ws = wb.active
-            # 取完整表头（去掉尾部空单元格）再和 HEADERS 比较，
-            # 只比前 5 列会把旧的 8 列表误判成「结构一致」，导致列错位
+            # 取完整表头（去掉尾部空单元格）再和 HEADERS 比较
             raw_headers = [str(c.value or '').strip() for c in ws[1]]
             while raw_headers and raw_headers[-1] == '':
                 raw_headers.pop()
+
+            if raw_headers == LEGACY_HEADERS:
+                # 旧: 关键词 | 网站名称 | 网站地址 | 电话 | 邮箱
+                # 新: 关键词 | 网站名称 | 网站链接 | 邮箱 | 电话
+                for row in ws.iter_rows(min_row=2):
+                    row[3].value, row[4].value = row[4].value, row[3].value
+                for col, header in enumerate(HEADERS, 1):
+                    ws.cell(row=1, column=col, value=header)
+                try:
+                    wb.save(path)
+                except PermissionError:
+                    logger.warning('%s 被占用，列顺序已在内存中迁移，稍后保存'
+                                   % os.path.basename(path))
+                logger.info('旧结果表已迁移为：%s' % '/'.join(HEADERS))
+                raw_headers = HEADERS
+
             if raw_headers == HEADERS:
                 existing = set()
                 for row in ws.iter_rows(min_row=2, values_only=True):
@@ -1383,6 +1672,7 @@ def open_workbook(path):
                         existing.add((str(row[0] or ''),
                                       normalize_url(str(row[2]))))
                 return wb, ws, existing
+
             # 表头不匹配：备份旧文件，重新建表
             backup = '%s.bak.%s.xlsx' % (os.path.splitext(path)[0],
                                          time.strftime('%Y%m%d%H%M%S'))
@@ -1417,8 +1707,8 @@ def save_records(wb, ws, path, records):
             rec.get('keyword') or '',
             rec.get('site_name') or '',
             rec.get('url') or '',
-            safe_phone_cell(rec.get('phones')),   # 二次校验，非电话不写入
-            email_cell_with_note(rec),            # 无邮箱时写入「补看」备注
+            email_cell(rec),      # 无邮箱时写「暂无匹配数据」
+            phone_cell(rec),      # 无电话时写「暂无匹配数据」
         ])
     try:
         wb.save(path)
@@ -1440,6 +1730,14 @@ def crawl(keyword, proxy=None, max_pages=MAX_SERP_PAGES,
     """采集单个关键词：搜索 -> 逐站访问 -> 写 xlsx（边采边存）"""
     out_file = out_file or os.path.join(BASE_DIR, OUT_NAME)
 
+    # 输出目录可能不存在（--out 指定了子目录），先建好再写表
+    out_dir = os.path.dirname(os.path.abspath(out_file))
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
+    # requests 与浏览器使用同一个代理设置（无代理时忽略系统代理环境变量）
+    configure_http_proxy(proxy)
+
     # 先把结果表准备好：即使一条都没采到，也留下带表头的文件，
     # 方便确认输出位置（否则 0 条时直接 return，连文件都不会生成）
     wb, ws, existing = open_workbook(out_file)
@@ -1451,8 +1749,25 @@ def crawl(keyword, proxy=None, max_pages=MAX_SERP_PAGES,
         logger.warning('结果表已就绪（暂无数据）：%s' % out_file)
         return 0
 
+    # 表格里已有的链接不再访问/重复采集（忽略 www.、末尾斜杠差异）
+    if SKIP_EXISTING_LINKS:
+        existing_urls = set(link_key(url) for _kw, url in existing)
+        before = len(links)
+        links = [item for item in links
+                 if link_key(item[0]) not in existing_urls]
+        skipped = before - len(links)
+        if skipped:
+            logger.info('已跳过 %d 个结果表中已存在的链接' % skipped)
+        if not links:
+            logger.info('关键词「%s」的链接都已在结果表中，无需重复爬取'
+                        % keyword)
+            return 0
+
     links = links[:max_sites]
     logger.info('实际访问 %d 个网页' % len(links))
+
+    # 先用接口并发抓取，失败的站点再逐个用浏览器兜底
+    http_infos = prefetch_http(links)
 
     written_keys = set()
     raw_records = []
@@ -1467,8 +1782,8 @@ def crawl(keyword, proxy=None, max_pages=MAX_SERP_PAGES,
         fresh = []
         for rec in merge_by_domain(raw_records):
             # 没电话也没邮箱的站点同样写入：
-            # 邮箱列会带「首页无联系方式，补看：xxx」备注，方便事后核对查过哪些页。
-            # 既不写邮箱列也没有备注、且完全没电话的，才按开关决定是否跳过。
+            # 补看过联系页的站点，单元格会显示「暂无匹配数据」。
+            # 连联系页都没得补、又完全没有联系方式的，才按开关决定是否跳过。
             has_contact = bool(rec['phones'] or rec['emails'])
             has_note = bool(rec.get('checked_pages'))
             if not has_contact and not has_note and not WRITE_NO_CONTACT:
@@ -1486,12 +1801,39 @@ def crawl(keyword, proxy=None, max_pages=MAX_SERP_PAGES,
 
     for idx, (url, title, site_name) in enumerate(links, 1):
         logger.info('[%d/%d] %s' % (idx, len(links), url))
-        try:
-            info = visit_site(url)
-        except BROWSER_ERRORS as e:
-            # 单个站点出错不能中断整批采集
-            logger.error('访问异常 %s：%s' % (url, e))
-            info = None
+        info = http_infos.get(url)
+        browser_used = False
+
+        # 接口没抓到的站点，用浏览器兜底走 JS 渲染/反爬页面
+        if info is None and (not USE_HTTP_FIRST or HTTP_FALLBACK_TO_BROWSER):
+            browser_used = True
+            try:
+                info = visit_site_browser(url)
+            except BROWSER_ERRORS as e:
+                # 单个站点出错不能中断整批采集
+                logger.error('访问异常 %s：%s' % (url, e))
+                info = None
+
+        # 可选：接口抓到了但没有任何联系方式，再用浏览器确认一次
+        if (info and HTTP_FALLBACK_IF_EMPTY
+                and not (info['emails'] or info['phones'])):
+            browser_used = True
+            retry = None
+            try:
+                retry = visit_site_browser(url)
+            except BROWSER_ERRORS as e:
+                logger.info('浏览器兜底失败 %s：%s' % (url, e))
+            if retry and (retry['emails'] or retry['phones']):
+                info = retry
+
+        # 接口补看后仍没邮箱：用浏览器重新分析补看页（有些站联系页是 JS 渲染）
+        if (info and BROWSER_RETRY_CHECKED_PAGES and not browser_used
+                and not info['emails'] and info.get('checked_pages')):
+            browser_used = True
+            try:
+                _retry_checked_pages_with_browser(info)
+            except BROWSER_ERRORS as e:
+                logger.info('浏览器重查补看页失败 %s：%s' % (url, e))
 
         if info:
             info['keyword'] = keyword
@@ -1504,8 +1846,6 @@ def crawl(keyword, proxy=None, max_pages=MAX_SERP_PAGES,
                 found.append('电话 %d 个' % len(info['phones']))
             if info['emails']:
                 found.append('邮箱 %d 个' % len(info['emails']))
-            if info['address']:
-                found.append('地址')
             logger.info('    命中：%s' % ('、'.join(found) if found else '无联系方式'))
         else:
             logger.info('    跳过')
@@ -1514,7 +1854,8 @@ def crawl(keyword, proxy=None, max_pages=MAX_SERP_PAGES,
         if idx % FLUSH_EVERY == 0:
             flush()
 
-        if idx < len(links):
+        # 接口抓取不需要模拟人工间隔；只有浏览器访问才等待，避免整体变慢
+        if browser_used and idx < len(links):
             time.sleep(random.uniform(*PAGE_DELAY))
 
     flush()
@@ -1532,27 +1873,70 @@ def crawl(keyword, proxy=None, max_pages=MAX_SERP_PAGES,
     return saved
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description='Google 关键词采集：搜索关键词并爬取网站的电话 / 邮箱')
+    parser.add_argument('-k', '--keywords',
+                        help='关键词，多个用逗号分隔（不传则交互式输入）')
+    parser.add_argument('-p', '--proxy',
+                        help='代理地址，如 127.0.0.1:7892'
+                             '（不传则交互式输入；配合 -k 时不使用代理）')
+    parser.add_argument('--no-proxy', action='store_true',
+                        help='不使用代理（非交互运行时配合 -k 使用）')
+    parser.add_argument('--pages', type=int, default=None,
+                        help='Google 最多翻几页（默认 %d）' % MAX_SERP_PAGES)
+    parser.add_argument('--max-sites', type=int, default=None,
+                        help='最多访问多少个网页（默认 %d）' % MAX_SITES)
+    parser.add_argument('-o', '--out', default=None,
+                        help='结果文件路径（默认 %s）' % OUT_NAME)
+    args = parser.parse_args(argv)
+
     print('=' * 60)
-    print(' Google 关键词采集 —— 提取电话 / 邮箱 / 网站名称 / 地址')
+    print(' Google 关键词采集 —— 提取电话 / 邮箱 / 网站名称')
     print('=' * 60)
     print('提示：Google 需要代理，直接回车表示不使用代理。')
 
-    keyword = input('请输入关键词（多个用英文逗号分隔）：').strip()
+    keyword = (args.keywords or
+               input('请输入关键词（多个用英文逗号分隔）：')).strip()
     if not keyword:
         print('关键词不能为空')
         return 1
 
-    proxy_input = input('请输入代理（如 127.0.0.1:7892，回车跳过）：').strip()
-    proxy = {'server': 'http://%s' % proxy_input} if proxy_input else None
+    # 传了 --keywords 视为非交互（批量）模式，缺失的参数直接用默认值，
+    # 避免定时任务因为没有标准输入卡在 input() 上。
+    batch = bool(args.keywords)
 
-    pages_input = input('Google 搜索翻几页（默认 %d，回车使用默认）：'
-                        % MAX_SERP_PAGES).strip()
-    max_pages = int(pages_input) if pages_input.isdigit() else MAX_SERP_PAGES
+    if args.no_proxy:
+        proxy = None
+    elif args.proxy:
+        proxy = {'server': 'http://%s' % args.proxy.strip()}
+    elif batch:
+        proxy = None
+    else:
+        proxy_input = input('请输入代理（如 127.0.0.1:7892，回车跳过）：').strip()
+        proxy = {'server': 'http://%s' % proxy_input} if proxy_input else None
 
-    sites_input = input('最多访问多少个网页（默认 %d，回车使用默认）：'
-                        % MAX_SITES).strip()
-    max_sites = int(sites_input) if sites_input.isdigit() else MAX_SITES
+    if args.pages and args.pages > 0:
+        max_pages = args.pages
+    elif batch:
+        max_pages = MAX_SERP_PAGES
+    else:
+        pages_input = input('Google 搜索翻几页（默认 %d，回车使用默认）：'
+                            % MAX_SERP_PAGES).strip()
+        max_pages = (int(pages_input) if pages_input.isdigit()
+                     else MAX_SERP_PAGES)
+
+    if args.max_sites and args.max_sites > 0:
+        max_sites = args.max_sites
+    elif batch:
+        max_sites = MAX_SITES
+    else:
+        sites_input = input('最多访问多少个网页（默认 %d，回车使用默认）：'
+                            % MAX_SITES).strip()
+        max_sites = int(sites_input) if sites_input.isdigit() else MAX_SITES
+
+    out_file = (os.path.abspath(args.out) if args.out
+                else os.path.join(BASE_DIR, OUT_NAME))
 
     keywords = [k.strip() for k in re.split(r'[,，]', keyword) if k.strip()]
 
@@ -1562,16 +1946,15 @@ def main():
         logger.info('开始采集关键词：%s' % kw)
         try:
             total += crawl(kw, proxy=proxy, max_pages=max_pages,
-                           max_sites=max_sites)
+                           max_sites=max_sites, out_file=out_file)
         except BROWSER_ERRORS as e:
             # 一个关键词失败不影响后续关键词
             logger.error('关键词「%s」采集失败：%s' % (kw, e))
         time.sleep(random.uniform(*SERP_DELAY))
 
     logger.info('=' * 50)
-    logger.info('全部完成，本次新增 %d 条记录，文件：%s'
-                % (total, os.path.join(BASE_DIR, OUT_NAME)))
-    print('\n完成，结果文件：%s' % os.path.join(BASE_DIR, OUT_NAME))
+    logger.info('全部完成，本次新增 %d 条记录，文件：%s' % (total, out_file))
+    print('\n完成，结果文件：%s' % out_file)
     return 0
 
 
