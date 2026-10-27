@@ -13,6 +13,7 @@ from ..permissions import (
     get_campus_filter, validate_object_campus
 )
 from ..utils.uploads import save_avatar
+from .. import source_cipher
 from . import admin_bp
 from datetime import datetime
 import openpyxl
@@ -453,7 +454,12 @@ def dicts_types():
     for t in pagination.items:
         items = DictItem.query.filter_by(type_id=t.id, is_deleted=False) \
             .order_by(DictItem.key.asc(), DictItem.id.asc()).all()
-        active_values = [it.value for it in items if it.is_active]
+        # 来源字典：库里存密文，列表按明文展示
+        if t.code == source_cipher.SOURCE_DICT_CODE:
+            active_values = [source_cipher.decode(it.value)
+                             for it in items if it.is_active]
+        else:
+            active_values = [it.value for it in items if it.is_active]
         data.append({
             'id': t.id,
             'code': t.code,
@@ -496,19 +502,66 @@ def dicts_items():
     dtype = DictType.query.filter_by(id=type_id, is_deleted=False).first_or_404()
     items = DictItem.query.filter_by(type_id=type_id, is_deleted=False) \
         .order_by(DictItem.key.asc(), DictItem.id.asc()).all()
-    data = [{
-        'id': it.id,
-        'key': it.key,
-        'label': it.label,
-        'value': it.value,
-        'sort_order': it.sort_order,
-        'is_active': it.is_active,
-        'updated_at': it.updated_at.strftime('%Y-%m-%d %H:%M') if it.updated_at else '-',
-    } for it in items]
+
+    # 来源字典：库里 value 是密文，页面统一按明文展示/编辑
+    is_source = dtype.code == source_cipher.SOURCE_DICT_CODE
+
+    data = []
+    for it in items:
+        plain = source_cipher.decode(it.value) if is_source else it.value
+        data.append({
+            'id': it.id,
+            'key': it.key,
+            # 来源的 label 在存量数据里可能是旧密文，统一按明文返回
+            'label': plain if is_source else it.label,
+            'value': plain,
+            # 归一化后的密文（当前方案），便于前端核对/复制
+            'raw_value': source_cipher.item_cipher(it) if is_source else it.value,
+            'sort_order': it.sort_order,
+            'is_active': it.is_active,
+            'updated_at': it.updated_at.strftime('%Y-%m-%d %H:%M') if it.updated_at else '-',
+        })
     return jsonify({
         'success': True,
-        'type': {'id': dtype.id, 'code': dtype.code, 'name': dtype.name},
+        'type': {'id': dtype.id, 'code': dtype.code, 'name': dtype.name,
+                 'encrypted': is_source},
         'items': data,
+    })
+
+
+@admin_bp.route('/dicts/item/preview-cipher', methods=['POST'])
+@admin_required
+@super_admin_required
+def dict_item_preview_cipher():
+    """新增/编辑枚举值时，实时预览会写入数据库的密文。
+
+    只对加密字段（目前是来源）返回密文；其它字典原样返回明文。
+    """
+    type_id = request.form.get('type_id', type=int)
+    dtype = DictType.query.filter_by(id=type_id, is_deleted=False).first()
+    if not dtype:
+        return jsonify({'success': False, 'message': '字段不存在'})
+
+    plain = (request.form.get('value') or '').strip()
+    if dtype.code != source_cipher.SOURCE_DICT_CODE:
+        return jsonify({'success': True, 'encrypted': False,
+                        'cipher': plain, 'exists': False})
+
+    if not plain:
+        return jsonify({'success': True, 'encrypted': True,
+                        'cipher': '', 'exists': False})
+
+    # 已被其它枚举值占用时提示（编辑时排除自身）
+    item_id = safe_int(request.form.get('item_id', 0), 0)
+    cipher = source_cipher.encode(plain)
+    dup = source_cipher.find_by_plain(dtype.id, plain, exclude_id=item_id)
+
+    return jsonify({
+        'success': True,
+        'encrypted': True,
+        'cipher': cipher,
+        'exists': dup is not None,
+        'exists_value': source_cipher.item_plain(dup) if dup else '',
     })
 
 
@@ -597,9 +650,16 @@ def dict_item_add():
     dtype = DictType.query.filter_by(id=type_id, is_deleted=False).first()
     if not dtype:
         return jsonify({'success': False, 'message': '字段不存在'})
-    value = (request.form.get('value') or request.form.get('label') or '').strip()
-    if not value:
+    plain = (request.form.get('value') or request.form.get('label') or '').strip()
+    if not plain:
         return jsonify({'success': False, 'message': '枚举值不能为空'})
+
+    # 来源字典：页面填明文，库里存密文
+    if dtype.code == source_cipher.SOURCE_DICT_CODE:
+        value = source_cipher.encode(plain)
+    else:
+        value = plain
+
     key = safe_int(request.form.get('key', 0), 0)
     if key <= 0:
         max_key = db.session.query(db.func.max(DictItem.key)) \
@@ -607,16 +667,28 @@ def dict_item_add():
         key = max_key + 1
     if DictItem.query.filter_by(type_id=dtype.id, key=key, is_deleted=False).first():
         return jsonify({'success': False, 'message': f'键 {key} 已存在'})
-    if DictItem.query.filter_by(type_id=dtype.id, value=value, is_deleted=False).first():
+    # 按明文查重（兼容库里的旧格式密文）
+    if dtype.code == source_cipher.SOURCE_DICT_CODE:
+        dup = source_cipher.find_by_plain(dtype.id, plain)
+        if dup:
+            return jsonify({'success': False,
+                            'message': '该枚举值已存在（' + plain + '）'})
+    elif DictItem.query.filter_by(type_id=dtype.id, value=value,
+                                  is_deleted=False).first():
         return jsonify({'success': False, 'message': '该枚举值已存在'})
     item = DictItem(
-        type_id=dtype.id, key=key, label=value, value=value, sort_order=key,
+        type_id=dtype.id, key=key, label=plain, value=value, sort_order=key,
         is_active=request.form.get('is_active', '1') == '1',
     )
     db.session.add(item)
-    log_operation('add_dict_item', 'dict_item', 0, f'新增枚举值：{dtype.name} / {value}')
+    log_operation('add_dict_item', 'dict_item', 0, f'新增枚举值：{dtype.name} / {plain}')
     db.session.commit()
-    return jsonify({'success': True, 'message': '枚举值添加成功'})
+
+    resp = {'success': True, 'message': '枚举值添加成功'}
+    if dtype.code == source_cipher.SOURCE_DICT_CODE:
+        resp['cipher'] = value
+        resp['message'] = '枚举值添加成功，已生成密文'
+    return jsonify(resp)
 
 
 @admin_bp.route('/dicts/item/edit', methods=['POST'])
@@ -625,9 +697,16 @@ def dict_item_add():
 def dict_item_edit():
     item_id = request.form.get('item_id')
     item = DictItem.query.get_or_404(item_id)
-    value = (request.form.get('value') or request.form.get('label') or '').strip()
-    if not value:
+    dtype = DictType.query.filter_by(id=item.type_id).first()
+    plain = (request.form.get('value') or request.form.get('label') or '').strip()
+    if not plain:
         return jsonify({'success': False, 'message': '枚举值不能为空'})
+
+    if dtype and dtype.code == source_cipher.SOURCE_DICT_CODE:
+        value = source_cipher.encode(plain)
+    else:
+        value = plain
+
     key = safe_int(request.form.get('key', item.key), item.key)
     if key <= 0:
         key = item.key
@@ -636,20 +715,30 @@ def dict_item_edit():
         DictItem.id != item.id, DictItem.is_deleted == False).first()
     if dup_key:
         return jsonify({'success': False, 'message': f'键 {key} 已存在'})
-    dup_val = DictItem.query.filter(
-        DictItem.type_id == item.type_id, DictItem.value == value,
-        DictItem.id != item.id, DictItem.is_deleted == False).first()
-    if dup_val:
-        return jsonify({'success': False, 'message': '该枚举值已存在'})
+    if dtype and dtype.code == source_cipher.SOURCE_DICT_CODE:
+        dup = source_cipher.find_by_plain(item.type_id, plain, exclude_id=item.id)
+        if dup:
+            return jsonify({'success': False,
+                            'message': '该枚举值已存在（' + plain + '）'})
+    else:
+        dup_val = DictItem.query.filter(
+            DictItem.type_id == item.type_id, DictItem.value == value,
+            DictItem.id != item.id, DictItem.is_deleted == False).first()
+        if dup_val:
+            return jsonify({'success': False, 'message': '该枚举值已存在'})
     item.key = key
-    item.label = value
+    item.label = plain
     item.value = value
     item.sort_order = key
     if request.form.get('is_active') is not None:
         item.is_active = request.form.get('is_active') == '1'
-    log_operation('edit_dict_item', 'dict_item', item.id, f'编辑枚举值：{value}')
+    log_operation('edit_dict_item', 'dict_item', item.id, f'编辑枚举值：{plain}')
     db.session.commit()
-    return jsonify({'success': True, 'message': '枚举值更新成功'})
+
+    resp = {'success': True, 'message': '枚举值更新成功'}
+    if dtype and dtype.code == source_cipher.SOURCE_DICT_CODE:
+        resp['cipher'] = value
+    return jsonify(resp)
 
 
 @admin_bp.route('/dicts/item/toggle-status', methods=['POST'])
@@ -700,7 +789,15 @@ def dict_options():
     for t in types:
         items = DictItem.query.filter_by(type_id=t.id, is_deleted=False, is_active=True) \
             .order_by(DictItem.key.asc(), DictItem.id.asc()).all()
-        data[t.code] = [{'key': it.key, 'value': it.value} for it in items]
+        if t.code == source_cipher.SOURCE_DICT_CODE:
+            # 来源：提交值是归一化后的密文（写入 jobs.source），显示文案用明文
+            data[t.code] = [{'key': it.key,
+                             'value': source_cipher.item_cipher(it),
+                             'label': source_cipher.decode(it.value)}
+                            for it in items]
+        else:
+            data[t.code] = [{'key': it.key, 'value': it.value,
+                             'label': it.value} for it in items]
     for c in code_list:
         data.setdefault(c, [])
     return jsonify({'success': True, 'data': data})
@@ -1037,7 +1134,7 @@ def ai_record_resume_delete(record_id):
 def job_add():
     ctx = get_template_context()
     if request.method == 'POST':
-        source = request.form.get('source', '').strip()
+        source = source_cipher.resolve(request.form.get('source', ''))
         if not source:
             if _is_ajax():
                 return jsonify({'success': False, 'message': '来源不能为空'})
@@ -1084,7 +1181,7 @@ def job_edit(id):
     ctx = get_template_context()
     job = Job.query.filter_by(id=id, is_deleted=False).first_or_404()
     if request.method == 'POST':
-        source = request.form.get('source', '').strip()
+        source = source_cipher.resolve(request.form.get('source', ''))
         if not source:
             if _is_ajax():
                 return jsonify({'success': False, 'message': '来源不能为空'})
@@ -1100,7 +1197,7 @@ def job_edit(id):
         job.recruit_type = request.form.get('recruit_type', '')
         job.job_nature = request.form.get('job_nature', '')
         job.job_category = request.form.get('job_category', '')
-        job.source = request.form.get('source', '')
+        job.source = source
         job.salary_range = request.form.get('salary_range', '').replace(' ', '').strip()
         job.recruit_count = safe_int(request.form.get('recruit_count', 1), 1)
         job.education_req = request.form.get('education_req', '')
@@ -1137,7 +1234,8 @@ def job_data(id):
         'recruit_type': job.recruit_type or '',
         'job_nature': job.job_nature,
         'job_category': job.job_category,
-        'source': job.source,
+        # 来源统一返回密文（旧格式密文/明文都归一化成当前 Base64 方案）
+        'source': source_cipher.normalize(job.source),
         'salary_range': job.salary_range,
         'recruit_count': job.recruit_count,
         'education_req': job.education_req,
@@ -1250,6 +1348,9 @@ def job_import():
             count = 0
             errors = []
             batch_added = 0
+            # 来源字典：一次读出，避免逐行查库
+            src_map = source_cipher.dict_map()
+            unmatched_sources = set()
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 job_name_raw = val(row, '职位名称', '职位名称 ')
                 if not job_name_raw:
@@ -1258,7 +1359,11 @@ def job_import():
                     # ---------- 字段校验：不符合则报错并跳过该行 ----------
                     v_company = str(val(row, '公司名称') or '').strip()
                     v_job_name = str(job_name_raw or '').strip()
-                    v_source = str(val(row, '来源') or '').strip()
+                    v_source_raw = str(val(row, '来源') or '').strip()
+                    v_source, src_matched = source_cipher.resolve_with_map(
+                        v_source_raw, src_map)
+                    if v_source_raw and not src_matched:
+                        unmatched_sources.add(v_source_raw)
                     v_salary = str(val(row, '薪资范围') or '').replace(' ', '').strip()
                     v_count = val(row, '招聘人数')
                     v_deadline = val(row, '报名截止(YYYY-MM-DD HH:MM:SS)', '报名截止', '截止时间')
@@ -1323,8 +1428,14 @@ def job_import():
             success_msg = f'成功导入 {count} 个岗位'
             if errors:
                 success_msg += f'，{len(errors)} 行失败'
+            if unmatched_sources:
+                preview = '、'.join(sorted(unmatched_sources)[:5])
+                more = '等' if len(unmatched_sources) > 5 else ''
+                success_msg += (f'；{len(unmatched_sources)} 个来源不在字典中，'
+                                f'已按原值编码：{preview}{more}')
             if ajax:
-                return jsonify({'success': True, 'message': success_msg, 'count': count, 'total_rows': row_count, 'errors': errors})
+                return jsonify({'success': True, 'message': success_msg, 'count': count, 'total_rows': row_count, 'errors': errors,
+                                'unmatched_sources': sorted(unmatched_sources)})
             flash(success_msg, 'success')
             if errors:
                 flash('\n'.join(errors), 'warning')

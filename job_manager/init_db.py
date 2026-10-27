@@ -8,9 +8,15 @@ Job Manager 数据库初始化脚本
 """
 import os
 import sys
+import base64
 import pymysql
 from werkzeug.security import generate_password_hash
 from app.config import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+
+
+def _encode_source(text):
+    """来源字段入库前编码（与 app/source_cipher.py 的 encode 保持一致）。"""
+    return base64.b64encode(str(text).encode('utf-8')).decode('ascii')
 
 
 # ==================== 数据库配置（统一取自 app/config.py）====================
@@ -314,7 +320,7 @@ def insert_defaults():
         ('recruit_type', '招聘类型', ['校园招聘', '社会招聘', '实习']),
         ('education_req', '学历要求', ['不限', '大专', '本科', '硕士', '博士']),
         ('experience_req', '经验要求', ['不限', '应届生', '1年以内', '1-3年', '3-5年', '5-10年', '10年以上']),
-        ('source', '来源', ['国聘', '智联招聘']),
+        ('source', '来源', ['国聘', '智联招聘', 'BOSS直聘', '国家大学生就业服务平台']),
         ('job_nature', '职位性质', ['全职', '兼职']),
     ]
     for sort_idx, (code, name, values) in enumerate(default_dicts, start=1):
@@ -332,11 +338,16 @@ def insert_defaults():
         cursor.execute("SELECT COUNT(*) FROM `dict_items` WHERE `type_id` = %s", (type_id,))
         if cursor.fetchone()[0] == 0:
             for i, v in enumerate(values, start=1):
+                # 来源字典：label 存明文（页面展示），value 存密文（业务数据用）
+                if code == 'source':
+                    label, value = v, _encode_source(v)
+                else:
+                    label, value = v, v
                 cursor.execute(
                     "INSERT INTO `dict_items` "
                     "(`type_id`, `dict_key`, `label`, `value`, `sort_order`, `is_active`, `is_deleted`) "
                     "VALUES (%s, %s, %s, %s, %s, 1, 0)",
-                    (type_id, i, v, v, i)
+                    (type_id, i, label, value, i)
                 )
 
     conn.commit()

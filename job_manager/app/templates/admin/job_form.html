@@ -314,26 +314,11 @@ provinceSel.addEventListener('change', function() {
     fillCity(this.value, '');
 });
 
-/** 历史“来源”字段形如 base64(简称|||id)，解码出简称用于展示。 */
-function legacySourceName(value) {
-    var raw = String(value || '');
-    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(raw) || raw.length < 6) return '';
-    try {
-        var text = decodeURIComponent(escape(atob(raw)));
-        var idx = text.indexOf('|||');
-        if (idx > 0) return text.slice(0, idx);
-    } catch (e) {}
-    return '';
-}
-
-var LEGACY_SOURCE_LABELS = { '智': '智联招聘', '国': '国聘' };
-
-/** 下拉项展示文案：来源历史值映射为可读名称，提交时仍保留原值。 */
+/**
+ * 下拉项展示文案。
+ * 来源字段按需求直接显示密文（库里存什么就显示什么），不做解码。
+ */
 function optionLabel(name, value) {
-    if (name === 'source') {
-        var shortName = legacySourceName(value);
-        if (shortName) return LEGACY_SOURCE_LABELS[shortName] || shortName;
-    }
     return value;
 }
 
@@ -410,8 +395,11 @@ function fillDictSelect(el, items) {
     el.appendChild(ph);
     (items || []).forEach(function(item) {
         var opt = document.createElement('option');
+        // 来源字段：直接显示密文（与岗位列表、导出保持一致）
         opt.value = item.value;
-        opt.textContent = item.value;
+        opt.textContent = (el.dataset.dict === 'source')
+            ? item.value
+            : (item.label || item.value);
         el.appendChild(opt);
     });
     if (JOB_ID === 0 && el.dataset.default) {

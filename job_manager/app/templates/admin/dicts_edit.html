@@ -68,11 +68,12 @@
         </style>
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
             <colgroup>
-                <col style="width:6%;">
-                <col style="width:12%;">
-                <col style="width:42%;">
-                <col style="width:12%;">
-                <col style="width:18%;">
+                <col style="width:5%;">
+                <col style="width:9%;">
+                <col style="width:22%;">
+                <col style="width:28%;">
+                <col style="width:10%;">
+                <col style="width:16%;">
                 <col style="width:10%;">
             </colgroup>
             <thead class="sticky-thead">
@@ -80,13 +81,14 @@
                     <th style="padding-left:15px;"><input type="checkbox" id="selectAllItems"></th>
                     <th style="text-align:center;">键</th>
                     <th style="text-align:left;">枚举值</th>
+                    <th style="text-align:left;">密文</th>
                     <th style="text-align:center;">状态</th>
                     <th style="text-align:center;">更新时间</th>
                     <th style="text-align:center;">操作</th>
                 </tr>
             </thead>
             <tbody id="itemsBody">
-                <tr><td colspan="6" class="text-center text-muted py-5">加载中...</td></tr>
+                <tr><td colspan="7" class="text-center text-muted py-5">加载中...</td></tr>
             </tbody>
         </table>
     </div>
@@ -115,9 +117,28 @@
                         </div>
                         <div class="col-8 mb-3">
                             <label class="form-label">枚举值 <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" name="value" id="item_value" required>
+                            <input type="text" class="form-control" name="value" id="item_value" required
+                                   {% if dict_type.code == 'source' %}placeholder="填平台名，如 智联招聘"{% endif %}>
                         </div>
                     </div>
+                    {% if dict_type.code == 'source' %}
+                    <div class="mb-2" id="cipherPreviewWrap">
+                        <label class="form-label d-flex align-items-center gap-2">
+                            入库密文
+                            <span class="badge bg-info text-dark" style="font-weight:400;">自动生成</span>
+                        </label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="item_cipher" readonly
+                                   placeholder="输入枚举值后自动生成"
+                                   style="font-family:Consolas,monospace; font-size:13px; background:#f8f9fa;">
+                            <button class="btn btn-outline-secondary" type="button" id="btnCopyCipher"
+                                    title="复制密文">复制</button>
+                        </div>
+                        <div class="form-text" id="cipherHint">
+                            保存后「来源」列显示的就是这段密文，无需手工填写。
+                        </div>
+                    </div>
+                    {% endif %}
                     <div class="mb-1">
                         <label class="form-label">状态</label>
                         <select class="form-select" name="is_active" id="item_is_active">
@@ -147,7 +168,9 @@ const URLS = {
     itemToggle: '{{ url_for("admin.dict_item_toggle_status") }}',
     itemDelete: '{{ url_for("admin.dict_item_delete") }}',
     typeEdit: '{{ url_for("admin.dict_type_edit") }}',
+    previewCipher: '{{ url_for("admin.dict_item_preview_cipher") }}',
 };
+const IS_SOURCE_DICT = {{ 'true' if dict_type.code == 'source' else 'false' }};
 
 let itemsCache = [];
 let itemModalInstance = null;
@@ -192,7 +215,7 @@ function renderItems() {
     document.getElementById('itemTotal').textContent = itemsCache.length;
     if (!itemsCache.length) {
         table.classList.add('no-data');
-        body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">暂无枚举值，请点击“新增枚举值”</td></tr>';
+        body.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-5">暂无枚举值，请点击“新增枚举值”</td></tr>';
         return;
     }
     table.classList.remove('no-data');
@@ -201,10 +224,15 @@ function renderItems() {
             <input class="form-check-input" type="checkbox" role="switch" ${it.is_active ? 'checked' : ''}
                    onchange="toggleItemStatus(${it.id}, this)">
         </div>`;
+        // 密文列：来源等加密字典才有 raw_value，其它字典显示 -
+        const cipher = it.raw_value && it.raw_value !== it.value
+            ? `<code style="font-size:12px; word-break:break-all;">${escapeHtml(it.raw_value)}</code>`
+            : '<span class="text-muted">-</span>';
         return `<tr>
             <td style="padding-left:15px;"><input type="checkbox" class="item-checkbox" value="${it.id}"></td>
             <td style="text-align:center;"><span class="badge bg-secondary">${it.key}</span></td>
             <td style="text-align:left;">${escapeHtml(it.value)}</td>
+            <td style="text-align:left;">${cipher}</td>
             <td>${statusSwitch}</td>
             <td style="text-align:center;">${escapeHtml(it.updated_at)}</td>
             <td style="text-align:center; white-space:nowrap;">
@@ -221,6 +249,102 @@ function nextKey() {
     const maxKey = itemsCache.reduce(function(m, x) { return Math.max(m, x.key || 0); }, 0);
     return maxKey + 1;
 }
+
+// ==================== 密文实时预览（仅来源等加密字典）====================
+// 加密方案是纯 Base64（UTF-8），前端可直接算出来即时显示；
+// 再异步请求后端确认是否与已有枚举值重复。
+let previewTimer = null;
+let previewSeq = 0;
+
+/** UTF-8 字符串 -> 纯 Base64（与后端 source_cipher.encode 一致）。 */
+function encodeSourceText(text) {
+    if (!text) return '';
+    try {
+        const bytes = new TextEncoder().encode(text);
+        let bin = '';
+        bytes.forEach(function(b) { bin += String.fromCharCode(b); });
+        return btoa(bin);
+    } catch (e) {
+        // 极老浏览器兜底
+        try { return btoa(unescape(encodeURIComponent(text))); } catch (e2) { return ''; }
+    }
+}
+
+function setCipherHint(text, isWarn) {
+    const hint = document.getElementById('cipherHint');
+    if (!hint) return;
+    hint.innerHTML = text;
+    hint.className = 'form-text' + (isWarn ? ' text-warning' : '');
+}
+
+function refreshCipherPreview() {
+    if (!IS_SOURCE_DICT) return;
+    const input = document.getElementById('item_cipher');
+    if (!input) return;
+
+    const value = document.getElementById('item_value').value.trim();
+    const itemId = document.getElementById('item_id').value;
+
+    if (!value) {
+        input.value = '';
+        setCipherHint('保存后「来源」列显示的就是这段密文，无需手工填写。', false);
+        return;
+    }
+
+    // 1) 先本地算出密文并立即显示，不等网络
+    input.value = encodeSourceText(value);
+    setCipherHint('保存后「来源」列显示的就是这段密文，无需手工填写。', false);
+
+    // 2) 再问后端：是否与已有枚举值重复
+    const seq = ++previewSeq;
+    const fd = new FormData();
+    fd.append('type_id', TYPE_ID);
+    fd.append('value', value);
+    fd.append('csrf_token', CSRF);           // 必须带，否则被 CSRF 校验拦下
+    if (itemId) fd.append('item_id', itemId);
+
+    fetch(URLS.previewCipher, {
+        method: 'POST', body: fd,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (seq !== previewSeq) return;      // 已有更新的输入，丢弃旧结果
+            if (!data || !data.success) return;  // 后端异常时保留本地算出的密文
+            if (data.cipher) input.value = data.cipher;
+            if (data.exists) {
+                setCipherHint('<i class="bi bi-exclamation-triangle"></i> 该枚举值已存在（' +
+                    escapeHtml(data.exists_value || value) + '），保存会失败', true);
+            }
+        })
+        .catch(function() {
+            // 网络异常也无所谓：本地算出的密文已经显示出来了
+        });
+}
+
+function schedulePreview() {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(refreshCipherPreview, 220);
+}
+
+document.getElementById('item_value').addEventListener('input', schedulePreview);
+
+(function bindCopyCipher() {
+    const btn = document.getElementById('btnCopyCipher');
+    if (!btn) return;
+    btn.addEventListener('click', async function() {
+        const input = document.getElementById('item_cipher');
+        const text = input.value || '';
+        if (!text) { showToast('密文还没生成', 'warning'); return; }
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (e) {
+            input.select();
+            document.execCommand('copy');
+        }
+        showToast('密文已复制', 'success');
+    });
+})();
 
 function showItemModal(id) {
     const isEdit = !!id;
@@ -243,6 +367,8 @@ function showItemModal(id) {
     }
     itemModalInstance = new bootstrap.Modal(document.getElementById('itemModal'));
     itemModalInstance.show();
+    // 打开弹窗后同步一次密文预览（编辑时显示已有密文）
+    setTimeout(refreshCipherPreview, 60);
 }
 
 document.getElementById('typeForm').addEventListener('submit', async function(e) {
