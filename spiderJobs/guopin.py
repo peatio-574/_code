@@ -132,7 +132,7 @@ class GuoPin(BaseSpider):
             first_district = districts[0] if districts else {}
             rows.append([
                 crawl_date,
-                cls.source_code,
+                cls.web_name,
                 province_name,
                 city_name,
                 row.get('job_name') or '',

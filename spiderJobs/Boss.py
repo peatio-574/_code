@@ -43,13 +43,17 @@ if getattr(sys, 'frozen', False):
 else:
     _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 城市/岗位字典已迁移到 config/ 目录；为兼容旧位置，先查 config，再回退根目录
+# 打包进 exe 的资源目录（--add-data 释放位置）；源码运行即脚本目录
+_BUNDLE_DIR = getattr(sys, '_MEIPASS', _BASE_DIR)
+
+# 城市/岗位字典：外部 config/ 优先（可编辑），其次 exe 内置，最后回退脚本同级目录
 _CONFIG_DIR = os.path.join(_BASE_DIR, 'config')
+_BUNDLED_CONFIG_DIR = os.path.join(_BUNDLE_DIR, 'config')
 
 
 def _resolve_data_file(name):
-    """优先在 config/ 下查找，找不到再回退到脚本同级目录。"""
-    for base in (_CONFIG_DIR, _BASE_DIR):
+    """按 外部 config/ -> exe 内置 config/ -> 脚本同级目录 的顺序查找。"""
+    for base in (_CONFIG_DIR, _BUNDLED_CONFIG_DIR, _BASE_DIR):
         path = os.path.join(base, name)
         if os.path.exists(path):
             return path
@@ -58,7 +62,8 @@ def _resolve_data_file(name):
 
 CITY_FILE = _resolve_data_file('BossCity.json')
 JOBTYPE_FILE = _resolve_data_file('BossJobType.json')
-CONFIG_FILE = os.path.join(_CONFIG_DIR, 'config.ini')
+# config.ini 存 Cookie，必须可写，固定放在 exe / 脚本同目录（不打包、不放进 config）
+CONFIG_FILE = os.path.join(_BASE_DIR, 'config.ini')
 
 # ==================== 浏览器内请求脚本 ====================
 JS_POST = """
@@ -179,7 +184,7 @@ class Boss(BaseSpider):
         """
         if cls._cities is None:
             try:
-                with open(CITY_FILE, encoding='utf-8') as f:
+                with open(CITY_FILE, encoding='utf-8-sig') as f:
                     cls._cities = json.load(f)
             except FileNotFoundError:
                 cls._cities = []
@@ -214,7 +219,7 @@ class Boss(BaseSpider):
         """
         if cls._job_types is None:
             try:
-                with open(JOBTYPE_FILE, encoding='utf-8') as f:
+                with open(JOBTYPE_FILE, encoding='utf-8-sig') as f:
                     cls._job_types = json.load(f)
             except FileNotFoundError:
                 cls._job_types = []
@@ -685,7 +690,7 @@ class Boss(BaseSpider):
                     continue
 
             d = cls.item_to_row(item, detail)
-            row = [crawl_date, cls.source_code,
+            row = [crawl_date, cls.web_name,
                    province_name or cls.province_of(d.get('城市'))] \
                   + [d.get(k, '') for k in cls.ROW_ORDER]
             rows.append(row)

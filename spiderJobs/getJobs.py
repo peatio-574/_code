@@ -9,7 +9,8 @@
   - zhipin.py  ：智联招聘采集类 ZhiPin（Playwright 浏览器登录态，异步采集）
   - Boss.py    ：BOSS直聘采集类 Boss（PatchRight 浏览器内请求，逐条取详情）
 
-登录凭证统一存放于 config/config.ini，界面可编辑的配置统一存放于 config/ 下的 JSON。
+登录凭证存于程序同级的 config.ini；规则/字典类 JSON 内置于 exe（config/ 下），
+如有同名外部文件则优先使用外部那份。
 
 统一输出字段：采集日期、来源、省份、城市、职位名称……职位描述（见 XLSX_HEADERS）。
 """
@@ -18,7 +19,6 @@ import sys
 import json
 import re
 import ssl
-import base64
 import io
 import threading
 import time
@@ -50,14 +50,40 @@ from Logger import logger
 
 
 # ==================== 配置文件加载 ====================
+# 查找顺序（先外部、后 exe 内置）：
+#   1. exe 同目录 config\*.json      —— 用户可编辑，改了立刻生效，优先级最高
+#   2. exe 内打包的 config\*.json    —— 打包时 --add-data 塞进去的默认值，只读兜底
+# config.ini 单独处理：不打进 exe，固定放在 exe / 脚本同目录（存 Cookie，必须可写）。
 CONFIG_DIR = os.path.join(_BASE_DIR, 'config')
+_BUNDLE_DIR = getattr(sys, '_MEIPASS', _BASE_DIR)      # 源码运行 == 脚本目录
+_BUNDLED_CONFIG_DIR = os.path.join(_BUNDLE_DIR, 'config')
+
+
+def config_search_dirs():
+    """配置文件查找目录：外部 config/ 优先，其次 exe 内打包目录。"""
+    dirs = [CONFIG_DIR]
+    if os.path.abspath(_BUNDLED_CONFIG_DIR) != os.path.abspath(CONFIG_DIR):
+        dirs.append(_BUNDLED_CONFIG_DIR)
+    return dirs
+
+
+def resolve_config_file(name):
+    """按查找顺序返回第一个存在的配置文件路径；都不存在时返回外部路径（便于报错定位）。"""
+    for d in config_search_dirs():
+        path = os.path.join(d, name)
+        if os.path.exists(path):
+            return path
+    return os.path.join(CONFIG_DIR, name)
 
 
 def load_config(name, default=None):
-    """读取 config/ 下的 JSON 配置；文件缺失或损坏时返回 default。"""
-    path = os.path.join(CONFIG_DIR, name)
+    """读取 JSON 配置；外部 config/ 优先，退回 exe 内置默认值，都没有才用 default。
+
+    用 utf-8-sig 解码，兼容记事本保存时带的 BOM（否则会误判为 JSON 解析失败）。
+    """
+    path = resolve_config_file(name)
     try:
-        with open(path, encoding='utf-8') as f:
+        with open(path, encoding='utf-8-sig') as f:
             return json.load(f)
     except FileNotFoundError:
         logger.warning(f'配置文件不存在：{path}，使用内置默认值')
@@ -100,236 +126,6 @@ TABLE_COLUMNS = _COLUMNS_CFG.get('columns') or [
          'description'],
         XLSX_HEADERS)
 ]
-
-# ==================== 来源字段：平台名 -> 写入表格的值 ====================
-# 各采集类的 web_name 是明文平台名（BOSS直聘 / 智联招聘 / 国聘 /
-# 国家大学生就业服务平台），写入表格时按 config.ini 的 [source] 段替换：
-#
-#   [source]
-#   BOSS直聘 = MT86N4Lp/ofj6w
-#   智联招聘 = lenTjOTmrOT5m6yq
-#
-# 规则：
-#   * 平台名大小写、首尾空白都忽略（写 boss直聘 也能匹配 BOSS直聘）
-#   * 右侧非空  -> 「来源」列写入该值
-#   * 右侧为空或缺少该行 -> **启动时自动生成加密值并回写 ini**（见下）
-#
-# 自动填写：程序启动时调用 ensure_source_codes()，把缺失的加密值补进 ini，
-# 这样无需手工计算/粘贴，第一次运行就自动配好。
-
-# 已知平台清单（顺序即写入 ini 的顺序）
-KNOWN_SOURCES = [
-    'BOSS直聘',
-    '智联招聘',
-    '国聘',
-    '国家大学生就业服务平台',
-]
-
-SOURCE_KEY = 'spiderJobs-2026'
-
-
-def _resolve_ini():
-    """定位 config.ini：优先 config/ 子目录，回退程序同目录。"""
-    for base in (os.path.join(_BASE_DIR, 'config'), _BASE_DIR):
-        path = os.path.join(base, 'config.ini')
-        if os.path.exists(path):
-            return path
-    return os.path.join(_BASE_DIR, 'config', 'config.ini')
-
-
-CONFIG_FILE = _resolve_ini()
-
-
-def _xor_bytes(data, key):
-    """按字节与密钥循环异或（对称）。"""
-    k = key.encode('utf-8')
-    return bytes(b ^ k[i % len(k)] for i, b in enumerate(data))
-
-
-def encode_source(name):
-    """把平台名编码成纯 ASCII 字符串（异或 + Base64，去掉 = 填充）。"""
-    name = str(name or '')
-    if not name:
-        return name
-    raw = _xor_bytes(name.encode('utf-8'), SOURCE_KEY)
-    return base64.b64encode(raw).decode('ascii').rstrip('=')
-
-
-def ensure_source_codes(ini_path=None):
-    """确保 [source] 段存在且每个已知平台都有值；缺失的自动生成并回写。
-
-    只做「补全」，不覆盖已有值（手工改过的值会保留）。
-    返回本次写入的 {平台名: 编码值}；无需改动时返回空字典。
-
-    实现上按**行**修改 ini，而不是 configparser.write()：
-    后者会丢掉全部注释、重排段落，把用户手工维护的 config.ini 改得面目全非。
-    """
-    import configparser
-
-    path = ini_path or CONFIG_FILE
-    if not os.path.exists(path):
-        return {}
-
-    try:
-        cfg = configparser.ConfigParser(interpolation=None)
-        cfg.optionxform = lambda s: s     # 保留键名大小写
-        cfg.read(path, encoding='utf-8')
-    except Exception as e:
-        logger.warning('读取 %s 失败，来源自动填写跳过：%s' % (path, e))
-        return {}
-
-    has_section = cfg.has_section('source')
-    existing = {}
-    if has_section:
-        for k, v in cfg.items('source'):
-            existing[k.strip().casefold()] = (k.strip(), (v or '').strip())
-
-    # 算出需要写入的项
-    filled = {}
-    for name in KNOWN_SOURCES:
-        key = name.casefold()
-        if key in existing:
-            real_key, val = existing[key]
-            if val:
-                continue                  # 已有值，保留
-            filled[real_key] = encode_source(name)
-        else:
-            filled[name] = encode_source(name)
-
-    if not filled:
-        return {}
-
-    # 按行改原文：保留注释、顺序、其它段落与换行风格
-    try:
-        raw = io.open(path, 'r', encoding='utf-8', newline='').read()
-    except OSError as e:
-        logger.warning('读取 %s 失败，来源自动填写跳过：%s' % (path, e))
-        return {}
-
-    nl = '\r\n' if '\r\n' in raw else '\n'
-    lines = raw.split(nl)
-
-    # 定位 [source] 段范围
-    start = end = None
-    for i, line in enumerate(lines):
-        st = line.strip()
-        if st.startswith('[') and st.endswith(']'):
-            if start is not None and end is None:
-                end = i
-            if st == '[source]':
-                start = i
-    if start is not None and end is None:
-        end = len(lines)
-
-    if start is None:
-        # 文件里还没有 [source] 段：追加到末尾
-        if lines and lines[-1] == '':
-            lines.pop()
-        lines.append('')
-        lines.append('[source]')
-        for name, code in filled.items():
-            lines.append('%s = %s' % (name, code))
-        lines.append('')
-        new_text = nl.join(lines)
-    else:
-        # 段内已有的行改值，其余项追加到段末
-        done = set()
-        for i in range(start + 1, end):
-            line = lines[i]
-            st = line.strip()
-            if not st or st.startswith('#') or st.startswith(';') or '=' not in line:
-                continue
-            k, _, _old = line.partition('=')
-            k_stripped = k.strip()
-            fk = k_stripped.casefold()
-            for name, code in filled.items():
-                if name.casefold() == fk:
-                    lines[i] = '%s = %s' % (k_stripped, code)
-                    done.add(name)
-                    break
-        extra = [n for n in filled if n not in done]
-        if extra:
-            insert_at = end
-            while insert_at > start + 1 and not lines[insert_at - 1].strip():
-                insert_at -= 1            # 插在段内最后一条非空行之后
-            for offset, name in enumerate(extra):
-                lines.insert(insert_at + offset, '%s = %s' % (name, filled[name]))
-        new_text = nl.join(lines)
-
-    try:
-        io.open(path, 'w', encoding='utf-8', newline='').write(new_text)
-        logger.info('已在 %s 的 [source] 段自动填写 %d 个平台的加密值：%s'
-                    % (os.path.basename(path), len(filled),
-                       '、'.join(filled)))
-    except OSError as e:
-        logger.warning('写回 %s 失败（本次仍使用内存中的值）：%s' % (path, e))
-    return filled
-
-
-def _load_source_map(ini_path=None):
-    """读取 [source] 段，返回 (正查表, 反查表)。
-
-    正查表：平台名(小写) -> 写入值
-    反查表：写入值       -> 原始平台名（用于还原展示）
-
-    读取前会先 ensure_source_codes()，保证空值/缺项被自动补全。
-    """
-    import configparser
-
-    path = ini_path or CONFIG_FILE
-    fwd, rev = {}, {}
-    if not os.path.exists(path):
-        return fwd, rev
-
-    ensure_source_codes(path)          # 缺失项自动填写并回写
-    try:
-        cfg = configparser.ConfigParser(interpolation=None)
-        cfg.optionxform = lambda s: s        # 保留键名大小写
-        cfg.read(path, encoding='utf-8')
-        if not cfg.has_section('source'):
-            return fwd, rev
-        for name, val in cfg.items('source'):
-            name = str(name or '').strip()
-            val = str(val or '').strip()
-            if not name or not val:
-                continue                     # 留空 = 不替换，写明文
-            fwd[name.casefold()] = val
-            rev.setdefault(val, name)
-    except Exception as e:
-        logger.warning(f'读取 {path} 的 [source] 段失败：{e}')
-    return fwd, rev
-
-
-SOURCE_MAP, SOURCE_REVERSE = _load_source_map()
-
-# 来源所在列（0-based），取自表头，避免列顺序调整后错位
-try:
-    SOURCE_INDEX = XLSX_HEADERS.index('来源')
-except ValueError:
-    SOURCE_INDEX = 1
-
-
-def encrypt_source(text):
-    """把来源换成 [source] 段里配置的值；未配置则原样返回明文。
-
-    函数名沿用旧名（各采集类与 BaseSpider 都在调用），实际做的是查表替换：
-        [source]
-        boss直聘 = xxxx   ->  「来源」列写入 xxxx
-    """
-    text = str(text or '')
-    if not text:
-        return text
-    return SOURCE_MAP.get(text.strip().casefold(), text)
-
-
-def decrypt_source(code):
-    """把写入表格的值还原成原始平台名；查不到时原样返回。"""
-    code = str(code or '')
-    if not code:
-        return code
-    return SOURCE_REVERSE.get(code.strip(), code)
-
-
 
 # ==================== 单元格文本清洗 ====================
 # openpyxl 只接受 \t(0x09) / \n(0x0A) / \r(0x0D) 三个控制字符，
@@ -582,9 +378,7 @@ class BaseSpider(object):
     子类只需定义 web_name、实现自己的 get_page_info / parser_page_info / run。
     """
 
-    web_name = ''               # 原始来源名（如 智联招聘），日志与明文都用它
-    source_name = ''            # 同 web_name，加密前的明文（便于代码里直接引用）
-    source_code = ''            # 加密后的来源，写入表格「来源」列
+    web_name = ''               # 原始来源名（如 智联招聘），也是「来源」列的值
     SAVE_INTERVAL = 10          # 两次写盘的最小间隔（秒），避免每页都重写整本 xlsx
 
     # 去重方式：True=按岗位编号去重（默认），False=按整行内容去重（旧逻辑，兜底）
@@ -602,20 +396,8 @@ class BaseSpider(object):
     _update_count = 0           # 本轮更新了多少条重复岗位
 
     def __init_subclass__(cls, **kwargs):
-        """子类定义时把 web_name 加密一次，之后每行直接用。
-
-        source_name : 原始来源明文（智联招聘），仅用于日志/排查
-        source_code : 加密后的字符串，写入表格「来源」列
-        """
+        """子类定义时无需额外处理：来源列直接用 web_name。"""
         super().__init_subclass__(**kwargs)
-        if cls.web_name and not cls.__dict__.get('source_code'):
-            cls.source_name = cls.web_name
-            cls.source_code = encrypt_source(cls.web_name)
-
-    @classmethod
-    def source_plain(cls, value):
-        """把表格里的来源密文还原成原始来源（供查看/导出核对）。"""
-        return decrypt_source(value)
 
     # ==================== 运行状态 ====================
 

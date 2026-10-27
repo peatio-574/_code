@@ -83,13 +83,13 @@ class ZhiPin(BaseSpider):
                  "学历要求", "经验要求", "专业要求", "工作地点", "详细地址",
                  "报名截止", "职位描述"]
 
-    # 登录态：与其他平台一致，存 config\config.ini（不再用几十 MB 的 zp_profile 目录）
+    # 登录态：与其他平台一致，存程序同级的 config.ini
     # 打包后 __file__ 位于临时解压目录(_MEIPASS)，不可用；以 exe 所在目录为基准。
     if getattr(sys, 'frozen', False):
         _base = os.path.dirname(sys.executable)
     else:
         _base = os.path.dirname(os.path.abspath(__file__))
-    CONFIG_FILE = os.path.join(_base, "config", "config.ini")
+    CONFIG_FILE = os.path.join(_base, "config.ini")
     CONFIG_SECTION = "login"
     CONFIG_OPTION = "zhipin_cookie"    # 存 str([cookie, ...])，另存 zhipin_cookie_api
 
@@ -434,7 +434,7 @@ class ZhiPin(BaseSpider):
         rows = []
         for it in (page_info or []):
             d = cls.item_to_row(it, province_name, city_name)
-            rows.append([crawl_date, cls.source_code, province_name]
+            rows.append([crawl_date, cls.web_name, province_name]
                         + [d.get(k, '') for k in cls.ROW_ORDER])
         return rows
 

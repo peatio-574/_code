@@ -13,7 +13,7 @@ rem    * --optimize 2 去掉 docstring 与 assert
 rem    * 排除 numpy/pandas/scipy/matplotlib/IPython 等重量级依赖
 rem    * 提供 UPX_DIR 可再压 30-50%%（可选）
 rem
-rem  登录凭证、日志、采集结果、config\ 全在 exe 同目录，不打进 exe
+rem  config.ini / 日志 / 采集结果在 exe 同目录；config\*.json 打进 exe
 rem ============================================================
 
 set "APP_NAME=Jobs"
@@ -97,6 +97,8 @@ echo [5/6] 开始打包（约 1-3 分钟）...
 set "UPX_ARG=--noupx"
 if defined UPX_DIR if exist "%UPX_DIR%" set "UPX_ARG=--upx-dir \"%UPX_DIR%\""
 
+rem 注意：不要 exclude asyncio / asyncio.tasks（zhipin 异步采集依赖它）
+rem 注意：不要 exclude bs4（ncss 解析详情页依赖它）
 "%PYTHON%" -m PyInstaller ^
     --noconfirm ^
     --clean ^
@@ -111,6 +113,7 @@ if defined UPX_DIR if exist "%UPX_DIR%" set "UPX_ARG=--upx-dir \"%UPX_DIR%\""
     --log-level WARN ^
     --paths "." ^
     --paths ".." ^
+    --add-data "%~dp0config\*.json;config" ^
     --hidden-import "Logger" ^
     --hidden-import "Config" ^
     --hidden-import "PatchRightClass" ^
@@ -133,7 +136,6 @@ if defined UPX_DIR if exist "%UPX_DIR%" set "UPX_ARG=--upx-dir \"%UPX_DIR%\""
     --exclude-module "playwright" ^
     --exclude-module "cryptography" ^
     --exclude-module "cffi" ^
-    --exclude-module "bs4" ^
     --exclude-module "lxml" ^
     --exclude-module "pandas" ^
     --exclude-module "numpy" ^
@@ -162,7 +164,6 @@ if defined UPX_DIR if exist "%UPX_DIR%" set "UPX_ARG=--upx-dir \"%UPX_DIR%\""
     --exclude-module "sqlite3" ^
     --exclude-module "curses" ^
     --exclude-module "multiprocessing" ^
-    --exclude-module "asyncio.tasks" ^
     %UPX_ARG% ^
     "%ENTRY%"
 
@@ -173,7 +174,6 @@ rem ============ 6. 生成外部配置目录 ============
 echo.
 echo [6/6] 生成外部配置与说明...
 call :ensure_config
-call :ensure_config_dir
 call :ensure_readme
 
 for %%F in ("%DIST_DIR%\%APP_NAME%.exe") do set "EXE_SIZE=%%~zF"
@@ -187,24 +187,18 @@ echo ============================================================
 echo   EXE : %cd%\%DIST_DIR%\%APP_NAME%.exe
 echo         约 %EXE_MB% MB（%EXE_KB% KB）
 echo.
-echo  exe 同目录下的外部文件（可直接编辑）：
-echo    config\config.ini   登录 Cookie + [source] 来源显示值
-echo    config\           采集配置与数据字典
-echo      columns.json       表格列定义
-echo      ui.json            界面主题与布局
-echo      field_rules.json   字段规范化规则
-echo      guopin_area.json   国聘省市字典
-echo      zhipin_cities.json 智联城市字典
-echo      BossCity.json      BOSS 城市字典
-echo      BossJobType.json   BOSS 岗位字典
+echo  exe 同目录下的文件：
+echo    config.ini         登录 Cookie（可直接编辑）
 echo    logs\              运行日志
 echo    *.xlsx             采集结果
 echo.
+echo  config\ 下的规则与字典 JSON 已内置进 exe，无需外部文件；
+echo  如需覆盖，可在 exe 同目录建 config\ 放同名 JSON，会优先使用。
+echo.
 echo  使用说明：
-echo    * 首次运行会自动生成缺失的目录与配置
+echo    * 首次运行会自动创建 config.ini 与 logs 目录
 echo    * 浏览器用系统自带的 Edge/Chrome，不需要额外安装
 echo      （可用环境变量 PLAYWRIGHT_CHANNEL 指定 msedge / chrome）
-echo    * config\config.ini 的 [source] 段留空时，运行会自动填入加密值
 echo ============================================================
 echo.
 pause
@@ -259,55 +253,25 @@ rem ttkbootstrap 只用到 ImageColor / ImageDraw / ImageFont，这些仍然保留。
 exit /b 0
 
 :ensure_config
-rem config\config.ini 已存在则不覆盖（保留已登录的 Cookie）
-if not exist "%DIST_DIR%\config" mkdir "%DIST_DIR%\config" >nul 2>nul
-if exist "%DIST_DIR%\config\config.ini" (
-    echo   config\config.ini 已存在，保留原文件
+rem config.ini 放在 dist 根目录（与 exe 同级）；已存在则不覆盖（保留已登录的 Cookie）
+if exist "%DIST_DIR%\config.ini" (
+    echo   config.ini 已存在，保留原文件
     exit /b 0
 )
-if exist "config\config.ini" (
-    copy /y "config\config.ini" "%DIST_DIR%\config\config.ini" >nul
-    echo   已复制 config\config.ini
+if exist "config.ini" (
+    copy /y "config.ini" "%DIST_DIR%\config.ini" >nul
+    echo   已复制 config.ini
     exit /b 0
 )
-rem 空白模板：[source] 段留空，首次运行会自动填入加密值
-> "%DIST_DIR%\config\config.ini" echo [login]
->>"%DIST_DIR%\config\config.ini" echo nscc_cookie =
->>"%DIST_DIR%\config\config.ini" echo nscc_cookie_api =
->>"%DIST_DIR%\config\config.ini" echo boss_cookie =
->>"%DIST_DIR%\config\config.ini" echo boss_cookie_api =
->>"%DIST_DIR%\config\config.ini" echo zhipin_cookie =
->>"%DIST_DIR%\config\config.ini" echo zhipin_cookie_api =
->>"%DIST_DIR%\config\config.ini" echo.
->>"%DIST_DIR%\config\config.ini" echo [source]
->>"%DIST_DIR%\config\config.ini" echo BOSS直聘 =
->>"%DIST_DIR%\config\config.ini" echo 智联招聘 =
->>"%DIST_DIR%\config\config.ini" echo 国聘 =
->>"%DIST_DIR%\config\config.ini" echo 国家大学生就业服务平台 =
-echo   已创建空白 config\config.ini 模板
-exit /b 0
-
-:ensure_config_dir
-rem 把 config\ 下的 JSON 复制到 dist\config\（已存在的不覆盖，保留用户修改）
-if not exist "%DIST_DIR%\config" mkdir "%DIST_DIR%\config" >nul 2>nul
-if not exist "config" (
-    echo   [警告] 未找到 config 目录
-    exit /b 0
-)
-set "COPIED=0"
-for %%F in ("config\*.json") do (
-    if not exist "%DIST_DIR%\config\%%~nxF" (
-        copy /y "%%F" "%DIST_DIR%\config\%%~nxF" >nul
-        set /a COPIED+=1
-        echo   + config\%%~nxF
-    )
-)
-if "!COPIED!"=="0" (
-    echo   config 目录已是最新，无需复制
-) else (
-    echo   已复制 !COPIED! 个配置文件
-)
-echo   注意：这些文件放在 dist\config，不打包进 exe
+rem 空白模板：各平台 Cookie 留空，首次运行登录后自动写入
+> "%DIST_DIR%\config.ini" echo [login]
+>>"%DIST_DIR%\config.ini" echo nscc_cookie =
+>>"%DIST_DIR%\config.ini" echo nscc_cookie_api =
+>>"%DIST_DIR%\config.ini" echo boss_cookie =
+>>"%DIST_DIR%\config.ini" echo boss_cookie_api =
+>>"%DIST_DIR%\config.ini" echo zhipin_cookie =
+>>"%DIST_DIR%\config.ini" echo zhipin_cookie_api =
+echo   已创建空白 config.ini 模板
 exit /b 0
 
 :ensure_readme
@@ -321,33 +285,24 @@ if exist "%DIST_DIR%\使用说明.txt" exit /b 0
 >>"%DIST_DIR%\使用说明.txt" echo.
 >>"%DIST_DIR%\使用说明.txt" echo 【登录】
 >>"%DIST_DIR%\使用说明.txt" echo   国家大学生就业服务平台：首次需在浏览器里手动登录，
->>"%DIST_DIR%\使用说明.txt" echo       Cookie 自动写入 config\config.ini 的 nscc_cookie_api。
+>>"%DIST_DIR%\使用说明.txt" echo       Cookie 自动写入 config.ini 的 nscc_cookie_api。
 >>"%DIST_DIR%\使用说明.txt" echo   智联招聘：首次需手机号 + 短信验证码，
->>"%DIST_DIR%\使用说明.txt" echo       Cookie 自动写入 config\config.ini 的 zhipin_cookie。
->>"%DIST_DIR%\使用说明.txt" echo   BOSS直聘：Cookie 存于 config\config.ini 的 boss_cookie。
+>>"%DIST_DIR%\使用说明.txt" echo       Cookie 自动写入 config.ini 的 zhipin_cookie。
+>>"%DIST_DIR%\使用说明.txt" echo   BOSS直聘：Cookie 存于 config.ini 的 boss_cookie。
 >>"%DIST_DIR%\使用说明.txt" echo   国聘：无需登录。
 >>"%DIST_DIR%\使用说明.txt" echo.
 >>"%DIST_DIR%\使用说明.txt" echo 【可编辑配置】
->>"%DIST_DIR%\使用说明.txt" echo    config\config.ini      登录 Cookie + [source] 来源显示值
->>"%DIST_DIR%\使用说明.txt" echo    config\columns.json    表格列定义与列宽
->>"%DIST_DIR%\使用说明.txt" echo    config\ui.json         界面主题、字体、颜色
->>"%DIST_DIR%\使用说明.txt" echo    config\field_rules.json 字段规范化规则
->>"%DIST_DIR%\使用说明.txt" echo    config\BossCity.json   BOSS 采集范围（城市/区县）
->>"%DIST_DIR%\使用说明.txt" echo    config\BossJobType.json BOSS 采集范围（岗位）
+>>"%DIST_DIR%\使用说明.txt" echo    config.ini       登录 Cookie（可直接编辑）
+>>"%DIST_DIR%\使用说明.txt" echo   （config\ 下的 JSON 已内置进 exe，需要时才在外部建同名文件覆盖）
 >>"%DIST_DIR%\使用说明.txt" echo.
->>"%DIST_DIR%\使用说明.txt" echo 【来源列加密】
->>"%DIST_DIR%\使用说明.txt" echo   config\config.ini 的 [source] 段留空时，
->>"%DIST_DIR%\使用说明.txt" echo   首次运行会自动填入各平台的加密值。
->>"%DIST_DIR%\使用说明.txt" echo   想改回明文：把右侧值删掉再运行（会重新填入），
->>"%DIST_DIR%\使用说明.txt" echo   或整行删除该平台（则写原始中文名）。
 >>"%DIST_DIR%\使用说明.txt" echo.
 >>"%DIST_DIR%\使用说明.txt" echo 【常见问题】
 >>"%DIST_DIR%\使用说明.txt" echo   Q: 界面没起来？
 >>"%DIST_DIR%\使用说明.txt" echo   A: 查看 logs 目录当天的日志。
 >>"%DIST_DIR%\使用说明.txt" echo   Q: 登录失效？
->>"%DIST_DIR%\使用说明.txt" echo   A: 删除 config\config.ini 里对应的 cookie 行，重跑即可。
+>>"%DIST_DIR%\使用说明.txt" echo   A: 删除 config.ini 里对应的 cookie 行，重跑即可。
 >>"%DIST_DIR%\使用说明.txt" echo   Q: 想换界面主题？
->>"%DIST_DIR%\使用说明.txt" echo   A: 改 config\ui.json 的 themename 后重启。
+>>"%DIST_DIR%\使用说明.txt" echo   A: 在 exe 同目录建 config\ui.json，改 themename 后重启。
 >>"%DIST_DIR%\使用说明.txt" echo   Q: 采集太慢？
 >>"%DIST_DIR%\使用说明.txt" echo   A: BOSS 的 BossJobType.json 里岗位越多越慢，可只留需要的。
 >>"%DIST_DIR%\使用说明.txt" echo ========================================

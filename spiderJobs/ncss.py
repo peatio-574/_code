@@ -81,7 +81,7 @@ class Ncss(BaseSpider):
     # 登录
     CONFIG_SECTION = 'login'
     CONFIG_OPTION = 'nscc_cookie'                 # Cookie 实际取 login.nscc_cookie_api
-    CONFIG_FILE = os.path.join(_BASE_DIR, 'config', 'config.ini')
+    CONFIG_FILE = os.path.join(_BASE_DIR, 'config.ini')
     AUTO_LOGIN = True                             # Cookie 失效时是否自动弹出浏览器登录
     LOGIN_URL = ('https://account.chsi.com.cn/passport/login'
                  '?service=https://www.ncss.cn/student/connect/chsi&entrytype=stu')
@@ -540,7 +540,7 @@ class Ncss(BaseSpider):
         """把列表项 + 详情合并成一行（列顺序见 XLSX_HEADERS）。
 
         source_name: 子来源名（前程无忧/中华英才网…），只用于日志；
-                     「来源」列固定写 cls.source_code（NCSS 的密文）。
+                     「来源」列固定写 cls.web_name（NCSS 平台名）。
         """
         province, city, district = cls.split_area(
             detail.get('location'), item.get('areaCodeName', ''))
@@ -575,7 +575,7 @@ class Ncss(BaseSpider):
             crawl_date or datetime.now().strftime('%Y-%m-%d'),
             # 「来源」统一为 NCSS：该平台聚合了前程无忧、中华英才网等多个子来源，
             # 子来源名只用于筛选与日志，不写入表格，避免同一平台出现多种来源值
-            cls.source_code,
+            cls.web_name,
             province,
             city,
             job_name,
