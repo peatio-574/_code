@@ -92,18 +92,17 @@
         <table class="table table-hover align-middle mb-0" style="width:100%; table-layout:fixed;">
             <colgroup>
                 <col style="width:4%;">
-                <col style="width:12%;">
-                <col style="width:12%;">
-                <col style="width:6%;">
-                <col style="width:7%;">
-                <col style="width:8%;">
-                <col style="width:12%;">
+                <col style="width:18%;">
+                <col style="width:18%;">
                 <col style="width:5%;">
+                <col style="width:6%;">
+                <col style="width:6%;">
                 <col style="width:10%;">
+                <col style="width:5%;">
+                <col style="width:8%;">
                 <col style="width:4%;">
-                <col style="width:11%;">
-                <col style="width:10%;">
                 <col style="width:9%;">
+                <col style="width:7%;">
             </colgroup>
             <thead class="sticky-thead">
                 <tr>
@@ -118,7 +117,6 @@
                     <th>工作地点</th>
                     <th style="text-align:center;">人数</th>
                     <th>截止时间</th>
-                    <th>更新时间</th>
                     <th style="text-align:center;">操作</th>
                 </tr>
             </thead>
@@ -546,6 +544,38 @@
         </div>
     </div>
 </div>
+
+<!-- 来源密文弹窗 -->
+<div class="modal fade" id="sourceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-shield-lock text-primary"></i> 来源（密文）</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <small class="text-muted d-block">职位名称</small>
+                    <strong id="sourceModalJob">-</strong>
+                </div>
+                <div>
+                    <small class="text-muted d-block">来源密文</small>
+                    <div id="sourceModalValue"
+                         style="word-break:break-all; overflow-wrap:anywhere; background:#f8f9fa;
+                                border:1px solid #e9ecef; border-radius:8px; padding:10px 12px;
+                                font-family:Consolas, Monaco, monospace; font-size:13px;
+                                min-height:38px;">-</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" id="sourceCopyBtn">
+                    <i class="bi bi-clipboard"></i> 复制
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -629,14 +659,14 @@ function updateUrl() {}
 
 async function loadJobs() {
     const body = document.getElementById('jobsBody');
-    body.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-5">加载中...</td></tr>';
+    body.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-5">加载中...</td></tr>';
     try {
         const res = await fetch('{{ url_for("admin.jobs_list") }}?' + buildQuery());
         const data = await res.json();
         renderJobs(data.jobs);
         renderPagination(data.pagination);
     } catch (e) {
-        body.innerHTML = '<tr><td colspan="13" class="text-center text-danger py-5">加载失败</td></tr>';
+        body.innerHTML = '<tr><td colspan="12" class="text-center text-danger py-5">加载失败</td></tr>';
     }
 }
 
@@ -645,7 +675,7 @@ function renderJobs(jobs) {
     const table = document.querySelector('table');
     if (!jobs || jobs.length === 0) {
         table.classList.add('no-data');
-        body.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-5">暂无岗位数据</td></tr>';
+        body.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-5">暂无岗位数据</td></tr>';
         document.getElementById('selectAll').checked = false;
         return;
     }
@@ -670,13 +700,18 @@ function renderJobs(jobs) {
             <td>${escapeHtml(job.company_name)}</td>
             <td>${escapeHtml(job.company_type) || '-'}</td>
             <td><span class="badge bg-${rc}">${escapeHtml(job.recruit_type) || '-'}</span></td>
-            <td>${escapeHtml(job.source) || '-'}</td>
+            <td style="text-align:center;">
+                <button type="button" class="btn btn-sm btn-outline-secondary btn-source"
+                        title="查看来源密文"
+                        data-source="${escapeAttr(job.source || '')}"
+                        data-job="${escapeAttr(job.job_name || '')}"
+                        onclick="showSourceModal(this)">查看</button>
+            </td>
             <td class="text-danger fw-normal">${escapeHtml(formatSalary(job.salary_range))}</td>
             <td>${escapeHtml(job.education_req) || '不限'}</td>
             <td>${escapeHtml(job.location)}</td>
             <td style="text-align:center;">${job.recruit_count}</td>
             <td>${deadlineHtml}</td>
-            <td>${escapeHtml(job.updated_at) || '-'}</td>
             <td style="text-align:center; white-space:nowrap;">${actionHtml}</td>
         </tr>`;
     }).join('');
@@ -1437,8 +1472,62 @@ function updateAiRecCount() {
     document.getElementById('aiRecSelCount').textContent = n;
 }
 
-async function showJobDetail(id) {
-    try {
+// ==================== 来源（密文）查看 ====================
+// 列表里「来源」列不再直接显示密文，改成「查看」按钮，
+// 点开弹窗再看到完整密文，避免密文把表格撑乱。
+function showSourceModal(btn) {
+    const source = btn.getAttribute('data-source') || '';
+    const jobName = btn.getAttribute('data-job') || '';
+
+    document.getElementById('sourceModalJob').textContent = jobName || '-';
+
+    const box = document.getElementById('sourceModalValue');
+    box.textContent = source || '（无）';
+    // 原始密文另存一份，复制时用原始值而不是可能被截断的显示文本
+    box.dataset.raw = source;
+
+    new bootstrap.Modal(document.getElementById('sourceModal')).show();
+}
+
+// 复制密文：优先用剪贴板 API，http 环境下回退到 execCommand
+function copySourceCipher() {
+    const box = document.getElementById('sourceModalValue');
+    const text = box.dataset.raw || '';
+    if (!text) {
+        showToast('没有可复制的内容', 'warning');
+        return;
+    }
+    const fallback = function () {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.top = '-1000px';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            showToast('已复制', 'success');
+        } catch (e) {
+            showToast('复制失败，请手动选中复制', 'danger');
+        }
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text)
+            .then(function () { showToast('已复制', 'success'); })
+            .catch(fallback);
+    } else {
+        fallback();
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const copyBtn = document.getElementById('sourceCopyBtn');
+    if (copyBtn) copyBtn.addEventListener('click', copySourceCipher);
+});
+
+async function showJobDetail(id) {    try {
         const res = await fetch(JOB_DATA_URL.replace('/0/', '/' + id + '/'));
         const data = await res.json();
         if (!data || !data.job_name) { showToast('岗位不存在', 'danger'); return; }
