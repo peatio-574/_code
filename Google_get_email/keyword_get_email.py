@@ -7,12 +7,15 @@
       若仍然没有数据，对应单元格写「暂无匹配数据」，不再输出补看链接。
 
 用法：
-    python keyword_get_email.py
+    python keyword_get_email.py                     不带参数 → 打开图形界面
+    python keyword_get_email_gui.py                 也可以直接运行界面
+    python keyword_get_email.py --cli               命令行交互模式（原来的问答式）
     python keyword_get_email.py -k "灯具厂家,LED供应商" -p 127.0.0.1:7892
     python keyword_get_email.py -k "灯饰" --no-proxy --pages 5 --max-sites 30 -o out.xlsx
 
 流程：
-    1. 用 Google 搜索关键词，翻 MAX_SERP_PAGES 页（默认 10 页）
+    1. 用 Google 搜索关键词，翻 max_pages 页（默认 10 页），
+       每页条数由 per_page 控制（默认 10，对应 Google 的 num 参数）
     2. 收集结果链接（跳过 Google 自家、社交平台、文件类链接）
        注意 Google 结果页的 href 现在是 /goto?url=<protobuf 加密串>，解不出目标地址，
        必须用每条结果下方 <cite> 里显示的真实域名来还原（见 resolve_result_url），
@@ -46,9 +49,28 @@ try:
 except ImportError:                       # 没装 requests 时退回纯浏览器模式
     requests = None
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+def _app_dirs():
+    """返回两个目录：(可写目录, 资源目录)。
+
+    PyInstaller 打包后 __file__ 指向临时解包目录 _MEIPASS（每次启动都不一样、
+    进程退出就被删掉），所以必须区分开：
+
+      · 可写目录：结果 xlsx、日志这类要留给用户的东西 → exe 所在目录
+      · 资源目录：app.ico 这类只读资源 → _MEIPASS（跟着 exe 一起解包）
+
+    直接跑 .py 时两者都是脚本所在目录，行为和以前完全一致。
+    """
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        return exe_dir, getattr(sys, '_MEIPASS', exe_dir)
+    here = os.path.dirname(os.path.abspath(__file__))
+    return here, here
+
+
+BASE_DIR, RES_DIR = _app_dirs()
 # 用 BASE_DIR 推出项目根目录：直接运行脚本时 __file__ 可能是相对路径，
 # Path(__file__).parent.parent 会指到当前目录，导致找不到 newPlayWright。
+# 打包后 newPlayWright 已经打进 exe，这一行只是无害的兜底。
 sys.path.append(os.path.dirname(BASE_DIR))
 
 from newPlayWright import PlayWright, logger
@@ -59,13 +81,9 @@ from openpyxl.styles import Alignment, Font, PatternFill
 # 浏览器操作可能抛出的异常：Playwright 自己的 Error、超时，以及页面被关闭 /
 # 导航中断等引起的 OSError / RuntimeError。收敛成元组，避免到处写
 # except Exception 把真正的代码错误也吞掉。
-try:
-    from playwright.sync_api import Error as _BrowserError
-except ImportError:                       # 兼容只装了 patchright 的环境
-    try:
-        from patchright.sync_api import Error as _BrowserError
-    except ImportError:
-        _BrowserError = OSError
+#
+# 浏览器统一走 newPlayWright（底层 playwright），没有第二套实现。
+from playwright.sync_api import Error as _BrowserError
 
 BROWSER_ERRORS = (_BrowserError, OSError, RuntimeError, ValueError)
 
@@ -84,6 +102,70 @@ PAGE_DELAY = (1.5, 3.5)      # 用浏览器访问时的随机等待（接口抓�
 SERP_DELAY = (2.5, 5.0)      # 每翻一页搜索结果的随机等待（秒）
 PAGE_TIMEOUT = 25000         # 单个网页加载超时（毫秒）
 OUT_NAME = 'google_contacts.xlsx'
+NUM_PER_PAGE = 10            # Google 每页返回多少条（URL 里的 num 参数）
+
+# ==================== 进度与停止（供 GUI 调用） ====================
+# CLI 下这些都是空的，不产生任何额外开销；
+# GUI 启动采集前用 set_runtime_hooks() 注入回调与停止信号。
+PROGRESS_HOOK = None         # callable(stage, current, total, text)
+RECORD_HOOK = None           # callable(dict)  每采到一个网站就回调一次
+LINK_HOOK = None             # callable(dict)  搜到一条结果链接就回调一次
+STOP_EVENT = None            # threading.Event 实例
+
+
+def set_runtime_hooks(progress=None, stop_event=None, record=None,
+                      link=None):
+    """安装 / 卸载进度回调、停止信号、实时记录/链接回调（GUI 用）。"""
+    global PROGRESS_HOOK, STOP_EVENT, RECORD_HOOK, LINK_HOOK
+    PROGRESS_HOOK = progress
+    STOP_EVENT = stop_event
+    RECORD_HOOK = record
+    LINK_HOOK = link
+
+
+def report_progress(stage, current=0, total=0, text=''):
+    """上报进度。GUI 传进来的回调必须不能把采集搞崩，所以这里兜住异常。"""
+    if PROGRESS_HOOK is None:
+        return
+    try:
+        PROGRESS_HOOK(stage, current, total, text)
+    except Exception:          # noqa: BLE001  界面异常不该中断采集
+        pass
+
+
+def report_record(rec):
+    """上报一条刚采到的记录（GUI 用来实时刷表格）。"""
+    if RECORD_HOOK is None:
+        return
+    try:
+        RECORD_HOOK(rec)
+    except Exception:          # noqa: BLE001
+        pass
+
+
+def report_link(url, title='', site_name='', keyword='', seq=0):
+    """上报一条搜到的结果链接。
+
+    让界面在「还没开始访问」时就把链接列出来，用户能立刻看到进度，
+    而不是等所有网站都跑完才一次性冒出来。
+    """
+    if LINK_HOOK is None:
+        return
+    try:
+        LINK_HOOK({
+            'keyword': keyword,
+            'url': url,
+            'title': title or '',
+            'site_name': site_name or '',
+            'seq': seq,
+        })
+    except Exception:          # noqa: BLE001
+        pass
+
+
+def stop_requested():
+    """用户点了「停止」没有"""
+    return STOP_EVENT is not None and STOP_EVENT.is_set()
 
 # 首页电话/邮箱任一项缺失时，是否再打开「联系我们 / 关于我们」页面补抓
 # 很多企业官网只在联系页留联系方式，这一步能明显提高命中率
@@ -343,16 +425,405 @@ def jsonld_contacts(ld_blocks):
 
 
 # ==================== 浏览器操作 ====================
-# 访问网页时拦截图片/视频/字体等无关资源，只保留 HTML/CSS/JS，明显加快加载
+# 访问网页时拦截视频/字体等无关资源，加快加载。
+#
+# 注意：**绝对不能拦 image**。Google 的人机验证（reCAPTCHA）选项图就是普通
+# 图片请求，一旦被 abort，验证框会一直空白、无法完成 —— 这是之前「触发验证但
+# 图片加载不出来」的直接原因。字体保留也不是为了好看：缺字体会让页面布局
+# 与真实用户不同，本身就是一条自动化特征。
 BLOCK_HEAVY_RESOURCES = True
-BLOCKED_RESOURCE_TYPES = ('image', 'media', 'font')
+BLOCKED_RESOURCE_TYPES = ('media', 'font')
+
+# 这些域名下的资源一律放行（人机验证、Google 自家、账号登录）
+NEVER_BLOCK_HOSTS = (
+    'google.com', 'gstatic.com', 'googleusercontent.com', 'recaptcha.net',
+    'googleapis.com', 'ggpht.com', 'youtube.com', 'ytimg.com',
+)
+
 _RESOURCE_STATE = {'installed': False}
 
 
+# 页面级反检测补丁
+#
+# 为什么需要：newPlayWright 的启动参数里有
+#   --disable-plugins  -> navigator.plugins.length === 0
+#   --disable-gpu / --disable-webgl -> canvas.getContext('webgl') === null
+# 这两项是 Google 风控最先查的特征（真实浏览器绝不可能为 0 / 为 null），
+# 所以一打开搜索页就直接弹人机验证。
+#
+# 这里不改启动参数（不影响其他项目），只在页面里把这两项补成「正常浏览器」
+# 的样子：plugins 返回 5 个内置 PDF 插件，getContext('webgl') 在真被禁用时
+# 返回一个参数合理的 stub。
+STEALTH_JS = r"""
+(() => {
+    // 注意：这里必须是 IIFE 而不是裸的 `() => {...}`。
+    // add_init_script 传字符串时是「当脚本执行」，裸箭头函数只会被创建然后丢弃；
+    // page.evaluate 才会自动调用函数。用 IIFE 两种方式都能生效。
+    // 真实的 navigator.plugins / webdriver / languages 都是原型上的访问器，
+    // 只改实例会留下「自有属性」，反而成了新的指纹。
+    const defProto = (proto, key, value) => {
+        try {
+            const old = Object.getOwnPropertyDescriptor(proto, key);
+            Object.defineProperty(proto, key, {
+                get: () => value,
+                configurable: true,
+                enumerable: old ? !!old.enumerable : true,
+            });
+        } catch (e) {}
+    };
+
+    // ---------- 1. webdriver ----------
+    // 注意：真实 Chrome 里 navigator.webdriver 是 false，不是 undefined。
+    // 返回 undefined 本身就是一条特征。
+    if (navigator.webdriver !== false) {
+        try {
+            defProto(Navigator.prototype, 'webdriver', false);
+        } catch (e) {}
+    }
+
+    // ---------- 2. window.chrome ----------
+    if (!window.chrome) { window.chrome = {}; }
+    if (!window.chrome.runtime) { window.chrome.runtime = {}; }
+
+    // ---------- 3. plugins / mimeTypes：造出像真的 PluginArray ----------
+    // 关键：必须是 PluginArray 的实例（原型链正确），
+    //       Object.prototype.toString.call(navigator.plugins) === '[object PluginArray]'
+    // 另外 plugins 与 mimeTypes 必须互相自洽：5 个插件都指向同一个
+    // application/pdf 的 MimeType，mimeTypes 里同时有 application/pdf 和 text/pdf。
+    if (!navigator.plugins || navigator.plugins.length === 0) {
+        try {
+            const P = (typeof Plugin !== 'undefined') ? Plugin.prototype : null;
+            const PA = (typeof PluginArray !== 'undefined')
+                ? PluginArray.prototype : null;
+            const MP = (typeof MimeType !== 'undefined') ? MimeType.prototype : null;
+            const MA = (typeof MimeTypeArray !== 'undefined')
+                ? MimeTypeArray.prototype : null;
+
+            const makeMime = (type, suffixes) => {
+                const mime = MP ? Object.create(MP) : {};
+                Object.defineProperties(mime, {
+                    type: { value: type, enumerable: true },
+                    suffixes: { value: suffixes, enumerable: true },
+                    description: {
+                        value: 'Portable Document Format', enumerable: true,
+                    },
+                    enabledPlugin: { value: null, writable: true },
+                });
+                return mime;
+            };
+
+            const pdf = makeMime('application/pdf', 'pdf');
+            const textPdf = makeMime('text/pdf', 'pdf');
+
+            const makePlugin = (name) => {
+                const plugin = P ? Object.create(P) : {};
+                Object.defineProperties(plugin, {
+                    name: { value: name, enumerable: true },
+                    filename: { value: 'internal-pdf-viewer', enumerable: true },
+                    description: {
+                        value: 'Portable Document Format', enumerable: true,
+                    },
+                    length: { value: 1, enumerable: false },
+                    item: {
+                        value: (i) => (i === 0 ? pdf : null),
+                        enumerable: false,
+                    },
+                    namedItem: {
+                        value: (n) => (n === 'application/pdf' ? pdf : null),
+                        enumerable: false,
+                    },
+                });
+                Object.defineProperty(plugin, 0, {
+                    value: pdf, enumerable: true,
+                });
+                pdf.enabledPlugin = plugin;
+                return plugin;
+            };
+
+            const names = ['PDF Viewer', 'Chrome PDF Viewer',
+                           'Chromium PDF Viewer', 'Microsoft Edge PDF Viewer',
+                           'WebKit built-in PDF'];
+            const list = names.map(makePlugin);
+
+            const arr = PA ? Object.create(PA) : {};
+            list.forEach((p, i) => {
+                Object.defineProperty(arr, i, { value: p, enumerable: true });
+            });
+            Object.defineProperties(arr, {
+                length: { value: list.length, enumerable: false },
+                item: { value: (i) => list[i] || null, enumerable: false },
+                namedItem: {
+                    value: (n) => list.find(p => p.name === n) || null,
+                    enumerable: false,
+                },
+                refresh: { value: () => {}, enumerable: false },
+            });
+
+            const mimes = [pdf, textPdf];
+            const mimeArr = MA ? Object.create(MA) : {};
+            mimes.forEach((m, i) => {
+                Object.defineProperty(mimeArr, i, { value: m, enumerable: true });
+            });
+            Object.defineProperties(mimeArr, {
+                length: { value: mimes.length, enumerable: false },
+                item: { value: (i) => mimes[i] || null, enumerable: false },
+                namedItem: {
+                    value: (n) => mimes.find(m => m.type === n) || null,
+                    enumerable: false,
+                },
+            });
+
+            defProto(Navigator.prototype, 'plugins', arr);
+            defProto(Navigator.prototype, 'mimeTypes', mimeArr);
+            defProto(Navigator.prototype, 'pdfViewerEnabled', true);
+        } catch (e) {}
+    }
+
+    // ---------- 4. WebGL：真被禁用时给出参数合理的 stub ----------
+    try {
+        const makeStub = (type, canvas) => {
+            const VENDOR = 'Google Inc. (Intel)';
+            const RENDERER = 'ANGLE (Intel, Intel(R) UHD Graphics 630 '
+                           + 'Direct3D11 vs_5_0 ps_5_0, D3D11)';
+            const EXTS = [
+                'ANGLE_instanced_arrays', 'EXT_blend_minmax',
+                'EXT_color_buffer_half_float', 'EXT_disjoint_timer_query',
+                'EXT_float_blend', 'EXT_frag_depth',
+                'EXT_shader_texture_lod', 'EXT_texture_compression_bptc',
+                'EXT_texture_compression_rgtc', 'EXT_texture_filter_anisotropic',
+                'EXT_sRGB', 'KHR_parallel_shader_compile',
+                'OES_element_index_uint', 'OES_fbo_render_sample',
+                'OES_standard_derivatives', 'OES_texture_float',
+                'OES_texture_float_linear', 'OES_texture_half_float',
+                'OES_texture_half_float_linear', 'OES_vertex_array_object',
+                'WEBGL_color_buffer_float', 'WEBGL_compressed_texture_s3tc',
+                'WEBGL_debug_renderer_info', 'WEBGL_depth_texture',
+                'WEBGL_draw_buffers', 'WEBGL_lose_context',
+                'WEBGL_multi_draw',
+            ];
+            const PARAMS = {
+                7936: VENDOR,            // VENDOR
+                7937: RENDERER,          // RENDERER
+                7938: 'WebGL 1.0 (OpenGL ES 2.0 Chromium)',   // VERSION
+                35724: 'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)',
+                37445: VENDOR,           // UNMASKED_VENDOR_WEBGL
+                37446: RENDERER,         // UNMASKED_RENDERER_WEBGL
+                3379: 16384,             // MAX_TEXTURE_SIZE
+                34076: 16384,            // MAX_CUBE_MAP_TEXTURE_SIZE
+                34921: 16,               // MAX_VERTEX_ATTRIBS
+                35660: 16,               // MAX_VERTEX_UNIFORM_VECTORS
+                35661: 32,               // MAX_VARYING_VECTORS
+                36347: 1024,             // MAX_VERTEX_TEXTURE_IMAGE_UNITS
+                36348: 16,               // MAX_COMBINED_TEXTURE_IMAGE_UNITS
+                36349: 1024,             // MAX_FRAGMENT_UNIFORM_VECTORS
+                3413: 8,                 // ALPHA_BITS
+                3414: 8,                 // BLUE_BITS
+                3415: 8,                 // DEPTH_BITS
+                3412: 8,                 // GREEN_BITS
+                3411: 8,                 // RED_BITS
+                3410: 8,                 // STENCIL_BITS
+            };
+            const GLC = (type === 'webgl2')
+                ? (typeof WebGL2RenderingContext !== 'undefined'
+                    ? WebGL2RenderingContext.prototype : null)
+                : (typeof WebGLRenderingContext !== 'undefined'
+                    ? WebGLRenderingContext.prototype : null);
+            const gl = GLC ? Object.create(GLC) : {};
+
+            // 脚本会读这些常量（gl.VERSION / gl.MAX_TEXTURE_SIZE ...），
+            // 原型上本来就有；但原型上的方法直接用错的 this 调用会抛
+            // Illegal invocation，所以下面用 Proxy 把「方法」统一换成
+            // no-op，「常量」保持真实数值。
+            const target = gl;
+            const impl = {
+                canvas: canvas,
+                drawingBufferWidth: canvas ? canvas.width : 300,
+                drawingBufferHeight: canvas ? canvas.height : 150,
+                getParameter: (p) => (p in PARAMS ? PARAMS[p] : null),
+                getExtension: (name) => {
+                    if (EXTS.indexOf(name) < 0) { return null; }
+                    if (name === 'WEBGL_debug_renderer_info') {
+                        return {
+                            UNMASKED_VENDOR_WEBGL: 37445,
+                            UNMASKED_RENDERER_WEBGL: 37446,
+                        };
+                    }
+                    return {};
+                },
+                getSupportedExtensions: () => EXTS.slice(),
+                getContextAttributes: () => ({
+                    alpha: true, antialias: true, depth: true,
+                    failIfMajorPerformanceCaveat: false,
+                    powerPreference: 'default',
+                    premultipliedAlpha: true,
+                    preserveDrawingBuffer: false,
+                    stencil: false,
+                    desynchronized: false,
+                }),
+                isContextLost: () => false,
+                getError: () => 0,
+                getShaderPrecisionFormat: () => ({
+                    rangeMin: 127, rangeMax: 127, precision: 23,
+                }),
+            };
+            Object.keys(impl).forEach((k) => {
+                Object.defineProperty(target, k, {
+                    value: impl[k], configurable: true, enumerable: false,
+                    writable: true,
+                });
+            });
+
+            return new Proxy(target, {
+                get(t, p, r) {
+                    if (typeof p === 'symbol') { return Reflect.get(t, p, r); }
+                    if (Object.prototype.hasOwnProperty.call(t, p)) {
+                        return Reflect.get(t, p, r);
+                    }
+                    let v;
+                    try { v = Reflect.get(t, p, r); } catch (e) { v = undefined; }
+                    // 原型方法 -> no-op（返回 null），原生常量 -> 原值
+                    if (typeof v === 'function') {
+                        return function () { return null; };
+                    }
+                    return v;
+                },
+            });
+        };
+
+        const orig = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function (type) {
+            const real = orig.apply(this, arguments);
+            if (real) { return real; }        // 真能用就用真的
+            if (type === 'webgl' || type === 'experimental-webgl'
+                || type === 'webgl2') {
+                return makeStub(type, this);  // 被 --disable-webgl 禁用时兜底
+            }
+            return real;
+        };
+    } catch (e) {}
+
+    // ---------- 5. languages：跟启动参数 --lang=zh-CN,zh 保持一致 ----------
+    try {
+        if (!navigator.languages || navigator.languages.length === 0) {
+            defProto(Navigator.prototype, 'languages', ['zh-CN', 'zh', 'en']);
+        }
+    } catch (e) {}
+})();
+"""
+
+_STEALTH_STATE = {'applied': False, 'context': None}
+
+
+def apply_stealth():
+    """给 context 与当前页面注入反检测补丁（只对之后创建的页面自动生效）。
+
+    context.add_init_script 只影响新页面，所以要额外对当前页 evaluate 一次。
+    这里保存 context 对象本身做标记：浏览器关掉再重开时会重新注入。
+    （不能用 id(context) —— 旧对象被回收后 id 会被复用，会导致误判成「已注入」。）
+    """
+    context = getattr(PlayWright, 'context', None)
+    page = getattr(PlayWright, 'page', None)
+    if _STEALTH_STATE['applied'] and _STEALTH_STATE['context'] is context:
+        return
+    ok = False
+    if context is not None:
+        try:
+            context.add_init_script(STEALTH_JS)
+            ok = True
+        except BROWSER_ERRORS as e:
+            logger.info('注入反检测脚本（context）失败：%s' % e)
+    if page is not None:
+        try:
+            page.add_init_script(STEALTH_JS)
+            page.evaluate(STEALTH_JS)     # 当前页已经加载，补一次
+            ok = True
+        except BROWSER_ERRORS as e:
+            logger.info('注入反检测脚本（page）失败：%s' % e)
+    if ok:
+        _STEALTH_STATE['applied'] = True
+        _STEALTH_STATE['context'] = context
+        logger.info('已注入页面级反检测补丁（plugins / WebGL / webdriver）')
+
+
+def reset_browser():
+    """关掉浏览器并把全局引用清空，让下一次采集能重新启动。
+
+    newPlayWright.close() 只关进程、不清属性，之后 ensure_browser() 会误以为
+    浏览器还在（playwright 仍非 None），拿到的是已关闭的页面。
+    GUI 连续跑多批任务时必须清引用，这里统一处理，不改对方的 close()。
+    """
+    try:
+        PlayWright.close()
+    except BROWSER_ERRORS as e:
+        logger.info('关闭浏览器时出错（可忽略）：%s' % e)
+    except Exception as e:          # noqa: BLE001  关闭阶段不阻塞重新开始
+        logger.info('关闭浏览器时出错（可忽略）：%s' % e)
+    for name in ('playwright', 'browser', 'context', 'page'):
+        try:
+            setattr(PlayWright, name, None)
+        except Exception:           # noqa: BLE001
+            pass
+    _STEALTH_STATE['applied'] = False
+    _STEALTH_STATE['context'] = None
+
+
+EDGE_CANDIDATES = (
+    r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+    r'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
+    r'C:\Program Files (x86)\Microsoft\Edge Beta\Application\msedge.exe',
+    r'C:\Program Files\Microsoft\Edge Beta\Application\msedge.exe',
+)
+
+
+def find_edge():
+    """找 Edge 可执行文件。
+
+    newPlayWright 里是硬编码 32 位路径，打包分发到别的机器时如果 Edge
+    装在 Program Files（64 位）就会启动失败。这里按顺序探测，
+    并补上注册表里的真实安装位置。
+    """
+    for p in EDGE_CANDIDATES:
+        if os.path.isfile(p):
+            return p
+    # 注册表：App Paths 里记录的是实际安装路径
+    try:
+        import winreg
+        for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            try:
+                key = winreg.OpenKey(
+                    root,
+                    r'SOFTWARE\Microsoft\Windows\CurrentVersion'
+                    r'\App Paths\msedge.exe')
+                path = winreg.QueryValue(key, None)
+                winreg.CloseKey(key)
+                if path and os.path.isfile(path):
+                    return path
+            except OSError:
+                continue
+    except ImportError:
+        pass
+    return ''
+
+
 def ensure_browser(proxy=None):
-    """确保浏览器已启动（兼容 newPlayWright / PatchRight 两种类）。"""
+    """确保浏览器已启动，并把反检测补丁挂上（兼容两种浏览器类）。"""
     if getattr(PlayWright, 'playwright', None):
+        apply_stealth()               # 已启动过也要确保补丁存在
         return True
+
+    # 启动前校正 Edge 路径：硬编码路径在当前机器上不存在时自动探测
+    edge = getattr(PlayWright, 'edge_path', '')
+    if not (edge and os.path.isfile(edge)):
+        found = find_edge()
+        if found:
+            logger.info('Edge 路径自动校正：%s' % found)
+            try:
+                PlayWright.edge_path = found
+            except (AttributeError, TypeError):
+                pass
+        else:
+            logger.warning('没找到 msedge.exe，浏览器可能启动失败')
+
     starter = (getattr(PlayWright, 'start_borwser', None)
                or getattr(PlayWright, 'start_browser', None))
     if starter is None:
@@ -362,15 +833,43 @@ def ensure_browser(proxy=None):
             starter(proxy)
         else:
             starter()
+        apply_stealth()
         return True
     except BROWSER_ERRORS as e:
         logger.error('启动浏览器失败：%s' % e)
         return False
 
 
-def _block_route(route):
-    """Playwright 路由回调：拦截非必要资源，其余放行。"""
+def _host_of(url):
+    """取 URL 的域名（小写）"""
     try:
+        return (urlparse(url).netloc or '').lower()
+    except (ValueError, TypeError):
+        return ''
+
+
+def _is_critical_host(url):
+    """人机验证 / Google 自家的请求：任何情况下都不能拦"""
+    host = _host_of(url)
+    if not host:
+        return False
+    return any(host == h or host.endswith('.' + h) for h in NEVER_BLOCK_HOSTS)
+
+
+def _block_route(route):
+    """Playwright 路由回调：拦截非必要资源，其余放行。
+
+    人机验证所需的请求一律放行，否则验证图加载不出来、无法完成验证。
+    """
+    try:
+        url = ''
+        try:
+            url = route.request.url or ''
+        except BROWSER_ERRORS:
+            url = ''
+        if _is_critical_host(url):
+            route.continue_()          # 验证相关资源必须放行
+            return
         if route.request.resource_type in BLOCKED_RESOURCE_TYPES:
             route.abort()
         else:
@@ -678,8 +1177,11 @@ def handle_google_consent():
 
 def check_blocked():
     """检测是否被 Google 拦下（人机验证 / 流量异常）"""
+    page = getattr(PlayWright, 'page', None)
+    if page is None:
+        return False
     try:
-        text = PlayWright.page.inner_text('body')[:3000]
+        text = page.inner_text('body')[:3000]
     except BROWSER_ERRORS:
         return False
     markers = ('unusual traffic', 'not a robot', 'recaptcha',
@@ -687,20 +1189,263 @@ def check_blocked():
     low = text.lower()
     if any(m in low for m in markers):
         return True
+    # 有些拦截页正文不含上述词，但 URL 会跳到 /sorry/
+    try:
+        if '/sorry/' in (page.url or ''):
+            return True
+    except BROWSER_ERRORS:
+        pass
     return False
 
 
-def wait_if_blocked():
-    """被拦时提示用户手动处理，最多等 3 分钟"""
+# 人机验证面板的诊断脚本：看验证框在不在、选项图有没有真正加载出来
+JS_RECAPTCHA_STATE = r"""
+() => {
+    const out = {
+        anchor: 0, bframe: 0,
+        images: 0, loaded: 0,
+        broken: 0, text: '', hasAudio: false, hasReload: false,
+    };
+    try {
+        out.anchor = document.querySelectorAll('iframe[src*="recaptcha"]').length;
+        // 选项图在 bframe（第二个 iframe）里，跨域取不到内部 DOM，
+        // 只能靠 iframe 数量 + 外层提示判断；再用 performance 里的资源统计兜底
+        const ifr = document.querySelectorAll('iframe[src*="/recaptcha/"]');
+        out.bframe = Math.max(0, ifr.length - 1);
+        const body = document.body ? document.body.innerText : '';
+        out.text = body.slice(0, 800);
+
+        // 统计 recaptcha 相关的图片请求（同源可见的部分）
+        if (window.performance && performance.getEntriesByType) {
+            const rs = performance.getEntriesByType('resource') || [];
+            rs.forEach(r => {
+                const u = r.name || '';
+                if (u.indexOf('recaptcha') < 0) return;
+                if (r.initiatorType === 'img' || /\.(png|jpg|jpeg|webp)(\?|$)/i.test(u)) {
+                    out.images += 1;
+                    if (r.transferSize > 0 || r.decodedBodySize > 0) out.loaded += 1;
+                }
+            });
+        }
+
+        // 页面里能取到的 img（部分版本验证图在外层）
+        document.querySelectorAll('img').forEach(img => {
+            const src = img.currentSrc || img.src || '';
+            if (src.indexOf('recaptcha') < 0 && src.indexOf('google') < 0) return;
+            out.images += 1;
+            if (img.complete && img.naturalWidth > 0) out.loaded += 1;
+            else out.broken += 1;
+        });
+
+        out.hasAudio = !!document.querySelector('#recaptcha-audio-button');
+        out.hasReload = !!document.querySelector('.rc-button-reload, #recaptcha-reload-button');
+    } catch (e) {}
+    return out;
+}
+"""
+
+
+def recaptcha_state():
+    """读取人机验证面板状态；不是验证页时返回 None"""
+    page = getattr(PlayWright, 'page', None)
+    if page is None:
+        return None
+    try:
+        return page.evaluate(JS_RECAPTCHA_STATE) or {}
+    except BROWSER_ERRORS:
+        return None
+
+
+def images_stuck(state):
+    """判断验证图是不是「一张都没加载出来」
+
+    只在「确实存在验证 iframe」且「统计到图片但全没加载」时判为卡住。
+    没有统计到任何图片请求时不误判（可能只是还没开始加载）。
+    """
+    if not state:
+        return False
+    if not (state.get('anchor') or state.get('bframe')):
+        return False                       # 不是验证面板
+    images = state.get('images') or 0
+    loaded = state.get('loaded') or 0
+    return images > 0 and loaded == 0
+
+
+def refresh_recaptcha_ui():
+    """点验证框上的「换一组图」按钮；点不到就整页重载。"""
+    page = getattr(PlayWright, 'page', None)
+    if page is None:
+        return False
+    # ① 刷新按钮（同源外层）
+    for sel in ('.rc-button-reload', '#recaptcha-reload-button'):
+        try:
+            loc = page.locator(sel).first
+            if loc.count():
+                loc.click(timeout=3000)
+                logger.info('已点击验证码刷新按钮')
+                return True
+        except BROWSER_ERRORS:
+            continue
+    # ② 进入 bframe 内部点 refresh
+    try:
+        for frame in page.frames:
+            u = (frame.url or '')
+            if '/recaptcha/' not in u or 'anchor' in u:
+                continue
+            btn = frame.locator('#recaptcha-reload-button').first
+            if btn.count():
+                btn.click(timeout=3000)
+                logger.info('已在验证框内点击刷新按钮')
+                return True
+    except BROWSER_ERRORS:
+        pass
+    # ③ 整页重载（大多能重新拉到图片）
+    try:
+        page.reload(wait_until='domcontentloaded', timeout=PAGE_TIMEOUT)
+        logger.info('已重新加载页面以重试验证图')
+        return True
+    except BROWSER_ERRORS as e:
+        logger.info('重新加载失败：%s' % e)
+        return False
+
+
+def page_kind():
+    """判断当前页面类型，用于验证通过后确认「是否真的回到结果页」。
+
+    返回 'serp'（搜索结果）/ 'sorry'（拦截页）/ 'captcha'（验证面板）/
+    'google_other'（Google 其它页）/ 'external'（外部站点）
+    """
+    page = getattr(PlayWright, 'page', None)
+    if page is None:
+        return 'none'
+    try:
+        url = (page.url or '').lower()
+    except BROWSER_ERRORS:
+        return 'none'
+    if 'google.' not in url:
+        return 'external'
+    if '/sorry/' in url:
+        return 'sorry'
+    if '/search' in url:
+        return 'serp'
+    return 'google_other'
+
+
+def wait_serp_ready(timeout=15):
+    """等搜索结果真正渲染出来。
+
+    验证通过的那一刻 Google 还在异步跳转（遮罩消失 ≠ 结果页就绪），
+    所以要轮询：URL 变成 /search 且页面里出现带 h3 的链接才算好。
+    返回 True 表示已就绪。
+    """
+    page = getattr(PlayWright, 'page', None)
+    if page is None:
+        return False
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            page.wait_for_load_state('domcontentloaded', timeout=3000)
+        except BROWSER_ERRORS:
+            pass
+        if page_kind() == 'serp':
+            try:
+                n = page.locator('a:has(h3)').count()
+            except BROWSER_ERRORS:
+                n = 0
+            if n > 0:
+                return True
+        time.sleep(0.6)
+    return False
+
+
+def block_ip_hint():
+    """从 /sorry/ 页面里把 Google 认为的出口 IP 和判定原因抠出来。"""
+    page = getattr(PlayWright, 'page', None)
+    if page is None:
+        return ''
+    try:
+        text = page.inner_text('body')[:2000]
+    except BROWSER_ERRORS:
+        return ''
+    m = re.search(r'IP\s*address\s*[:：]\s*([0-9a-fA-F:.]{7,45})', text)
+    return m.group(1) if m else ''
+
+
+def wait_if_blocked(max_wait=180, max_reload=3):
+    """被拦时等你手动完成验证。
+
+    验证通过后不会立刻返回：Google 需要 1~3 秒跳回结果页，
+    这里会等到 URL 真正变成 /search 且结果已渲染，避免「验证过了但解析 0 条」。
+    """
     if not check_blocked():
         return True
-    logger.warning('检测到 Google 人机验证，请在浏览器窗口内手动完成……')
-    for i in range(180):
+
+    kind = page_kind()
+    state = recaptcha_state()
+    logger.warning('=' * 56)
+
+    if kind == 'sorry':
+        # /sorry/ 是按 IP 判定的「异常流量」页，跟浏览器指纹无关。
+        # 这一步必须人来做（点「我不是机器人」/选图），脚本只负责等。
+        logger.warning('Google 返回「异常流量」拦截页（/sorry/）。')
+        ip = block_ip_hint()
+        if ip:
+            logger.warning('Google 判定的出口 IP：%s' % ip)
+        logger.warning('该页面按 IP 判定，不是浏览器指纹问题 ——')
+        logger.warning('浏览器反检测已生效（plugins/WebGL/webdriver 都正常），')
+        logger.warning('所以继续弹验证就说明这个 IP 被标记了，需要换代理节点。')
+        logger.warning('请在窗口里点「我不是机器人」并完成选图验证。')
+    else:
+        logger.warning('检测到 Google 人机验证，请在弹出的浏览器窗口内完成验证。')
+
+    if state and state.get('bframe'):
+        logger.warning('验证面板已出现（%d 个图片请求，已加载 %d 个）'
+                       % (state.get('images', 0), state.get('loaded', 0)))
+    elif state and state.get('anchor') and not state.get('bframe'):
+        logger.warning('验证框还没展开 —— 先勾选「我不是机器人」，图才会出来。')
+    logger.warning('最多等待 %d 秒。' % max_wait)
+    logger.warning('=' * 56)
+
+    reloads = 0
+    last_stuck_log = 0
+    for i in range(max_wait):
         time.sleep(1)
+
+        if stop_requested():
+            logger.warning('已停止等待验证')
+            return False
+
         if not check_blocked():
-            logger.info('验证已通过，继续采集')
+            logger.info('验证已通过，等待 Google 跳回结果页……')
+            if wait_serp_ready(15):
+                logger.info('结果页已就绪（%s），继续采集' % page_kind())
+            else:
+                logger.warning('15 秒内未出现结果页（当前：%s），继续尝试解析'
+                               % page_kind())
             return True
-    logger.error('等待验证超时，跳过当前步骤')
+
+        state = recaptcha_state()
+        if images_stuck(state) and i - last_stuck_log >= 5:
+            last_stuck_log = i
+            logger.warning('验证图未加载出来（请求 %d 个，成功 0 个）'
+                           % (state.get('images') or 0))
+            if reloads < max_reload:
+                reloads += 1
+                logger.warning('自动刷新验证（第 %d/%d 次）……'
+                               % (reloads, max_reload))
+                refresh_recaptcha_ui()
+                wait_page_ready(2.0)
+                continue
+            logger.error('多次刷新后验证图仍加载失败。可能原因与建议：')
+            logger.error('  1) 代理不稳定或被限速 —— 换一个节点再试')
+            logger.error('  2) 该 IP 已被 Google 标记 —— 换 IP / 等待一段时间')
+            logger.error('  3) 请在浏览器窗口里手动按 Ctrl+F5 强制刷新一次')
+            logger.error('继续等待中……')
+
+        if i and i % 30 == 0:
+            logger.info('仍在等待验证……（已等 %d 秒）' % i)
+
+    logger.error('等待验证超时（%d 秒），跳过当前步骤' % max_wait)
     return False
 
 
@@ -757,9 +1502,15 @@ JS_SERP_LINKS = r"""
         if (!h3) return;
         let cite = a.querySelector('cite');
         if (!cite) {
+            // 向上找 cite 时必须限制在「本条结果」之内。
+            // 一旦祖先里出现第二个 <h3>，说明已经跨出这条结果的范围，
+            // 再往上 querySelector('cite') 会把页面上第一条结果的域名
+            // 错配给这一条（真实踩到过：没有 cite 的结果全指向同一个网站）。
             let p = a.parentElement;
-            for (let i = 0; i < 4 && p && !cite; i++) {
+            for (let i = 0; i < 6 && p; i++) {
+                if (p.querySelectorAll('h3').length > 1) break;
                 cite = p.querySelector('cite');
+                if (cite) break;
                 p = p.parentElement;
             }
         }
@@ -870,11 +1621,66 @@ def resolve_result_url(href, cite=''):
     return unwrap_google_url(href)
 
 
-def google_search(keyword, max_pages=MAX_SERP_PAGES, proxy=None):
-    """搜索关键词，返回 [(url, title, site_name), ...]（已去重、已过滤）"""
+def log_serp_diagnosis():
+    """解析到 0 条时输出现场信息，便于判断原因。
+
+    常见三种：
+      1. 页面还没跳到结果页（URL 不是 /search）
+      2. 结果页结构变了（有 a/h3 但取不到）
+      3. 被静默拦到别的页（/sorry/、首页、consent）
+    """
+    page = getattr(PlayWright, 'page', None)
+    if page is None:
+        return
+    try:
+        cur = page.url
+    except BROWSER_ERRORS:
+        cur = '?'
+    try:
+        title = page.title()
+    except BROWSER_ERRORS:
+        title = '?'
+    try:
+        info = page.evaluate(r"""() => ({
+            aCount: document.querySelectorAll('a').length,
+            aH3: document.querySelectorAll('a h3').length,
+            h3: document.querySelectorAll('h3').length,
+            cite: document.querySelectorAll('cite').length,
+            rso: document.querySelectorAll('#rso').length,
+            text: (document.body ? document.body.innerText : '').slice(0, 300),
+        })""") or {}
+    except BROWSER_ERRORS:
+        info = {}
+
+    logger.info('【诊断】当前页面类型：%s' % page_kind())
+    if page_kind() == 'sorry':
+        ip = block_ip_hint()
+        logger.info('【诊断】这是 /sorry/ 拦截页（按 IP 判定），不是页面结构变了。'
+                    + ('出口 IP：%s' % ip if ip else ''))
+        logger.info('【诊断】验证通过后会自动跳到结果页；停在拦截页说明验证没过。')
+    logger.info('【诊断】URL  ：%s' % (cur[:140]))
+    logger.info('【诊断】标题 ：%s' % (str(title)[:100]))
+    logger.info('【诊断】元素数：a=%s  a内h3=%s  h3=%s  cite=%s  #rso=%s'
+                % (info.get('aCount'), info.get('aH3'), info.get('h3'),
+                   info.get('cite'), info.get('rso')))
+    snippet = re.sub(r'\s+', ' ', info.get('text') or '').strip()
+    if snippet:
+        logger.info('【诊断】正文前 300 字：%s' % snippet[:300])
+
+
+def google_search(keyword, max_pages=MAX_SERP_PAGES, proxy=None,
+                  per_page=NUM_PER_PAGE):
+    """搜索关键词，返回 [(url, title, site_name), ...]（已去重、已过滤）
+
+    per_page 是每页要 Google 返回多少条（num 参数），翻页步长也随之变化。
+    """
     results = []
     seen = set()
     seen_domains = set()
+    try:
+        per_page = max(1, int(per_page))
+    except (TypeError, ValueError):
+        per_page = NUM_PER_PAGE
 
     # 先启动浏览器并挂上资源拦截，第一页搜索也能享受加速
     if not ensure_browser(proxy):
@@ -883,10 +1689,16 @@ def google_search(keyword, max_pages=MAX_SERP_PAGES, proxy=None):
     setup_resource_blocking()
 
     for page in range(max_pages):
-        start = page * 10
-        url = ('https://www.google.com/search?q=%s&start=%d&hl=en&num=10'
-               % (quote_plus(keyword), start))
+        if stop_requested():
+            logger.warning('【搜索】已停止，保留已找到的 %d 个链接' % len(results))
+            break
+
+        start = page * per_page
+        url = ('https://www.google.com/search?q=%s&start=%d&hl=en&num=%d'
+               % (quote_plus(keyword), start, per_page))
         logger.info('【搜索】第 %d/%d 页：%s' % (page + 1, max_pages, keyword))
+        report_progress('search', page + 1, max_pages,
+                        '搜索第 %d/%d 页' % (page + 1, max_pages))
 
         # 代理只在启动浏览器时生效，这里传入保持兼容（已启动则忽略）
         ok = PlayWright.goto(url, proxy=proxy)
@@ -902,10 +1714,30 @@ def google_search(keyword, max_pages=MAX_SERP_PAGES, proxy=None):
         if not wait_if_blocked():
             break
 
-        # 提取自然搜索结果：每条 = (标题, href, cite, 网站名称)
+        # 验证通过后页面可能还没跳到结果页（甚至停在 /sorry/ 或首页）。
+        # 顺序：先等结果渲染 → 还不行且不在结果页 → 重新导航一次
         links = extract_serp_links()
 
+        if not links:
+            wait_serp_ready(10)          # 遮罩消失 ≠ 结果已渲染，给它 10 秒
+            links = extract_serp_links()
+
+        if not links and page_kind() != 'serp':
+            kind = page_kind()
+            logger.info('【搜索】当前不在结果页（%s），重新打开搜索地址……'
+                        % kind)
+            if PlayWright.goto(url, proxy=proxy):
+                wait_page_ready(1.5)
+                if not wait_if_blocked():
+                    break
+                wait_serp_ready(10)
+                links = extract_serp_links()
+
         logger.info('【搜索】第 %d 页解析到 %d 个链接' % (page + 1, len(links)))
+
+        # 解析不到时把现场信息打出来，方便判断是页面没就绪还是结构变了
+        if not links:
+            log_serp_diagnosis()
 
         added = 0
         rejects = []
@@ -930,6 +1762,8 @@ def google_search(keyword, max_pages=MAX_SERP_PAGES, proxy=None):
                 seen_domains.add(domain)
             results.append((href, title, site_name))
             added += 1
+            # 实时上报：链接一解析出来就进界面列表，用户立刻能看到
+            report_link(href, title, site_name, keyword, len(results))
 
         # 一个都没加上时把原因打出来，方便排查（否则只有一句「可能是最后一页」）
         if added == 0 and rejects:
@@ -949,6 +1783,8 @@ def google_search(keyword, max_pages=MAX_SERP_PAGES, proxy=None):
 
     logger.info('【搜索】关键词「%s」共收集 %d 个待访问链接'
                 % (keyword, len(results)))
+    report_progress('links', len(results), len(results),
+                    '找到 %d 个链接' % len(results))
     return results
 
 
@@ -1487,25 +2323,52 @@ def visit_site(url):
 
 
 def prefetch_http(links):
-    """并发用接口抓取第一层页面，返回 {url: info}。
+    """并发用接口抓取第一层页面，返回 {url: info}（一次性收集完）。
 
-    只做 HTTP，不碰 Playwright（非线程安全）；失败的站点留给主流程用
-    浏览器逐个兜底。links = [(url, title, site_name), ...]
+    采集主流程已改用 prefetch_http_stream（边抓边回调、边落盘），
+    这个函数保留给需要「先全部拿到再统一处理」的脚本用。
+    """
+    out = {}
+
+    def collect(url, info):
+        if info:
+            out[url] = info
+
+    prefetch_http_stream(links, on_result=collect)
+    return out
+
+
+def prefetch_http_stream(links, on_result=None):
+    """并发用接口抓取，**每完成一个就立刻回调**。
+
+    这是「接口请求通过的实时显示和写入」的关键：不等全部跑完，
+    谁先回来就先交给调用方处理（写表格 + 刷界面）。
+
+    on_result(url, info)：
+        info 为 None 表示这个站点接口没抓到，留给后面的浏览器阶段。
+
+    只做 HTTP，不碰 Playwright（非线程安全）。
+    代理已在 configure_http_proxy() 里配置好，_http_session() 会自动带上。
     """
     if not (USE_HTTP_FIRST and requests is not None
             and HTTP_MAX_WORKERS > 0):
-        return {}
+        return
+
     urls = [u for u, _t, _s in links]
     if not urls:
-        return {}
-    if len(urls) == 1:
-        info = visit_site_http(urls[0])
-        return {urls[0]: info} if info else {}
+        return
 
-    results = {}
     total = len(urls)
-    logger.info('【接口】开始并发抓取 %d 个网站（%d 线程）'
-                % (total, HTTP_MAX_WORKERS))
+    if total == 1:
+        info = visit_site_http(urls[0])
+        if on_result:
+            on_result(urls[0], info)
+        return
+
+    logger.info('【接口】开始并发抓取 %d 个网站（%d 线程，代理：%s）'
+                % (total, HTTP_MAX_WORKERS,
+                   _HTTP_PROXY['http'] if _HTTP_PROXY else '不使用'))
+    ok = 0
     with ThreadPoolExecutor(max_workers=min(HTTP_MAX_WORKERS, total)) as pool:
         future_map = {pool.submit(visit_site_http, u): u for u in urls}
         for done, fut in enumerate(as_completed(future_map), 1):
@@ -1516,13 +2379,21 @@ def prefetch_http(links):
                 logger.info('    接口抓取异常 %s：%s' % (url, e))
                 info = None
             if info:
-                results[url] = info
+                ok += 1
+            # 一条一回调，立刻显示 / 落盘
+            if on_result:
+                on_result(url, info)
             if done % 10 == 0 or done == total:
                 logger.info('【接口】进度 %d/%d，成功 %d'
-                            % (done, total, len(results)))
-    logger.info('【接口】完成：%d/%d 个网站可用，其余走浏览器'
-                % (len(results), total))
-    return results
+                            % (done, total, ok))
+            if stop_requested():
+                logger.warning('【接口】已停止，取消剩余 %d 个请求'
+                               % (total - done))
+                # 不等未完成的请求跑完，否则点停止后要卡十几秒
+                pool.shutdown(wait=False, cancel_futures=True)
+                break
+    logger.info('【接口】完成：%d/%d 个网站可用，其余交给浏览器阶段'
+                % (ok, total))
 
 
 def merge_by_domain(records):
@@ -1722,12 +2593,19 @@ def save_records(wb, ws, path, records):
 
 
 # ==================== 主流程 ====================
-FLUSH_EVERY = 10             # 每访问这么多个网站就合并落盘一次，避免中断丢数据
+# 现在每采到一条就立刻落盘（见 crawl 里的 emit），不再攒批，
+# FLUSH_EVERY 只保留给外部脚本参考，采集流程已不使用。
+FLUSH_EVERY = 10
 
 
 def crawl(keyword, proxy=None, max_pages=MAX_SERP_PAGES,
-          max_sites=MAX_SITES, out_file=None):
-    """采集单个关键词：搜索 -> 逐站访问 -> 写 xlsx（边采边存）"""
+          max_sites=MAX_SITES, out_file=None, per_page=NUM_PER_PAGE,
+          browser_fallback=True):
+    """采集单个关键词：搜索 -> 逐站访问 -> 写 xlsx（边采边存）
+
+    browser_fallback=False 时全程只用 requests 接口，不打开浏览器兜底：
+    速度快、完全无窗口，但 JS 渲染 / 强反爬的站点会采不到。
+    """
     out_file = out_file or os.path.join(BASE_DIR, OUT_NAME)
 
     # 输出目录可能不存在（--out 指定了子目录），先建好再写表
@@ -1743,18 +2621,25 @@ def crawl(keyword, proxy=None, max_pages=MAX_SERP_PAGES,
     wb, ws, existing = open_workbook(out_file)
     logger.info('结果表：%s' % out_file)
 
-    links = google_search(keyword, max_pages=max_pages, proxy=proxy)
+    links = google_search(keyword, max_pages=max_pages, proxy=proxy,
+                          per_page=per_page)
     if not links:
         logger.warning('关键词「%s」没有拿到任何搜索结果' % keyword)
         logger.warning('结果表已就绪（暂无数据）：%s' % out_file)
         return 0
 
     # 表格里已有的链接不再访问/重复采集（忽略 www.、末尾斜杠差异）
+    skipped_existing = []
     if SKIP_EXISTING_LINKS:
         existing_urls = set(link_key(url) for _kw, url in existing)
         before = len(links)
-        links = [item for item in links
-                 if link_key(item[0]) not in existing_urls]
+        kept = []
+        for item in links:
+            if link_key(item[0]) in existing_urls:
+                skipped_existing.append(item)
+            else:
+                kept.append(item)
+        links = kept
         skipped = before - len(links)
         if skipped:
             logger.info('已跳过 %d 个结果表中已存在的链接' % skipped)
@@ -1763,102 +2648,164 @@ def crawl(keyword, proxy=None, max_pages=MAX_SERP_PAGES,
                         % keyword)
             return 0
 
+    # 被跳过的链接也要在表格里标成「已存在」，
+    # 否则它们会永远停在「待采集」，看起来像卡住了。
+    for url, title, site_name in skipped_existing:
+        report_record({
+            'keyword': keyword, 'url': url, 'title': title or '',
+            'site_name': site_name or '', 'emails': [], 'phones': [],
+            'source': 'skip', 'written': False,
+        })
+
     links = links[:max_sites]
     logger.info('实际访问 %d 个网页' % len(links))
 
-    # 先用接口并发抓取，失败的站点再逐个用浏览器兜底
-    http_infos = prefetch_http(links)
-
+    # ---------------- 结果落盘：一条一写，实时进表格 ----------------
+    # 不再攒批（原来是每 FLUSH_EVERY 条才写一次），采到一条就立刻写进 xlsx
+    # 并推给界面，用户能实时看到成果；中断最多只丢正在处理的那一条。
     written_keys = set()
-    raw_records = []
+    written_domains = set()
     saved = 0
     skipped_no_contact = []
 
-    def flush():
-        """把已采集的记录按域名合并后写入表格（只写还没写过的域名）"""
+    def emit(info, url, title, site_name, source):
+        """写一条结果：立即落盘 + 立即刷界面。
+
+        source: 'http'=接口拿到 / 'browser'=浏览器拿到
+        返回 True 表示已写入表格。
+        """
         nonlocal saved
-        if not raw_records:
+        info['keyword'] = keyword
+        if site_name:
+            info['serp_name'] = site_name
+
+        emails = list(info.get('emails') or [])
+        phones = list(info.get('phones') or [])
+        has_contact = bool(emails or phones)
+        has_note = bool(info.get('checked_pages'))
+        domain = site_domain(url)
+        written = False
+
+        if not has_contact and not has_note and not WRITE_NO_CONTACT:
+            # 没联系方式、也没补看过联系页：按开关决定不写表
+            if url not in skipped_no_contact:
+                skipped_no_contact.append(url)
+        else:
+            key = (keyword, normalize_url(url))
+            dup = (key in existing or key in written_keys
+                   or (domain and domain in written_domains))
+            if not dup:
+                save_records(wb, ws, out_file, [info])
+                written_keys.add(key)
+                if domain:
+                    written_domains.add(domain)
+                saved += 1
+                written = True
+
+        # 界面始终显示这条（即使没写进 xlsx，用户也该看到采过了）
+        report_record({
+            'keyword': keyword,
+            'url': url,
+            'title': title or '',
+            'site_name': site_name or '',
+            'emails': emails,
+            'phones': phones,
+            'source': source,          # 界面用它显示「接口 / 浏览器」
+            'written': written,
+        })
+        return written
+
+    # ==================================================================
+    # 第一阶段：接口（requests）
+    #   并发抓取，谁先回来就先写表 + 先显示，不等全部跑完。
+    #   代理已在 configure_http_proxy() 配好，这里自动带上。
+    # ==================================================================
+    meta = {u: (t, s) for u, t, s in links}
+    http_infos = {}
+    stop_flag = {'aborted': False}
+
+    def on_http(url, info):
+        if info is None:
             return
-        fresh = []
-        for rec in merge_by_domain(raw_records):
-            # 没电话也没邮箱的站点同样写入：
-            # 补看过联系页的站点，单元格会显示「暂无匹配数据」。
-            # 连联系页都没得补、又完全没有联系方式的，才按开关决定是否跳过。
-            has_contact = bool(rec['phones'] or rec['emails'])
-            has_note = bool(rec.get('checked_pages'))
-            if not has_contact and not has_note and not WRITE_NO_CONTACT:
-                skipped_no_contact.append(rec['url'])
-                continue
-            key = (keyword, normalize_url(rec['url']))
-            if key in existing or key in written_keys:
-                continue
-            written_keys.add(key)
-            fresh.append(rec)
-        if fresh:
-            save_records(wb, ws, out_file, fresh)
-            saved += len(fresh)
-        raw_records.clear()
+        http_infos[url] = info
+        title, site_name = meta.get(url, ('', ''))
+        emit(info, url, title, site_name, 'http')
 
-    for idx, (url, title, site_name) in enumerate(links, 1):
-        logger.info('[%d/%d] %s' % (idx, len(links), url))
+    if USE_HTTP_FIRST and requests is not None and HTTP_MAX_WORKERS > 0:
+        prefetch_http_stream(links, on_result=on_http)
+        if stop_requested():
+            stop_flag['aborted'] = True
+
+    # ==================================================================
+    # 第二阶段：浏览器
+    #   只处理接口没拿到的站点（以及可选的「接口拿到但没联系方式」补抓），
+    #   一律排在第一阶段之后，避免接口和浏览器交替打断节奏。
+    # ==================================================================
+    need_browser = []
+    for url, title, site_name in links:
         info = http_infos.get(url)
-        browser_used = False
+        if info is None:
+            need_browser.append((url, title, site_name, 'miss'))
+        elif (HTTP_FALLBACK_IF_EMPTY
+              and not (info.get('emails') or info.get('phones'))):
+            need_browser.append((url, title, site_name, 'empty'))
+        elif (BROWSER_RETRY_CHECKED_PAGES and not info.get('emails')
+              and info.get('checked_pages')):
+            need_browser.append((url, title, site_name, 'checked'))
 
-        # 接口没抓到的站点，用浏览器兜底走 JS 渲染/反爬页面
-        if info is None and (not USE_HTTP_FIRST or HTTP_FALLBACK_TO_BROWSER):
-            browser_used = True
-            try:
-                info = visit_site_browser(url)
-            except BROWSER_ERRORS as e:
-                # 单个站点出错不能中断整批采集
-                logger.error('访问异常 %s：%s' % (url, e))
-                info = None
+    if stop_flag['aborted']:
+        logger.warning('已停止，跳过后面的浏览器阶段')
+        need_browser = []
+    elif not browser_fallback:
+        if need_browser:
+            logger.info('【仅接口模式】%d 个网站接口未取到，跳过（不打开浏览器）'
+                        % len(need_browser))
+        need_browser = []
+    elif need_browser:
+        logger.info('【浏览器】接口阶段结束，开始处理 %d 个网站'
+                    % len(need_browser))
 
-        # 可选：接口抓到了但没有任何联系方式，再用浏览器确认一次
-        if (info and HTTP_FALLBACK_IF_EMPTY
-                and not (info['emails'] or info['phones'])):
-            browser_used = True
-            retry = None
-            try:
-                retry = visit_site_browser(url)
-            except BROWSER_ERRORS as e:
-                logger.info('浏览器兜底失败 %s：%s' % (url, e))
-            if retry and (retry['emails'] or retry['phones']):
-                info = retry
+    total_links = len(links)
+    for idx, (url, title, site_name, reason) in enumerate(need_browser, 1):
+        if stop_requested():
+            logger.warning('已停止，剩余 %d 个网站未用浏览器访问'
+                           % (len(need_browser) - idx + 1))
+            break
 
-        # 接口补看后仍没邮箱：用浏览器重新分析补看页（有些站联系页是 JS 渲染）
-        if (info and BROWSER_RETRY_CHECKED_PAGES and not browser_used
-                and not info['emails'] and info.get('checked_pages')):
-            browser_used = True
-            try:
+        logger.info('【浏览器】[%d/%d] %s'
+                    % (idx, len(need_browser), url))
+        report_progress('sites', idx, len(need_browser),
+                        '浏览器访问第 %d/%d 个' % (idx, len(need_browser)))
+
+        info = http_infos.get(url)
+        try:
+            if reason == 'checked' and info is not None:
+                # 接口拿到过，只是补看页没解析出邮箱：用浏览器重查补看页
                 _retry_checked_pages_with_browser(info)
-            except BROWSER_ERRORS as e:
-                logger.info('浏览器重查补看页失败 %s：%s' % (url, e))
+            else:
+                retry = visit_site_browser(url)
+                if retry and (reason == 'miss'
+                              or retry.get('emails')
+                              or retry.get('phones')):
+                    info = retry
+        except BROWSER_ERRORS as e:
+            # 单个站点出错不能中断整批采集
+            logger.error('浏览器访问异常 %s：%s' % (url, e))
 
-        if info:
-            info['keyword'] = keyword
-            # Google 结果页给出的站点名比页面标题更简洁准确，优先采用
-            if site_name:
-                info['serp_name'] = site_name
-            raw_records.append(info)
+        if info is not None:
+            emit(info, url, title, site_name, 'browser')
             found = []
-            if info['phones']:
+            if info.get('phones'):
                 found.append('电话 %d 个' % len(info['phones']))
-            if info['emails']:
+            if info.get('emails'):
                 found.append('邮箱 %d 个' % len(info['emails']))
-            logger.info('    命中：%s' % ('、'.join(found) if found else '无联系方式'))
+            logger.info('    命中：%s'
+                        % ('、'.join(found) if found else '无联系方式'))
         else:
             logger.info('    跳过')
 
-        # 定期落盘：中断最多只丢最近 FLUSH_EVERY 个网站的数据
-        if idx % FLUSH_EVERY == 0:
-            flush()
-
-        # 接口抓取不需要模拟人工间隔；只有浏览器访问才等待，避免整体变慢
-        if browser_used and idx < len(links):
+        if idx < len(need_browser):
             time.sleep(random.uniform(*PAGE_DELAY))
-
-    flush()
 
     # 收尾：把「没采到联系方式所以没写入」的网站列出来，避免误以为漏写
     if skipped_no_contact:
@@ -1869,7 +2816,10 @@ def crawl(keyword, proxy=None, max_pages=MAX_SERP_PAGES,
         if len(skipped_no_contact) > 20:
             logger.info('    ...（共 %d 个）' % len(skipped_no_contact))
 
-    logger.info('关键词「%s」本次新增 %d 条记录' % (keyword, saved))
+    logger.info('关键词「%s」本次新增 %d 条记录（接口 %d 个 / 待浏览器 %d 个）'
+                % (keyword, saved, len(http_infos), len(need_browser)))
+    report_progress('keyword_done', saved, saved,
+                    '关键词完成，新增 %d 条' % saved)
     return saved
 
 
@@ -1889,6 +2839,9 @@ def main(argv=None):
                         help='最多访问多少个网页（默认 %d）' % MAX_SITES)
     parser.add_argument('-o', '--out', default=None,
                         help='结果文件路径（默认 %s）' % OUT_NAME)
+    parser.add_argument('--cli', action='store_true',
+                        help='强制使用命令行交互模式'
+                             '（不带任何参数运行时默认打开图形界面）')
     args = parser.parse_args(argv)
 
     print('=' * 60)
@@ -1959,6 +2912,11 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    # 不带任何参数运行 → 直接打开图形界面（双击 / IDE 里运行都是这个效果）。
+    # 想用原来的问答式命令行：python keyword_get_email.py --cli
+    if len(sys.argv) == 1:
+        from keyword_get_email_gui import main as _gui_main
+        sys.exit(_gui_main())
     try:
         sys.exit(main())
     finally:
