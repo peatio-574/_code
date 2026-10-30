@@ -1,0 +1,84 @@
+{% extends 'admin/base.html' %}
+{% block title %}账号管理{% endblock %}
+{% block crumb %}账号管理{% endblock %}
+
+{% block content %}
+<div class="list-page">
+    <div class="filter-card">
+        <form id="searchForm" onsubmit="return false;">
+            <div class="filter-row">
+                <div class="filter-field filter-field-keyword">
+                    <label class="form-label">账号：</label>
+                    <input class="form-input" type="text" id="search_q" placeholder="搜索账号">
+                </div>
+                <div class="filter-field">
+                    <label class="form-label">所属机构：</label>
+                    <select class="form-input filter-select" id="search_institution">
+                        <option value="">全部</option>
+                        <option value="__none__">无机构（超管/运营）</option>
+                    </select>
+                </div>
+                <div class="filter-actions">
+                    <button type="button" class="btn btn-primary" id="btn_search">搜索</button>
+                    <button type="button" class="btn btn-reset" id="btn_reset">重置</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="list-card">
+        <div class="list-scroll">
+            <table class="data-table">
+                <thead class="sticky-thead">
+                <tr>
+                    <th>账号</th>
+                    <th>密码</th>
+                    <th>角色</th>
+                    <th>所属机构</th>
+                    <th>创建时间</th>
+                    <th class="op">操作</th>
+                </tr>
+                </thead>
+                <tbody id="acc_tbody">
+                <tr><td colspan="6" class="empty">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="list-footer">
+            <span class="page-total">共 <strong id="total">0</strong> 条</span>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑账号弹窗 -->
+<div class="modal-mask" id="acc_modal" style="display:none;">
+    <div class="modal-box acc-box">
+        <div class="modal-head">
+            <span>编辑账号</span>
+            <button type="button" class="modal-close" id="acc_modal_close">&times;</button>
+        </div>
+        <form id="acc_form" onsubmit="return false;">
+            <div class="modal-body">
+                <div class="form-field"><label>账号 <em>*</em></label>
+                    <input class="form-input" name="username"></div>
+                <div class="form-field"><label>密码（留空表示不修改）</label>
+                    <input class="form-input" name="password" placeholder="至少 6 位"></div>
+                <div class="form-field"><label>角色</label>
+                    <select class="form-input" name="role">
+                        <option value="admin">超级管理员</option>
+                        <option value="user">运营账号</option>
+                        <option value="institution">机构账号</option>
+                    </select></div>
+            </div>
+            <div class="modal-foot">
+                <button type="button" class="btn" id="acc_cancel">取消</button>
+                <button type="button" class="btn btn-primary" id="acc_save">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/admin_accounts.js') }}"></script>
+{% endblock %}

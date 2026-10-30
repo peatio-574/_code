@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+    <meta name="format-detection" content="telephone=no,email=no,address=no">
+    <meta name="x5-orientation" content="portrait">
+    <meta name="screen-orientation" content="portrait">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#b60511">
+    <title>中国美术学院陕西考区报名表</title>
+    <link rel="icon" href="{{ asset('favicon.ico') }}">
+    <link rel="stylesheet" href="{{ asset('css/iconfont.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/public.css') }}">
+    <style>
+        html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+        body {
+            background: #f4f5f7; margin: 0;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-overflow-scrolling: touch;
+        }
+        * { -webkit-box-sizing: border-box; box-sizing: border-box; }
+        .signup { min-height: 100vh; display: flex; flex-direction: column; }
+        .signup-banner {
+            background: #b60511; text-align: center;
+            padding: calc(20px + env(safe-area-inset-top)) 16px 18px;
+        }
+        .signup-banner h1 { font-size: 17px; color: #fff; line-height: 1.5; font-weight: 600; }
+        .signup-banner p { font-size: 13px; color: rgba(255,255,255,.85); margin-top: 4px; }
+        .signup-banner .signup-org { color: #fff; font-size: 14px; margin-top: 8px; }
+        .signup-form { background: #fff; margin: 10px 0 0; padding: 6px 16px 16px; }
+        .field { padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+        .field:last-child { border-bottom: none; }
+        .field .label { font-size: 15px; color: #303133; margin-bottom: 8px; }
+        .field .label em { color: #f56c6c; font-style: normal; margin-left: 2px; }
+        .field input, .field select {
+            width: 100%; height: 46px; line-height: 46px; padding: 0 12px;
+            border: 1px solid #dcdfe6; border-radius: 6px;
+            font-size: 16px;                 /* ≥16px：避免 iOS/微信聚焦时页面自动放大 */
+            color: #303133; background: #fff;
+            -webkit-appearance: none; appearance: none;
+        }
+        .field select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23909399' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 12px center; background-size: 15px;
+            padding-right: 36px;
+        }
+        .field input:focus, .field select:focus { border-color: #d8010f; outline: none; }
+        .note { font-size: 12px; color: #909399; line-height: 1.8; padding: 14px 16px; }
+        .signup-expired {
+            margin: 40px 16px; padding: 40px 20px; background: #fff; border-radius: 8px;
+            text-align: center; color: #f56c6c; font-size: 16px; line-height: 1.8;
+        }
+        .note b { color: #f56c6c; }
+        .submit-wrap { padding: 8px 16px calc(28px + env(safe-area-inset-bottom)); }
+        .btn-submit {
+            width: 100%; height: 48px; border: none; border-radius: 24px;
+            background: #d8010f; color: #fff; font-size: 17px; font-weight: 600;
+            cursor: pointer; -webkit-appearance: none; appearance: none;
+        }
+        .btn-submit:active { background: #b8010d; }
+        .btn-submit:disabled { opacity: .6; }
+        .toast {
+            position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,.82); color: #fff; padding: 12px 20px; border-radius: 8px;
+            font-size: 15px; max-width: 80%; text-align: center; z-index: 3000; display: none;
+        }
+        .result-mask {
+            position: fixed; inset: 0; background: #f4f5f7; z-index: 2500;
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            padding: 30px; text-align: center;
+        }
+        .result-mask .ok-icon {
+            width: 72px; height: 72px; border-radius: 50%; background: #52c41a;
+            color: #fff; font-size: 40px; line-height: 72px; margin-bottom: 18px;
+        }
+        .result-mask h2 { font-size: 20px; color: #303133; margin-bottom: 8px; }
+        .result-mask p { font-size: 15px; color: #909399; line-height: 1.8; }
+        .result-mask .again {
+            margin-top: 26px; padding: 12px 32px; border-radius: 24px;
+            border: 1px solid #d8010f; color: #d8010f; background: #fff; font-size: 16px; cursor: pointer;
+        }
+        @media screen and (max-width: 360px) {
+            .signup-banner h1 { font-size: 16px; }
+            .field input, .field select { height: 44px; }
+        }
+    </style>
+</head>
+<body>
+<div class="signup">
+    <div class="signup-banner">
+        <h1>中国美术学院陕西考区报名表</h1>
+        {% if institution %}<p class="signup-org">所属机构：{{ institution.name }}</p>{% endif %}
+    </div>
+
+    {% if expired_message %}
+    <div class="signup-expired">{{ expired_message }}</div>
+    {% else %}
+    <form id="signupForm" class="signup-form" onsubmit="return false;">
+        <input type="hidden" name="institution_code" value="{{ institution_code }}">
+        <div class="field">
+            <div class="label">考生姓名<em>*</em></div>
+            <input type="text" name="name" maxlength="50" placeholder="请输入考生姓名" autocomplete="off">
+        </div>
+        <div class="field">
+            <div class="label">性别<em>*</em></div>
+            <select name="gender">
+                <option value="">请选择</option>
+                <option value="男">男</option>
+                <option value="女">女</option>
+            </select>
+        </div>
+        <div class="field">
+            <div class="label">民族</div>
+            <input type="text" name="ethnicity" maxlength="50" value="汉族" placeholder="如：汉族" autocomplete="off">
+        </div>
+        <div class="field">
+            <div class="label">国籍</div>
+            <input type="text" name="nationality" maxlength="50" value="中国" placeholder="如：中国" autocomplete="off">
+        </div>
+        <div class="field">
+            <div class="label">身份证号<em>*</em></div>
+            <input type="text" name="id_card" maxlength="18" placeholder="请输入身份证号" autocomplete="off" inputmode="text">
+        </div>
+        <div class="field">
+            <div class="label">报考科目<em>*</em></div>
+            <input type="text" name="subject" maxlength="50" placeholder="如：素描 / 书法 / 中国画" autocomplete="off">
+        </div>
+        <div class="field">
+            <div class="label">报考级别<em>*</em></div>
+            <select name="level">
+                <option value="">请选择级别</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+                <option value="10">10</option>
+            </select>
+        </div>
+    </form>
+
+    <div class="note">
+        <b>备注：</b>因考生本人原因缺考视为自动弃权，恕不退费和补考。
+    </div>
+
+    <div class="submit-wrap">
+        <button type="button" class="btn-submit" id="submitBtn">提交报名</button>
+    </div>
+    {% endif %}
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="result-mask" id="resultMask">
+    <div class="ok-icon">✓</div>
+    <h2>报名成功</h2>
+    <p>报名信息已提交，感谢您的参与！</p>
+    <button class="again" id="againBtn">再报一位</button>
+</div>
+
+<script>
+(function () {
+    var form = document.getElementById('signupForm');
+    if (!form) { return; }
+    var submitBtn = document.getElementById('submitBtn');
+    var toast = document.getElementById('toast');
+    var resultMask = document.getElementById('resultMask');
+
+    function showToast(msg) {
+        toast.textContent = msg;
+        toast.style.display = 'block';
+        clearTimeout(showToast._t);
+        showToast._t = setTimeout(function () { toast.style.display = 'none'; }, 2200);
+    }
+
+    function validate() {
+        var name = form.name.value.trim();
+        var gender = form.gender.value.trim();
+        var idCard = form.id_card.value.trim().toUpperCase();
+        var subject = form.subject.value.trim();
+        var level = form.level.value.trim();
+        if (!name) return '请填写考生姓名';
+        if (!gender) return '请选择性别';
+        if (!idCard) return '请填写身份证号';
+        if (!/^(\d{15}|\d{17}[\dXx])$/.test(idCard)) return '身份证号格式不正确';
+        if (!subject) return '请填写报考科目';
+        if (!level) return '请选择报考级别';
+        return '';
+    }
+
+    function submitOnce() {
+        var err = validate();
+        if (err) { showToast(err); return; }
+        var fd = new FormData();
+        fd.append('name', form.name.value.trim());
+        fd.append('gender', form.gender.value);
+        fd.append('ethnicity', form.ethnicity.value.trim());
+        fd.append('nationality', form.nationality.value.trim() || '中国');
+        fd.append('id_card', form.id_card.value.trim().toUpperCase());
+        fd.append('subject', form.subject.value.trim());
+        fd.append('level', form.level.value.trim());
+        fd.append('institution_code', form.institution_code ? form.institution_code.value : '');
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = '提交中…';
+        fetch('{{ url_for("public.signup") }}', { method: 'POST', body: fd, credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '提交报名';
+                if (res.success) {
+                    resultMask.style.display = 'flex';
+                } else {
+                    showToast(res.message || '提交失败，请重试');
+                }
+            })
+            .catch(function () {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '提交报名';
+                showToast('网络异常，请重试');
+            });
+    }
+
+    // 防止微信内重复提交
+    var submitting = false;
+    submitBtn.addEventListener('click', function () {
+        if (submitting) return;
+        submitting = true;
+        submitOnce();
+        setTimeout(function () { submitting = false; }, 1500);
+    });
+
+    document.getElementById('againBtn').addEventListener('click', function () {
+        form.reset();
+        resultMask.style.display = 'none';
+        window.scrollTo(0, 0);
+    });
+})();
+</script>
+</body>
+</html>
