@@ -4,6 +4,7 @@ import base64
 import io
 import os
 import re
+import zipfile
 from datetime import datetime, timedelta
 
 from flask import (current_app, flash, redirect, render_template, request,
@@ -12,6 +13,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
+from .. import photos
 from ..api import fail, ok, pagination_dict
 from ..excel_utils import COLUMNS, build_template, parse_workbook
 from ..models import db, Admin, Certificate, Registration, Institution
@@ -564,6 +566,16 @@ def api_registration_update(rid):
     reg.ethnicity = (payload.get('ethnicity') or '').strip()
     reg.nationality = (payload.get('nationality') or '').strip()
     reg.id_card = id_card
+
+    # 照片：仅在本次上传了新照片时替换（未选则保留原图）
+    new_photo = None
+    photo_file = request.files.get('photo')
+    if photo_file and (photo_file.filename or '').strip():
+        saved, err = photos.save_signup_photo(photo_file)
+        if err:
+            return fail(err)
+        new_photo = saved
+
     # 后台「科目级别」合并输入：拆分科目与级别（未传时保留原值）
     if 'subject_level' in payload or 'subject' in payload:
         subject_level = (payload.get('subject_level') or '').strip()
@@ -579,7 +591,22 @@ def api_registration_update(rid):
             reg.subject = (payload.get('subject') or '').strip()
             reg.level = (payload.get('level') or '').strip().replace('级', '')
 
-    db.session.commit()
+    old_photo = reg.photo
+    if new_photo:
+        reg.photo = new_photo
+
+    try:
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        if new_photo:
+            photos.delete_photo_files(new_photo)
+        return fail('保存失败，请重试（%s）' % exc)
+
+    # 清理被替换掉的旧照片文件
+    if new_photo and old_photo and old_photo != new_photo:
+        photos.delete_photo_files(old_photo)
+
     return ok(_reg_serialize(reg), message='保存成功')
 
 
@@ -626,7 +653,12 @@ def registrations_batch_delete():
 @admin_bp.route('/registrations/export', methods=['GET', 'POST'])
 @login_required
 def registrations_export():
-    """导出报名数据；传入 ids 时只导出选中项"""
+    """导出报名数据 + 照片（打包成 zip）
+
+    zip 内部结构：
+        <时间戳>/报名数据.xlsx
+        <时间戳>/姓名_身份证号_科目_级别.jpg
+    """
     raw_ids = []
     if request.method == 'POST':
         payload = request.get_json(silent=True) or {}
@@ -649,7 +681,8 @@ def registrations_export():
     wb = Workbook()
     ws = wb.active
     ws.title = '报名数据'
-    headers = ['姓名', '身份证号', '性别', '报考科目', '报考级别', '民族', '国籍', '所属机构', '报名时间']
+    headers = ['姓名', '身份证号', '性别', '报考科目', '报考级别', '民族', '国籍',
+               '所属机构', '报名时间', '照片']
     header_fill = PatternFill('solid', fgColor='D9D9D9')
     header_font = Font(color='000000', bold=True)
     thin = Side(style='thin', color='D9D9D9')
@@ -663,22 +696,93 @@ def registrations_export():
         cell.border = border
         ws.column_dimensions[cell.column_letter].width = 18
 
+    # 图片文件名：重名时追加 _2、_3，避免相互覆盖
+    used_names = {}
+    photos_to_add = []
+
     for r, reg in enumerate(regs, start=2):
-        values = [reg.name, reg.id_card, reg.gender, reg.subject, reg.level, reg.ethnicity,
-                  reg.nationality, reg.institution,
-                  reg.created_at.strftime('%Y-%m-%d %H:%M:%S') if reg.created_at else '']
+        photo_label = '有' if reg.photo else '无'
+        if reg.photo and not os.path.isfile(photos.photo_path(reg.photo)):
+            photo_label = '文件缺失'
+
+        values = [reg.name, reg.id_card, reg.gender, reg.subject, reg.level,
+                  reg.ethnicity, reg.nationality, reg.institution,
+                  reg.created_at.strftime('%Y-%m-%d %H:%M:%S') if reg.created_at else '',
+                  photo_label]
         for c, value in enumerate(values, start=1):
             cell = ws.cell(row=r, column=c, value=value)
             cell.border = border
             if c == 2:
                 cell.number_format = '@'
 
+        if not reg.photo:
+            continue
+        src = photos.photo_path(reg.photo)
+        if not os.path.isfile(src):
+            continue
+
+        base = photos.export_basename(reg)
+        used_names[base] = used_names.get(base, 0) + 1
+        seq = used_names[base]
+        filename = base + ('' if seq == 1 else '_%d' % seq) + '.jpg'
+        photos_to_add.append((src, filename))
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    return send_file(buf, as_attachment=True,
-                     download_name='报名数据导出.xlsx',
-                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('%s/报名数据.xlsx' % stamp, buf.getvalue())
+        for src, filename in photos_to_add:
+            zf.write(src, '%s/%s' % (stamp, filename))
+    zip_buf.seek(0)
+
+    return send_file(
+        zip_buf,
+        as_attachment=True,
+        download_name='报名数据_%s.zip' % stamp,
+        mimetype='application/zip')
+
+
+@admin_bp.route('/api/registration/<int:rid>/photo')
+def api_registration_photo(rid):
+    """报名照片（必须登录；无照片或文件缺失时返回占位图）
+
+    ?thumb=1 返回缩略图（列表用），否则返回原图（详情/查看用）。
+    """
+    if not current_user.is_authenticated:
+        return fail('未登录或登录已过期', status=401)
+
+    reg = Registration.query.filter_by(id=rid, is_deleted=False).first()
+    if not reg or not _can_access_reg(reg):
+        return fail('无权访问该照片', status=403)
+
+    want_thumb = request.args.get('thumb') == '1'
+    filename = reg.photo or ''
+
+    candidates = []
+    if filename:
+        candidates.append(photos.thumb_path(filename) if want_thumb else
+                          photos.photo_path(filename))
+        # 缩略图缺失时回退到原图
+        candidates.append(photos.photo_path(filename))
+
+    for path in candidates:
+        if path and os.path.isfile(path):
+            resp = send_file(path, mimetype='image/jpeg')
+            resp.headers['Cache-Control'] = 'private, max-age=86400'
+            return resp
+
+    # 没有照片：返回占位图
+    placeholder = photos.default_photo_path()
+    if os.path.isfile(placeholder):
+        resp = send_file(placeholder, mimetype='image/jpeg')
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+    return fail('无照片', status=404)
 
 
 # --------------------------------------------------------------------------- #

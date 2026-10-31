@@ -293,6 +293,23 @@ select.form-input { cursor: pointer; }
 /* 固定行高：配合虚拟滚动，避免大分页时渲染上万行导致卡顿 */
 .reg-table tbody td { height: 48px; }
 .reg-table .v-spacer td { height: auto; padding: 0; border: none; }
+
+/* 报名照片列 */
+.reg-table th.photo-col { width: 64px; text-align: center; }
+.reg-table td.photo-cell { text-align: center; padding: 4px 8px; }
+.reg-thumb {
+    width: 36px; height: 46px; object-fit: cover; border-radius: 3px;
+    border: 1px solid #ebeef5; background: #fafafa; cursor: zoom-in;
+    vertical-align: middle; display: block; margin: 0 auto;
+}
+.reg-thumb:hover { border-color: #d8010f; }
+
+/* 详情弹窗里的照片 */
+.detail-photo-wrap { text-align: center; padding: 4px 0 14px; }
+.detail-photo {
+    max-width: 220px; max-height: 300px; border-radius: 6px;
+    border: 1px solid #ebeef5; background: #fafafa;
+}
 .detail-box { width: 640px; }
 .reg-fields { min-width: 0; }
 .reg-fields li { display: flex; padding: 9px 0; border-bottom: 1px dashed #f0f0f0; font-size: 14px; }
@@ -301,6 +318,32 @@ select.form-input { cursor: pointer; }
 
 /* 编辑弹窗 */
 .edit-box { width: 640px; }
+/* 编辑弹窗 - 照片 */
+.edit-photo-row {
+    display: flex; gap: 16px; align-items: flex-start;
+    margin-bottom: 16px; padding-bottom: 16px;
+    border-bottom: 1px dashed #ebeef5;
+}
+.edit-photo-box {
+    width: 96px; height: 122px; flex: 0 0 auto;
+    border: 1px solid #ebeef5; border-radius: 6px; background: #fafafa;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+}
+.edit-photo-box .edit-photo {
+    width: 100%; height: 100%; object-fit: cover; display: none;
+}
+.edit-photo-box.has-photo .edit-photo { display: block; }
+.edit-photo-box .edit-photo-empty { font-size: 12px; color: #c0c4cc; }
+.edit-photo-box.has-photo .edit-photo-empty { display: none; }
+.edit-photo-side { flex: 1; min-width: 0; }
+.edit-photo-tip {
+    margin-top: 8px; font-size: 12px; color: #909399; line-height: 1.8;
+}
+.edit-photo-preview-tip {
+    margin-top: 6px; font-size: 12px; color: #d8010f;
+}
+
 .edit-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
 .edit-fields .form-field label { display: block; margin-bottom: 6px; font-size: 13px; color: #606266; }
 .edit-fields .form-field label em { color: #f56c6c; font-style: normal; }

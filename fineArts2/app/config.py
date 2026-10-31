@@ -54,9 +54,9 @@ class Config(object):
     ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
     ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'Caa@Admin2026')
 
-    # 路由前缀：前台 /new/apply，后台 /new/manager，静态资源 /new/static
+    # 路由前缀：前台 /new/apply，后台 /new/manage，静态资源 /new/static
     ROUTE_PREFIX = (os.environ.get('ROUTE_PREFIX') or '/new').rstrip('/')
-    ADMIN_ROUTE_PREFIX = ROUTE_PREFIX + '/manager'
+    ADMIN_ROUTE_PREFIX = ROUTE_PREFIX + '/manage'
     STATIC_URL_PATH = ROUTE_PREFIX + '/static'
 
     # 站点信息

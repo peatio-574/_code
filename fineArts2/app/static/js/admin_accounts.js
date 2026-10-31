@@ -44,9 +44,9 @@
         } else if (state.institution) {
             qs += '&institution_id=' + encodeURIComponent(state.institution);
         }
-        return fetch('/new/manager/api/accounts?' + qs, { credentials: 'same-origin' })
+        return fetch('/new/manage/api/accounts?' + qs, { credentials: 'same-origin' })
             .then(function (r) {
-                if (r.status === 401) { window.location = '/new/manager/login'; throw new Error('unauthorized'); }
+                if (r.status === 401) { window.location = '/new/manage/login'; throw new Error('unauthorized'); }
                 return r.json();
             })
             .then(function (res) {
@@ -100,7 +100,7 @@
             role: form.elements['role'].value,
         };
         if (!payload.username) { alert('请填写账号'); return; }
-        fetch('/new/manager/api/account/' + editId, {
+        fetch('/new/manage/api/account/' + editId, {
             method: 'POST', credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -115,7 +115,7 @@
 
     function doDelete(item) {
         if (!window.confirm('确定删除账号「' + item.username + '」吗？')) return;
-        fetch('/new/manager/api/account/' + item.id + '/delete', { method: 'POST', credentials: 'same-origin' })
+        fetch('/new/manage/api/account/' + item.id + '/delete', { method: 'POST', credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (res) {
                 if (res.success) { render(); }
@@ -149,7 +149,7 @@
     // 加载机构下拉
     function loadInstitutions() {
         if (!searchInstitution) return;
-        fetch('/new/manager/api/account-institutions', { credentials: 'same-origin' })
+        fetch('/new/manage/api/account-institutions', { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (res) {
                 if (!res.success) return;

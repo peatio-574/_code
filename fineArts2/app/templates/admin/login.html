@@ -20,12 +20,18 @@
     {% endfor %}
     {% endif %}
     {% endwith %}
-    <form method="post" class="login-form">
+    <form method="post" class="login-form" autocomplete="off">
         <div class="form-item">
-            <input class="form-input" type="text" name="username" placeholder="用户名" autocomplete="off" required>
+            <input class="form-input" type="text" name="username"
+                   placeholder="用户名" autocomplete="off"
+                   autocapitalize="off" spellcheck="false" required>
         </div>
         <div class="form-item">
-            <input class="form-input" type="password" name="password" placeholder="密码" required>
+            {# autocomplete="new-password" 可阻止浏览器自动填入本域名下
+               其他系统（如老版后台 /admin/login）保存的密码 #}
+            <input class="form-input" type="password" name="password"
+                   placeholder="密码" autocomplete="new-password"
+                   autocapitalize="off" spellcheck="false" required>
         </div>
         <button class="btn btn-primary btn-block" type="submit">登 录</button>
     </form>

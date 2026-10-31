@@ -61,6 +61,7 @@
     function buildRow(item) {
         var tr = document.createElement('tr');
         tr.appendChild(checkCell(item));
+        tr.appendChild(photoCell(item));
         tr.appendChild(td(item.name));
         tr.appendChild(td(item.id_card));
         tr.appendChild(td(item.gender));
@@ -73,10 +74,27 @@
         return tr;
     }
 
+    /* 照片缩略图：无照片时后端自动返回占位图 */
+    function photoCell(item) {
+        var el = document.createElement('td');
+        el.className = 'photo-cell';
+        var img = document.createElement('img');
+        img.className = 'reg-thumb';
+        img.alt = '照片';
+        img.loading = 'lazy';
+        // v 参数用于照片更新后刷新缓存
+        img.src = '/admin/api/registration/' + item.id +
+            '/photo?thumb=1&v=' + encodeURIComponent(item.photo || '0');
+        img.title = '点击查看大图';
+        img.addEventListener('click', function () { openDetail(item); });
+        el.appendChild(img);
+        return el;
+    }
+
     function emptyRow(text) {
         var tr = document.createElement('tr');
         var cell = document.createElement('td');
-        cell.colSpan = 11;
+        cell.colSpan = 12;
         cell.className = 'empty';
         cell.textContent = text;
         tr.appendChild(cell);
@@ -87,7 +105,7 @@
         var tr = document.createElement('tr');
         tr.className = 'v-spacer';
         var cell = document.createElement('td');
-        cell.colSpan = 11;
+        cell.colSpan = 12;
         cell.style.height = height + 'px';
         tr.appendChild(cell);
         return tr;
@@ -242,6 +260,11 @@
         setText('d_institution', item.institution);
         setText('d_subject_level', subjectLevel(item));
         setText('d_created_at', item.created_at);
+        var photo = document.getElementById('d_photo');
+        if (photo) {
+            photo.src = '/admin/api/registration/' + item.id +
+                '/photo?v=' + encodeURIComponent(item.photo || '0');
+        }
         if (detailModal) detailModal.style.display = 'flex';
     }
     function closeDetail() { if (detailModal) detailModal.style.display = 'none'; }
@@ -260,6 +283,10 @@
     var editModal = document.getElementById('edit_modal');
     var editForm = document.getElementById('edit_form');
     var editId = null;
+    var editPhotoBox = document.getElementById('edit_photo_box');
+    var editPhotoImg = document.getElementById('edit_photo_img');
+    var editPhotoInput = document.getElementById('edit_photo_input');
+    var editPhotoPick = document.getElementById('edit_photo_pick');
 
     function openEdit(item) {
         editId = item.id;
@@ -270,6 +297,20 @@
         editForm.elements['nationality'].value = item.nationality || '';
         editForm.elements['id_card'].value = item.id_card || '';
         editForm.elements['subject_level'].value = subjectLevel(item);
+
+        // 照片：显示当前照片（无则显示「暂无照片」），并清空上次选择
+        if (editPhotoImg && editPhotoBox) {
+            if (item.has_photo) {
+                editPhotoImg.src = '/admin/api/registration/' + item.id +
+                    '/photo?v=' + encodeURIComponent(item.photo || '0');
+                editPhotoBox.classList.add('has-photo');
+            } else {
+                editPhotoImg.removeAttribute('src');
+                editPhotoBox.classList.remove('has-photo');
+            }
+        }
+        if (editPhotoInput) editPhotoInput.value = '';
+
         if (editModal) editModal.style.display = 'flex';
     }
     function closeEdit() { if (editModal) editModal.style.display = 'none'; editId = null; }
@@ -285,6 +326,10 @@
         fd.append('nationality', editForm.elements['nationality'].value.trim());
         fd.append('id_card', editForm.elements['id_card'].value.trim().toUpperCase());
         fd.append('subject_level', editForm.elements['subject_level'].value.trim());
+        // 仅在选择了新照片时才提交（不选则后端保留原图）
+        if (editPhotoInput && editPhotoInput.files && editPhotoInput.files[0]) {
+            fd.append('photo', editPhotoInput.files[0]);
+        }
         fetch('/admin/api/registration/' + editId, { method: 'POST', credentials: 'same-origin', body: fd })
             .then(function (r) { return r.json(); })
             .then(function (res) {
@@ -305,6 +350,32 @@
     var editClose = document.getElementById('edit_modal_close');
     var editCancel = document.getElementById('edit_cancel');
     var editSave = document.getElementById('edit_save');
+    /* 编辑弹窗 - 选择照片 */
+    if (editPhotoPick && editPhotoInput) {
+        editPhotoPick.addEventListener('click', function () { editPhotoInput.click(); });
+    }
+    if (editPhotoInput) {
+        editPhotoInput.addEventListener('change', function () {
+            var file = editPhotoInput.files && editPhotoInput.files[0];
+            if (!file) { return; }
+            if (!/^image\//.test(file.type)) {
+                alert('请选择图片文件');
+                editPhotoInput.value = '';
+                return;
+            }
+            if (file.size > 8 * 1024 * 1024) {
+                alert('照片不能超过 8MB');
+                editPhotoInput.value = '';
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = function (ev) {
+                editPhotoImg.src = ev.target.result;
+                editPhotoBox.classList.add('has-photo');
+            };
+            reader.readAsDataURL(file);
+        });
+    }
     if (editClose) editClose.addEventListener('click', closeEdit);
     if (editCancel) editCancel.addEventListener('click', closeEdit);
     if (editSave) editSave.addEventListener('click', saveEdit);
@@ -342,11 +413,19 @@
             .then(function (blob) {
                 var url = URL.createObjectURL(blob);
                 var a = document.createElement('a');
-                a.href = url; a.download = '报名数据导出.xlsx';
+                a.href = url;
+                a.download = '报名数据_' + tsStamp() + '.zip';
                 document.body.appendChild(a); a.click(); a.remove();
                 URL.revokeObjectURL(url);
             })
             .catch(function () { alert('导出失败，请重试'); });
+    }
+    /* 与后端 zip 内目录名一致的时间戳，便于识别 */
+    function tsStamp() {
+        var d = new Date();
+        function p(n) { return (n < 10 ? '0' : '') + n; }
+        return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' +
+            p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
     }
     if (btnExport) btnExport.addEventListener('click', exportData);
 

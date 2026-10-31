@@ -49,6 +49,17 @@ def create_app(config_name='default'):
     def _root():
         return redirect(url_for('public.signup'))
 
+    # 兼容旧写法：/new/manager* -> /new/manage*（301 保留方法语义之外的行为）
+    admin_prefix = app.config['ADMIN_ROUTE_PREFIX']
+    legacy_prefix = prefix + '/manager'
+    if legacy_prefix != admin_prefix:
+        @app.route(legacy_prefix + '/', defaults={'_rest': ''})
+        @app.route(legacy_prefix + '/<path:_rest>')
+        def _legacy_admin(_rest=''):
+            target = admin_prefix + ('/' + _rest if _rest else '')
+            qs = request.query_string.decode('utf-8', 'replace')
+            return redirect(target + ('?' + qs if qs else ''), code=301)
+
     @app.context_processor
     def inject_globals():
         def asset(filename, external=False):

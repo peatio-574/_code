@@ -66,6 +66,8 @@ class Registration(db.Model):
             'id_card': self.id_card,
             'subject': self.subject,
             'level': self.level,
+            'photo': self.photo or '',
+            'has_photo': bool(self.photo),
             'institution_id': self.institution_id,
             'institution': self.institution,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else '',

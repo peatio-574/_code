@@ -4,6 +4,7 @@ import re
 
 from flask import render_template, request
 
+from .. import photos
 from ..api import fail, ok
 from ..models import Institution, Registration, db
 from . import public_bp
@@ -64,12 +65,24 @@ def signup():
     if errors:
         return fail('；'.join(errors), errors=errors)
 
+    # 报名照片：校验 + 压缩后保存
+    photo_file, photo_error = photos.save_signup_photo(
+        request.files.get('photo'))
+    if photo_error:
+        return fail(photo_error)
+
     record = Registration(
         name=name, gender=gender, ethnicity=ethnicity, nationality=nationality,
         id_card=id_card, subject=subject, level=level,
+        photo=photo_file,
         institution_id=institution.id if institution else None,
         institution=institution.name if institution else '',
     )
-    db.session.add(record)
-    db.session.commit()
+    try:
+        db.session.add(record)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        photos.delete_photo_files(photo_file)
+        return fail('报名提交失败，请重试（%s）' % exc)
     return ok({'id': record.id, 'name': record.name}, message='报名成功')

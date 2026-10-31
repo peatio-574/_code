@@ -2,9 +2,10 @@
 """前台：证书查询、考试报名收集"""
 import re
 
-from flask import (Response, current_app, jsonify, redirect,
+from flask import (Response, abort, jsonify,
                    render_template, request, url_for)
 
+from .. import photos
 from ..api import fail, ok, single_pagination
 from ..captcha import captcha_data_uri, create_captcha, render_png, verify_captcha
 from ..models import Certificate, Institution, Registration, db
@@ -67,21 +68,36 @@ def signup():
     if errors:
         return fail('；'.join(errors), errors=errors)
 
+    # 报名照片：校验 + 压缩后保存
+    photo_file, photo_error = photos.save_signup_photo(
+        request.files.get('photo'))
+    if photo_error:
+        return fail(photo_error)
+
     record = Registration(
         name=name, gender=gender, ethnicity=ethnicity, nationality=nationality,
         id_card=id_card, subject=subject, level=level,
+        photo=photo_file,
         institution_id=institution.id if institution else None,
         institution=institution.name if institution else '',
     )
-    db.session.add(record)
-    db.session.commit()
+    try:
+        db.session.add(record)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        photos.delete_photo_files(photo_file)
+        return fail('报名提交失败，请重试（%s）' % exc)
     return ok({'id': record.id, 'name': record.name}, message='报名成功')
 
 
 @public_bp.route('/', methods=['GET'])
 def root():
-    """根路径跳转到查询页 index.html"""
-    return redirect(url_for('public.index'))
+    """根路径不再跳转，直接返回 404（避免被搜索引擎/扫描器当作入口）。
+
+    前台查询页固定为 /index.html，后台固定为 /admin。
+    """
+    abort(404)
 
 
 @public_bp.route('/index.html', methods=['GET'])

@@ -32,9 +32,9 @@
     }
 
     function render() {
-        return fetch('/new/manager/api/institutions?page=1&per_page=200', { credentials: 'same-origin' })
+        return fetch('/new/manage/api/institutions?page=1&per_page=200', { credentials: 'same-origin' })
             .then(function (r) {
-                if (r.status === 401) { window.location = '/new/manager/login'; throw new Error('unauthorized'); }
+                if (r.status === 401) { window.location = '/new/manage/login'; throw new Error('unauthorized'); }
                 return r.json();
             })
             .then(function (res) {
@@ -126,7 +126,7 @@
 
     function doDelete(id) {
         if (!window.confirm('确定删除该机构吗？（已报名数据仍会保留机构名称）')) return;
-        fetch('/new/manager/institution/' + id + '/delete', { method: 'POST', credentials: 'same-origin' })
+        fetch('/new/manage/institution/' + id + '/delete', { method: 'POST', credentials: 'same-origin' })
             .then(function () { render(); })
             .catch(function () { alert('操作失败，请重试'); });
     }
@@ -150,7 +150,7 @@
         if (qrUrl) qrUrl.value = item.link;
         if (qrLoading) qrLoading.style.display = 'block';
         if (qrModal) qrModal.style.display = 'flex';
-        fetch('/new/manager/api/institution/' + item.id + '/qrcode', { credentials: 'same-origin' })
+        fetch('/new/manage/api/institution/' + item.id + '/qrcode', { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (res) {
                 if (qrLoading) qrLoading.style.display = 'none';
@@ -231,7 +231,7 @@
         if (!editForm || editId === null) return;
         var name = editForm.elements['name'].value.trim();
         if (!name) { alert('请填写机构名称'); return; }
-        fetch('/new/manager/api/institution/' + editId, {
+        fetch('/new/manage/api/institution/' + editId, {
             method: 'POST', credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: name, expires_at: editForm.elements['expires_at'].value })
@@ -258,7 +258,7 @@
         var name = nameInput ? nameInput.value.trim() : '';
         if (!name) { alert('请填写机构名称'); return; }
         btnCreate.disabled = true;
-        fetch('/new/manager/api/institution', {
+        fetch('/new/manage/api/institution', {
             method: 'POST', credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

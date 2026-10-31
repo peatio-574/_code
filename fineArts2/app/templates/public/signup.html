@@ -54,14 +54,38 @@
             text-align: center; color: #f56c6c; font-size: 16px; line-height: 1.8;
         }
         .note b { color: #f56c6c; }
-        .submit-wrap { padding: 8px 16px calc(28px + env(safe-area-inset-bottom)); }
-        .btn-submit {
+        .submit-wrap { padding: 8px 16px calc(28px + env(safe-area-inset-bottom)); }        .btn-submit {
             width: 100%; height: 48px; border: none; border-radius: 24px;
             background: #d8010f; color: #fff; font-size: 17px; font-weight: 600;
             cursor: pointer; -webkit-appearance: none; appearance: none;
         }
         .btn-submit:active { background: #b8010d; }
         .btn-submit:disabled { opacity: .6; }
+        /* 报名照片 */
+        .photo-wrap { display: flex; align-items: flex-start; gap: 12px; }
+        .photo-pick {
+            position: relative; width: 96px; height: 120px; flex: 0 0 auto;
+            border: 1px dashed #c8c9cc; border-radius: 8px; background: #fafafa;
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; cursor: pointer; overflow: hidden;
+        }
+        .photo-pick .plus { font-size: 26px; color: #b5b6b9; line-height: 1; }
+        .photo-pick .tip { font-size: 12px; color: #909399; margin-top: 6px; }
+        .photo-pick img {
+            position: absolute; inset: 0; width: 100%; height: 100%;
+            object-fit: cover; display: none;
+        }
+        .photo-pick.has-img { border-style: solid; border-color: #d8010f; }
+        .photo-pick.has-img img { display: block; }
+        .photo-pick.has-img .plus,
+        .photo-pick.has-img .tip { display: none; }
+        .photo-side { flex: 1; min-width: 0; padding-top: 4px; }
+        .photo-side p { font-size: 12px; color: #909399; line-height: 1.9; }
+        .photo-side .change {
+            margin-top: 6px; font-size: 13px; color: #d8010f;
+            background: none; border: none; padding: 0; cursor: pointer; display: none;
+        }
+        .photo-pick.has-img ~ .photo-side .change { display: inline-block; }
         .toast {
             position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
             background: rgba(0,0,0,.82); color: #fff; padding: 12px 20px; border-radius: 8px;
@@ -144,6 +168,23 @@
                 <option value="10">10</option>
             </select>
         </div>
+        <div class="field">
+            <div class="label">报名照片<em>*</em></div>
+            <input type="file" id="photoInput" name="photo"
+                   accept="image/jpeg,image/png,image/bmp,image/webp"
+                   style="display:none;">
+            <div class="photo-wrap">
+                <div class="photo-pick" id="photoPick">
+                    <span class="plus">+</span>
+                    <span class="tip">上传照片</span>
+                    <img id="photoPreview" alt="照片预览">
+                </div>
+                <div class="photo-side">
+                    <p>请上传考生本人证件照<br>支持 jpg / png，不超过 8MB<br>手机拍摄请保持光线均匀、面部清晰</p>
+                    <button type="button" class="change" id="photoChange">重新选择</button>
+                </div>
+            </div>
+        </div>
     </form>
 
     <div class="note">
@@ -171,6 +212,49 @@
     var submitBtn = document.getElementById('submitBtn');
     var toast = document.getElementById('toast');
     var resultMask = document.getElementById('resultMask');
+    var photoInput = document.getElementById('photoInput');
+    var photoPick = document.getElementById('photoPick');
+    var photoPreview = document.getElementById('photoPreview');
+    var photoChange = document.getElementById('photoChange');
+    var MAX_PHOTO_MB = 8;
+
+    function pickPhoto() {
+        if (photoInput) photoInput.click();
+    }
+    if (photoPick) photoPick.addEventListener('click', pickPhoto);
+    if (photoChange) photoChange.addEventListener('click', function (e) {
+        e.stopPropagation();
+        pickPhoto();
+    });
+
+    function clearPhoto() {
+        if (photoInput) photoInput.value = '';
+        if (photoPreview) photoPreview.removeAttribute('src');
+        if (photoPick) photoPick.classList.remove('has-img');
+    }
+
+    if (photoInput) {
+        photoInput.addEventListener('change', function () {
+            var file = photoInput.files && photoInput.files[0];
+            if (!file) { clearPhoto(); return; }
+            if (!/^image\//.test(file.type)) {
+                showToast('请选择图片文件');
+                clearPhoto();
+                return;
+            }
+            if (file.size > MAX_PHOTO_MB * 1024 * 1024) {
+                showToast('照片不能超过 ' + MAX_PHOTO_MB + 'MB');
+                clearPhoto();
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = function (ev) {
+                photoPreview.src = ev.target.result;
+                photoPick.classList.add('has-img');
+            };
+            reader.readAsDataURL(file);
+        });
+    }
 
     function showToast(msg) {
         toast.textContent = msg;
@@ -191,6 +275,7 @@
         if (!/^(\d{15}|\d{17}[\dXx])$/.test(idCard)) return '身份证号格式不正确';
         if (!subject) return '请填写报考科目';
         if (!level) return '请选择报考级别';
+        if (!photoInput || !photoInput.files || !photoInput.files[0]) return '请上传报名照片';
         return '';
     }
 
@@ -206,6 +291,9 @@
         fd.append('subject', form.subject.value.trim());
         fd.append('level', form.level.value.trim());
         fd.append('institution_code', form.institution_code ? form.institution_code.value : '');
+        if (photoInput && photoInput.files && photoInput.files[0]) {
+            fd.append('photo', photoInput.files[0]);
+        }
 
         submitBtn.disabled = true;
         submitBtn.textContent = '提交中…';
@@ -238,6 +326,7 @@
 
     document.getElementById('againBtn').addEventListener('click', function () {
         form.reset();
+        clearPhoto();
         resultMask.style.display = 'none';
         window.scrollTo(0, 0);
     });

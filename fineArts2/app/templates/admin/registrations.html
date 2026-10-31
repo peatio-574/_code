@@ -40,6 +40,7 @@
                 <thead class="sticky-thead">
                 <tr>
                     <th class="check"><input type="checkbox" id="check_all" title="全选"></th>
+                    <th class="photo-col">照片</th>
                     <th class="sortable" data-sort="name">姓名<span class="sort-ind"></span></th>
                     <th class="sortable" data-sort="id_card">身份证号<span class="sort-ind"></span></th>
                     <th class="sortable" data-sort="gender">性别<span class="sort-ind"></span></th>
@@ -52,7 +53,7 @@
                 </tr>
                 </thead>
                 <tbody id="reg_tbody">
-                <tr><td colspan="11" class="empty">加载中...</td></tr>
+                <tr><td colspan="12" class="empty">加载中...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -83,6 +84,9 @@
             <button type="button" class="modal-close" id="detail_modal_close">&times;</button>
         </div>
         <div class="modal-body">
+            <div class="detail-photo-wrap">
+                <img class="detail-photo" id="d_photo" alt="报名照片">
+            </div>
             <ul class="reg-fields">
                 <li><span class="k">考生姓名</span><span class="v" id="d_name"></span></li>
                 <li><span class="k">所属机构</span><span class="v" id="d_institution"></span></li>
@@ -110,6 +114,23 @@
         </div>
         <form id="edit_form" onsubmit="return false;">
             <div class="modal-body">
+                <div class="edit-photo-row">
+                    <div class="edit-photo-box" id="edit_photo_box">
+                        <img id="edit_photo_img" class="edit-photo" alt="报名照片">
+                        <span class="edit-photo-empty">暂无照片</span>
+                    </div>
+                    <div class="edit-photo-side">
+                        <input type="file" id="edit_photo_input" name="photo"
+                               accept="image/jpeg,image/png,image/bmp,image/webp"
+                               style="display:none;">
+                        <button type="button" class="btn btn-sm btn-primary"
+                                id="edit_photo_pick">选择照片</button>
+                        <p class="edit-photo-tip">
+                            支持 jpg / png，不超过 8MB<br>
+                            不选则保留原照片；选了会覆盖旧照片
+                        </p>
+                    </div>
+                </div>
                 <div class="edit-fields">
                     <div class="form-field"><label>考生姓名 <em>*</em></label>
                         <input class="form-input" name="name"></div>
