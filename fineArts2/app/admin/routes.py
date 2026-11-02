@@ -431,17 +431,27 @@ def registrations_export():
         cell.border = border
         ws.column_dimensions[cell.column_letter].width = 18
 
-    # 图片文件名：重名时追加 _2、_3，避免相互覆盖
-    used_names = {}
-    photos_to_add = []
-    missing_photo = 0
+    # 图片文件名 = 姓名_身份证.jpg；重名直接覆盖（id 大的视为最新，优先保留）
+    photos_to_add = {}          # filename -> src
+    photo_file_of = {}          # reg.id  -> filename（供 Excel 展示）
+
+    for reg in sorted(regs, key=lambda x: x.id or 0):
+        if not reg.photo:
+            continue
+        src = photos.photo_path(reg.photo)
+        if not os.path.isfile(src):
+            continue
+        filename = photos.export_basename(reg) + '.jpg'
+        photos_to_add[filename] = src        # 同名覆盖
+        photo_file_of[reg.id] = filename
 
     for r, reg in enumerate(regs, start=2):
-        photo_label = '有' if reg.photo else '无'
-        if reg.photo and not os.path.isfile(photos.photo_path(reg.photo)):
-            photo_label = '文件缺失'
         if not reg.photo:
-            missing_photo += 1
+            photo_label = '无'
+        elif reg.id not in photo_file_of:
+            photo_label = '文件缺失'
+        else:
+            photo_label = photo_file_of[reg.id]
 
         values = [reg.name, reg.id_card, reg.gender, reg.subject, reg.level,
                   reg.ethnicity, reg.nationality, reg.institution,
@@ -452,18 +462,9 @@ def registrations_export():
             cell.border = border
             if c == 2:
                 cell.number_format = '@'
-
-        if not reg.photo:
-            continue
-        src = photos.photo_path(reg.photo)
-        if not os.path.isfile(src):
-            continue
-
-        base = photos.export_basename(reg)
-        used_names[base] = used_names.get(base, 0) + 1
-        seq = used_names[base]
-        filename = base + ('' if seq == 1 else '_%d' % seq) + '.jpg'
-        photos_to_add.append((src, filename))
+            if c == len(values):
+                # 照片列写文件名，重名覆盖时便于核对
+                ws.column_dimensions[cell.column_letter].width = 42
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -474,7 +475,7 @@ def registrations_export():
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
         zf.writestr('%s/报名数据.xlsx' % stamp, buf.getvalue())
-        for src, filename in photos_to_add:
+        for filename, src in photos_to_add.items():
             zf.write(src, '%s/%s' % (stamp, filename))
     zip_buf.seek(0)
 

@@ -149,15 +149,14 @@ def _clean(text, fallback='未填'):
 
 
 def export_basename(reg):
-    """导出文件名（不含扩展名）：姓名_身份证号_科目_级别
+    """导出文件名（不含扩展名）：姓名_身份证
 
-    非法字符会被剔除；字段为空时用「未填」占位，保证格式固定。
+    非法字符会被剔除；字段为空时用占位名，保证格式固定。
+    重名文件在导出时由调用方按「后者覆盖前者」处理。
     """
     parts = [
         _clean(reg.name, '未知姓名'),
         _clean(reg.id_card, '无身份证号'),
-        _clean(reg.subject, '未填科目'),
-        _clean(reg.level, '未填级别'),
     ]
     name = '_'.join(parts)
     # 防止极端情况下文件名过长（Windows 单段上限 255 字节）
