@@ -17,6 +17,7 @@
 import os
 import sys
 import json
+import logging
 import re
 import ssl
 import io
@@ -295,7 +296,7 @@ def read_recent_rows(data_file):
 def read_all_job_ids(data_file):
     """读取表格里**历史上全部**岗位编号（不限日期），返回 set。
 
-    只读「岗位编号」一列，几万行也很快；用于「只要没采过的岗位」这类筛选。
+    只读「岗位编号」一列，几万行也很快；Boss 采集用它跳过已入库的岗位。
     文件不存在或编号列为空时返回空集合。
     """
     if not data_file or not os.path.exists(data_file) or ID_COLUMN <= 0:
@@ -385,6 +386,8 @@ class BaseSpider(object):
     DEDUP_BY_ID = True
     # 遇到已存在的岗位编号时是否更新已有行（由界面「更新重复岗位」开关控制）
     UPDATE_DUPLICATE = False
+    # 本轮更新了多少条重复岗位（-1 表示不统计）
+    _update_count = 0
 
     # 当前任务状态（由 run 设置）
     _pause_event = None
@@ -392,8 +395,7 @@ class BaseSpider(object):
     _running_probe = None
     _save_ts = 0.0
     _saved_path = None          # 实际写入路径（被 Excel 占用时会变成时间戳文件）
-    _id_index = None            # 岗位编号 -> 工作表行号
-    _update_count = 0           # 本轮更新了多少条重复岗位
+    _id_index = None            # 岗位编号 -> 工作表行号（用于历史去重）
 
     def __init_subclass__(cls, **kwargs):
         """子类定义时无需额外处理：来源列直接用 web_name。"""
@@ -442,14 +444,14 @@ class BaseSpider(object):
 
     @classmethod
     def load_existing_ids(cls, data_file):
-        """读取历史上全部岗位编号，用于「只要没采过的岗位」筛选。"""
+        """读取历史上全部岗位编号，供各平台跳过已入库的岗位。"""
         return read_all_job_ids(data_file)
 
     @classmethod
     def set_column_style(cls, data_file):
         """打开工作簿并写好表头样式，返回 (wb, ws)。"""
         wb, ws = prepare_workbook(data_file)
-        # 建立「岗位编号 -> 行号」索引，供更新重复岗位时定位
+        # 建立「岗位编号 -> 行号」索引，用于判断该岗位是否已在历史表中
         cls._id_index = cls._scan_id_index(ws)
         return wb, ws
 
@@ -588,11 +590,9 @@ class BaseSpider(object):
     def _finish_message(cls, added, stopped=False, failed=0):
         """统一的结束提示文案。"""
         suffix = f'，{failed} 个来源失败' if failed else ''
-        updated = getattr(cls, '_update_count', 0)
-        extra = f'，更新 {updated} 条重复岗位' if updated else ''
         if stopped:
-            return f'{cls.web_name}采集已停止（新增 {added} 条{extra}{suffix}）'
-        return f'{cls.web_name}采集完成（新增 {added} 条{extra}{suffix}）'
+            return f'{cls.web_name}采集已停止（新增 {added} 条{suffix}）'
+        return f'{cls.web_name}采集完成（新增 {added} 条{suffix}）'
 
 
 # ==================== 可视化界面 ====================
@@ -820,9 +820,6 @@ class BaseSpiderGUI:
             # 嵌入页签时不显示标题栏（页签本身已标明平台，标题会重复）
             self.show_header = False if show_header is None else show_header
 
-        # 是否用新数据覆盖已存在的重复岗位（由工具栏开关控制）
-        self.update_duplicate = False
-
         self.spider_name = spider_name or title
 
         # 运行状态
@@ -923,6 +920,8 @@ class BaseSpiderGUI:
         'warning': ('#d97706', '#ffffff', '#cbd5e1', '#94a3b8'),
         'danger':  ('#dc2626', '#ffffff', '#cbd5e1', '#94a3b8'),
         'info':    ('#0891b2', '#ffffff', '#cbd5e1', '#94a3b8'),
+        # 与「开始采集」区分开的次要主色（微信「提取公众号链接」用）
+        'primary': ('#2563eb', '#ffffff', '#cbd5e1', '#94a3b8'),
     }
 
     def _toolbar_button(self, parent, text, kind, cmd, width=10):
@@ -976,18 +975,25 @@ class BaseSpiderGUI:
                                                 self._on_refresh, 10)
         self.btn_refresh.pack(side=LEFT, padx=(0, 8))
 
-        # 「更新重复岗位」开关：按岗位编号去重时，是否用新数据覆盖已有行
-        # 用大号字体 + 强调色，避免与普通文案混在一起看不清
-        self._update_dup = tk.BooleanVar(value=False)
-        self.chk_update = tk.Checkbutton(
-            row, text='更新重复岗位', variable=self._update_dup,
-            bg=UI_COLOR['card_bg'], fg=UI_COLOR['accent'],
-            activebackground=UI_COLOR['card_bg'],
-            activeforeground=UI_COLOR['accent'],
-            selectcolor=UI_COLOR['card_bg'],
-            font=_font('size', bold=True), bd=0, highlightthickness=0,
-            padx=10, pady=5, cursor='hand2')
-        self.chk_update.pack(side=LEFT, padx=(12, 0))
+        # 子类可在这里追加平台专属按钮（如微信的「提取公众号链接」）
+        self._build_extra_toolbar(row)
+
+        # 「更新重复岗位」开关：按岗位编号去重时，是否用新数据覆盖已有行。
+        # 用大号字体 + 强调色，避免与普通文案混在一起看不清。
+        # 医护知音把 SHOW_UPDATE_DUPLICATE 设成 False 就不显示这个开关。
+        self._update_dup = None
+        self.chk_update = None
+        if getattr(self, 'SHOW_UPDATE_DUPLICATE', True):
+            self._update_dup = tk.BooleanVar(value=False)
+            self.chk_update = tk.Checkbutton(
+                row, text='更新重复岗位', variable=self._update_dup,
+                bg=UI_COLOR['card_bg'], fg=UI_COLOR['accent'],
+                activebackground=UI_COLOR['card_bg'],
+                activeforeground=UI_COLOR['accent'],
+                selectcolor=UI_COLOR['card_bg'],
+                font=_font('size', bold=True), bd=0, highlightthickness=0,
+                padx=10, pady=5, cursor='hand2')
+            self.chk_update.pack(side=LEFT, padx=(12, 0))
 
         # 右侧：状态胶囊 + 自动滚动 + 日志开关
         self._state_pill = tk.Frame(row, bg=UI_COLOR['bg'])
@@ -1015,6 +1021,12 @@ class BaseSpiderGUI:
         self.btn_log.pack(side=RIGHT, padx=(0, 16))
 
         self._set_ui_state('idle')
+
+    def _build_extra_toolbar(self, row):
+        """子类追加平台专属按钮的钩子。默认什么都不加。"""
+
+    def _set_extra_ui_state(self, state):
+        """子类同步专属按钮可用性的钩子。state 同 _set_ui_state。"""
 
     # ---------- 统计卡片 ----------
     def _build_stats(self):
@@ -1548,12 +1560,16 @@ class BaseSpiderGUI:
         # 刷新按钮：采集期间也可用（此时从内存渲染，不读文件）
         self._set_button_state(self.btn_refresh, 'normal')
 
+        # 平台专属按钮（微信的「提取公众号链接」）：采集中禁用，避免和抓取抢内存
+        self._set_extra_ui_state(state)
+
         # 「更新重复岗位」开关在采集中不可改，避免中途切换导致行为不一致
-        try:
-            self.chk_update.config(
-                state='normal' if state == 'idle' else 'disabled')
-        except Exception:
-            pass
+        if self.chk_update is not None:
+            try:
+                self.chk_update.config(
+                    state='normal' if state == 'idle' else 'disabled')
+            except Exception:
+                pass
 
         # 顶部状态胶囊（就绪=绿色，与「采集中」一致，避免灰色显得像禁用）
         label, color = {
@@ -1593,10 +1609,16 @@ class BaseSpiderGUI:
 
         self._set_ui_state('running')
         self._set_status('正在准备采集…')
-        self.update_duplicate = bool(self._update_dup.get())
-        self._log('开始采集，数据文件：%s（更新重复岗位：%s）'
-                  % (self.default_data_file() or '(默认)',
-                     '是' if self.update_duplicate else '否'))
+        # 没显示开关的平台（医护知音）一律按 False 处理
+        self.update_duplicate = bool(self._update_dup.get()) \
+            if self._update_dup is not None else False
+        if self._update_dup is not None:
+            self._log('开始采集，数据文件：%s（更新重复岗位：%s）'
+                      % (self.default_data_file() or '(默认)',
+                         '是' if self.update_duplicate else '否'))
+        else:
+            self._log('开始采集，数据文件：%s'
+                      % (self.default_data_file() or '(默认)'))
         log_file = getattr(logger, 'filename', '')
         if log_file:
             self._log('日志文件：%s' % log_file)
@@ -1935,9 +1957,9 @@ def _run_guopin_gui(panel, data_file):
 
     GuoPin.run(
         data_file,
+        update_duplicate=getattr(panel, 'update_duplicate', None),
         pause_event=panel.pause_event,
         is_running=lambda: panel.is_running,
-        update_duplicate=getattr(panel, 'update_duplicate', None),
         on_progress=panel.on_progress,
         on_page=panel.on_page_progress,
         on_data=panel.on_data,
@@ -1997,10 +2019,10 @@ class ZhilianPanel(BaseSpiderGUI):
         try:
             ZhiPin.run(data_file,
                        ask=self._ask,
+                       update_duplicate=self.update_duplicate,
                        pause_event=self.pause_event,
                        is_running=lambda: self.is_running,
-                       update_duplicate=self.update_duplicate,
-                       on_progress=_on_progress,
+                              on_progress=_on_progress,
                        on_data=self.on_data,
                        on_complete=self.on_complete,
                        on_error=self.on_error)
@@ -2044,10 +2066,10 @@ class NcssPanel(BaseSpiderGUI):
         try:
             Ncss.run(
                 data_file,
+                update_duplicate=self.update_duplicate,
                 sources=self.sources,
                 pause_event=self.pause_event,
                 is_running=lambda: self.is_running,
-                update_duplicate=self.update_duplicate,
                 on_progress=self.on_progress,
                 on_page=self.on_page_progress,
                 on_data=self.on_data,
@@ -2085,11 +2107,11 @@ class BossPanel(BaseSpiderGUI):
                 data_file,
                 city_scope=self.city_scope,
                 position_scope=self.position_scope,
+                update_duplicate=self.update_duplicate,
                 max_pages=self.max_pages,
                 with_detail=self.with_detail,
                 pause_event=self.pause_event,
                 is_running=lambda: self.is_running,
-                update_duplicate=self.update_duplicate,
                 on_progress=self.on_progress,
                 on_page=self.on_page_progress,
                 on_data=self.on_data,
@@ -2100,6 +2122,194 @@ class BossPanel(BaseSpiderGUI):
             logger.error('BOSS直聘采集异常：%s' % e)
             self.on_error('BOSS直聘: %s' % e)
             self.on_complete('BOSS直聘异常结束')
+
+
+class _GuiLogBridge(logging.Handler):
+    """把某个模块写进 logger 的日志，同步显示到界面日志面板。
+
+    wechat.py 里大量用 logger.info 输出进度（扫描到多少条、新增多少条、每条
+    链接的爬取明细）。这些默认只进日志文件和终端，界面上看不到。
+    这里挂一个 handler，把带指定前缀的记录送进界面日志面板的缓冲区。
+
+    注意：**不能**调面板的 `_log()` —— 它内部会再写一遍 logger，导致日志文件
+    里每条出现两次（`【医护知音】xxx` + `[医护知音] xxx`）。这里直接
+    往 `_log_buffer` 里塞，界面照样能显示，文件里只有一条。
+    """
+
+    def __init__(self, panel, prefix):
+        super().__init__(level=logging.INFO)
+        self._panel = panel
+        self._prefix = prefix
+
+    def emit(self, record):
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return
+        if not msg.startswith(self._prefix):
+            return
+        level = 'error' if record.levelno >= logging.ERROR else (
+            'warning' if record.levelno >= logging.WARNING else 'info')
+        text = msg[len(self._prefix):].strip()
+
+        def _push():
+            # 只写界面缓冲，不再调 _log()。
+            # _log() 内部会再写一遍 logger，导致日志文件里每条出现两次
+            # （`【医护知音】xxx` + `[医护知音] xxx`）。
+            try:
+                if not hasattr(self._panel, 'txt_log'):
+                    return
+                tag = {'error': 'error', 'warning': 'warn'}.get(level, 'info')
+                self._panel._log_buffer.append(
+                    (time.strftime('%H:%M:%S'), text, tag))
+                if not self._panel._log_flush_scheduled:
+                    self._panel._log_flush_scheduled = True
+                    try:
+                        self._panel.root.after(120, self._panel._flush_log)
+                    except Exception:
+                        self._panel._log_flush_scheduled = False
+            except Exception:
+                pass
+
+        try:
+            self._panel.root.after(0, _push)
+        except Exception:
+            pass
+
+
+#: 标记「当前线程正在执行 _log()」，防止日志桥接自激
+_log_guard = threading.local()
+
+
+class WechatPanel(BaseSpiderGUI):
+    """医护知音（微信公众号）采集面板。
+
+    比其它平台多一个「提取公众号链接」按钮：
+      * 「提取公众号链接」= 扫微信进程内存，把文章链接写进 wechat_links.json；
+      * 「开始采集」   = 只按清单抓取，**不扫内存**。
+    两件事分开，反复点开始就不会每次都读 5 GB 内存。
+    """
+
+    #: 留空 = 扫内存时全都收；填了 __biz 只留该号（可在界面里改）
+    biz = 'MzI5NDQyMzYyMg=='
+
+    #: 医护知音不做「更新重复岗位」：同一篇重跑时岗位编号不变，
+    #: 覆盖已有行没有意义（而且会把人工改过的数据冲掉），所以不显示这个开关。
+    SHOW_UPDATE_DUPLICATE = False
+
+    #: wechat.py 里日志的前缀，用于转发到界面（必须与 wechat.WEB_NAME 一致）
+    LOG_PREFIX = '【医护知音】'
+
+    def __init__(self, master):
+        # 必须在 super().__init__ 之前赋值：基类的 __init__ 会调 _build_ui()
+        # -> _set_ui_state() -> _set_extra_ui_state()，那里会读 self._fetching。
+        self._log_bridge = None
+        self._fetching = False        # 「提取公众号链接」是否正在扫描
+        container = tk.Frame(master, bg=UI_COLOR['bg'])
+        super().__init__(title='', spider_name='医护知音', parent=container)
+
+    # ---------- 按钮 ----------
+
+    def _build_extra_toolbar(self, row):
+        """在「刷新列表」后面加一个「提取公众号链接」。"""
+        # 按钮宽度按字符数算（中文占 2 个），12 个字左右给 15 才不挤
+        self.btn_fetch = self._toolbar_button(
+            row, '提取公众号链接', 'primary', self._on_fetch_links, 15)
+        self.btn_fetch.pack(side=LEFT, padx=(0, 8))
+
+    def _set_extra_ui_state(self, state):
+        """采集中禁用；扫描内存的那几秒也禁用，避免重复点。"""
+        btn = getattr(self, 'btn_fetch', None)
+        if btn is None:
+            return
+        # getattr 兜底：_build_ui() 在 __init__ 早期就会调到这里，
+        # 子类若把 _fetching 初始化放在 super().__init__ 之后就会 AttributeError
+        busy = state != 'idle' or getattr(self, '_fetching', False)
+        self._set_button_state(btn, 'disabled' if busy else 'normal')
+
+    def _on_fetch_links(self):
+        if self._fetching or self.is_running:
+            return
+        self._fetching = True
+        self._set_extra_ui_state(self.ui_state)
+        self._set_status('正在扫描微信内存…')
+        self._log('开始提取公众号链接（扫描微信内存，约 5-10 秒）')
+        # 扫描要读几 GB 内存，必须离开 UI 线程，否则界面卡死
+        threading.Thread(target=self._fetch_links_worker, daemon=True).start()
+
+    def _fetch_links_worker(self):
+        from wechat import Wechat
+
+        self._attach_log_bridge()
+        ok = False
+        try:
+            added, total, todo = Wechat.fetch_links(biz=self.biz)
+            ok = True
+        except Exception as e:
+            logger.error('【医护知音】提取链接失败：%s' % e)
+            msg = '提取链接失败：%s' % e
+        finally:
+            self._fetching = False
+            self._detach_log_bridge()
+
+        def _done():
+            self._set_extra_ui_state(self.ui_state)
+            if ok:
+                self._set_status('提取完成：清单 %d 条，待抓 %d 条' % (total, todo))
+                self._log('提取完成：新增 %s 条，清单共 %d 条，待抓 %d 条'
+                          % (added, total, todo))
+            else:
+                self._set_status('提取失败')
+                self.on_error(msg)
+
+        self._ui(_done)
+
+    # ---------- 日志桥接 ----------
+
+    def _attach_log_bridge(self):
+        """采集开始时挂上转发 handler，结束后摘掉，避免重复输出。"""
+        self._detach_log_bridge()
+        try:
+            bridge = _GuiLogBridge(self, self.LOG_PREFIX)
+            logger.logger.addHandler(bridge)
+            self._log_bridge = bridge
+        except Exception as e:
+            logger.warning('医护知音日志桥接失败：%s' % e)
+
+    def _detach_log_bridge(self):
+        if self._log_bridge is None:
+            return
+        try:
+            logger.logger.removeHandler(self._log_bridge)
+        except Exception:
+            pass
+        self._log_bridge = None
+
+    def default_data_file(self):
+        return os.path.join(_BASE_DIR, '医护知音数据.xlsx')
+
+    def spider_task(self, data_file=None):
+        from wechat import Wechat
+
+        data_file = data_file or self.default_data_file()
+        self._attach_log_bridge()
+        try:
+            Wechat.run(
+                data_file,
+                biz=self.biz,
+                pause_event=self.pause_event,
+                is_running=lambda: self.is_running,
+                on_progress=self.on_progress,
+                on_data=self.on_data,
+                on_complete=self.on_complete,
+                on_error=self.on_error,
+            )
+        except Exception as e:
+            logger.error('【医护知音】采集异常：%s' % e)
+            self.on_error('医护知音: %s' % e)
+            self.on_complete('医护知音异常结束')
+        finally:
+            self._detach_log_bridge()
 
 
 class SpiderGUI:
@@ -2147,11 +2357,13 @@ class SpiderGUI:
         self.tab_gp = GuopinPanel(self.root)
         self.tab_ncss = NcssPanel(self.root)
         self.tab_boss = BossPanel(self.root)
+        self.tab_wx = WechatPanel(self.root)
 
         self.notebook.add(self.tab_zhi.container, text='智联招聘')
         self.notebook.add(self.tab_gp.container, text='国聘')
         self.notebook.add(self.tab_ncss.container, text='国家大学生就业服务平台')
         self.notebook.add(self.tab_boss.container, text='BOSS直聘')
+        self.notebook.add(self.tab_wx.container, text='医护知音')
 
     def _tick_clock(self):
         try:
