@@ -4,6 +4,9 @@ rem  Google 关键词采集 —— 打包成单文件 exe
 rem
 rem  双击本文件即可。产物：dist\Google关键词采集.exe
 rem
+rem  入口是 run.py（图形界面，可在 Google / Facebook 之间切换）
+rem  另外两个采集模块：google.py、facebook.py —— 不要单独打包它们
+rem
 rem  前置条件：
 rem    · Python 3.8+（默认用 D:\_code\python\python.exe，找不到则用 PATH 里的 python）
 rem    · PyInstaller：python -m pip install pyinstaller
@@ -47,13 +50,13 @@ if errorlevel 1 (
 for /f "delims=" %%v in ('"%PY%" -c "import PyInstaller;print(PyInstaller.__version__)" 2^>^&1') do echo [1/5] PyInstaller: %%v
 
 rem ---------------- 2. 检查入口文件 ----------------
-if not exist "keyword_get_email_gui.py" (
-    echo [错误] 当前目录没有 keyword_get_email_gui.py
+if not exist "run.py" (
+    echo [错误] 当前目录没有 run.py
     echo        请把本 bat 放在 Google_get_email 目录下运行。
     pause
     exit /b 1
 )
-echo [2/5] 入口文件 OK: keyword_get_email_gui.py
+echo [2/5] 入口文件 OK: run.py
 
 set "ICON_ARG=--icon app.ico"
 set "ICO_DATA=--add-data app.ico;."
@@ -116,7 +119,7 @@ echo.
     --exclude-module pip ^
     --exclude-module playwright.async_api ^
     --optimize 1 ^
-    "keyword_get_email_gui.py"
+    "run.py"
 
 if errorlevel 1 (
     echo.
@@ -135,6 +138,23 @@ if not exist "dist\Google关键词采集.exe" (
 )
 for %%F in ("dist\Google关键词采集.exe") do set "EXE_SIZE=%%~zF"
 set /a EXE_MB=%EXE_SIZE%/1048576
+
+rem ---- 生成外部配置文件（exe 同级；已存在则不覆盖） ----
+rem config.ini 和结果 xlsx 都必须是「exe 外面的普通文件」：
+rem   程序运行时按 exe 所在目录读写它们，用户随时能打开查看 / 编辑。
+rem   绝对不要用 --add-data 把它们打进 exe —— 那样改的是临时解包目录里的副本，
+rem   进程一退出就没了，用户也改不到。
+if not exist "dist\config.ini" (
+    >"dist\config.ini" echo [login]
+    >>"dist\config.ini" echo ; Facebook login cookie. Written back automatically after login.
+    >>"dist\config.ini" echo ; To switch account: click the delete-account button, or log in again.
+    >>"dist\config.ini" echo facebook_cookie = 
+    >>"dist\config.ini" echo facebook_cookie_api = 
+    echo   已生成空白 dist\config.ini（可自行编辑）
+) else (
+    echo   dist\config.ini 已存在，保留原内容
+)
+
 echo ====================================================================
 echo   打包完成
 echo --------------------------------------------------------------------
@@ -144,8 +164,15 @@ echo.
 echo   说明：
 echo     · 单文件 exe，复制到别的机器即可运行，无需安装 Python
 echo     · 目标机器需要已安装 Microsoft Edge
-echo     · 结果文件 google_contacts.xlsx 由程序在 exe 同级目录自动创建/读写
-echo     · 日志写在 exe 同级目录的 logs\ 下
+echo.
+echo   【外部文件】下面这些都在 exe 同级目录，不在 exe 里面：
+echo     · config.ini            Facebook 账号 cookie（自动生成 / 自动写回）
+echo     · 结果.xlsx  采集结果（首次运行自动创建）
+echo       这两个可以直接用记事本 / Excel 打开，改完保存即可生效
+echo     · logs\                 运行日志
+echo.
+echo   【迁移】把 exe 换到别的文件夹或机器时，连同 config.ini 一起复制，
+echo           就不用重新登录 Facebook。
 echo ====================================================================
 
 if exist "build" rmdir /s /q "build"
