@@ -9,6 +9,20 @@ from werkzeug.security import check_password_hash, generate_password_hash
 db = SQLAlchemy()
 
 
+#: 报考科目（固定枚举，前台只能从这 9 个里选）
+SUBJECTS = (
+    '速写',
+    '素描',
+    '漫画',
+    '水粉画',
+    '水彩画',
+    '山水',
+    '花鸟',
+    '硬笔书法',
+    '软笔书法',
+)
+
+
 class Admin(UserMixin, db.Model):
     __tablename__ = 'admin'
 
@@ -87,10 +101,13 @@ class Registration(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
     name = db.Column(db.String(50), nullable=False, index=True)      # 考生姓名
+    name_pinyin = db.Column(db.String(100))                          # 姓名拼音（提交时自动生成）
     gender = db.Column(db.String(10))                                # 性别
     ethnicity = db.Column(db.String(50))                             # 民族
     nationality = db.Column(db.String(50))                           # 国籍
     id_card = db.Column(db.String(50), index=True)                   # 身份证号
+    passport = db.Column(db.String(50))                              # 护照号（非必填）
+    phone = db.Column(db.String(30))                                 # 联系电话
     subject = db.Column(db.String(50))                               # 报考科目
     level = db.Column(db.String(50))                                 # 报考级别
     photo = db.Column(db.String(256))                                # 电子照片文件名
@@ -108,10 +125,13 @@ class Registration(db.Model):
         return {
             'id': self.id,
             'name': self.name,
+            'name_pinyin': self.name_pinyin or '',
             'gender': self.gender,
             'ethnicity': self.ethnicity,
             'nationality': self.nationality,
             'id_card': self.id_card,
+            'passport': self.passport or '',
+            'phone': self.phone or '',
             'subject': self.subject,
             'level': self.level,
             'photo': self.photo or '',

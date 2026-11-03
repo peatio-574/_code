@@ -60,7 +60,7 @@ class Config(object):
     STATIC_URL_PATH = ROUTE_PREFIX + '/static'
 
     # 站点信息
-    SITE_TITLE = '中国美术学院-社会美术水平考级管理系统'
+    SITE_TITLE = '中国美术学院-社会艺术水平考级管理系统'
     SITE_SUBTITLE = '社会艺术水平考级中心'
     OFFICIAL_SITE = 'https://kjzx.caa.edu.cn/'
     HOME_URL = 'https://mskj.caa.edu.cn/'

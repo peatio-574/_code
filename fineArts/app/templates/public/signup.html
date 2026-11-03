@@ -54,8 +54,7 @@
             text-align: center; color: #f56c6c; font-size: 16px; line-height: 1.8;
         }
         .note b { color: #f56c6c; }
-        .submit-wrap { padding: 8px 16px calc(28px + env(safe-area-inset-bottom)); }
-        .btn-submit {
+        .submit-wrap { padding: 8px 16px calc(28px + env(safe-area-inset-bottom)); }        .btn-submit {
             width: 100%; height: 48px; border: none; border-radius: 24px;
             background: #d8010f; color: #fff; font-size: 17px; font-weight: 600;
             cursor: pointer; -webkit-appearance: none; appearance: none;
@@ -150,8 +149,27 @@
             <input type="text" name="id_card" maxlength="18" placeholder="请输入身份证号" autocomplete="off" inputmode="text">
         </div>
         <div class="field">
+            <div class="label">护照号</div>
+            <input type="text" name="passport" maxlength="50" placeholder="非必填，持护照报名时填写" autocomplete="off">
+        </div>
+        <div class="field">
+            <div class="label">联系电话</div>
+            <input type="tel" name="phone" maxlength="30" placeholder="请输入手机号或固定电话" autocomplete="off" inputmode="tel">
+        </div>
+        <div class="field">
             <div class="label">报考科目<em>*</em></div>
-            <input type="text" name="subject" maxlength="50" placeholder="如：素描 / 书法 / 中国画" autocomplete="off">
+            <select name="subject">
+                <option value="">请选择报考科目</option>
+                <option value="速写">速写</option>
+                <option value="素描">素描</option>
+                <option value="漫画">漫画</option>
+                <option value="水粉画">水粉画</option>
+                <option value="水彩画">水彩画</option>
+                <option value="山水">山水</option>
+                <option value="花鸟">花鸟</option>
+                <option value="硬笔书法">硬笔书法</option>
+                <option value="软笔书法">软笔书法</option>
+            </select>
         </div>
         <div class="field">
             <div class="label">报考级别<em>*</em></div>
@@ -268,13 +286,15 @@
         var name = form.name.value.trim();
         var gender = form.gender.value.trim();
         var idCard = form.id_card.value.trim().toUpperCase();
+        var phone = form.phone.value.trim();
         var subject = form.subject.value.trim();
         var level = form.level.value.trim();
         if (!name) return '请填写考生姓名';
         if (!gender) return '请选择性别';
         if (!idCard) return '请填写身份证号';
         if (!/^(\d{15}|\d{17}[\dXx])$/.test(idCard)) return '身份证号格式不正确';
-        if (!subject) return '请填写报考科目';
+        if (phone && !/^[\d+\-\s()]{5,30}$/.test(phone)) return '联系电话格式不正确';
+        if (!subject) return '请选择报考科目';
         if (!level) return '请选择报考级别';
         if (!photoInput || !photoInput.files || !photoInput.files[0]) return '请上传报名照片';
         return '';
@@ -289,6 +309,8 @@
         fd.append('ethnicity', form.ethnicity.value.trim());
         fd.append('nationality', form.nationality.value.trim() || '中国');
         fd.append('id_card', form.id_card.value.trim().toUpperCase());
+        fd.append('passport', form.passport.value.trim().toUpperCase());
+        fd.append('phone', form.phone.value.trim());
         fd.append('subject', form.subject.value.trim());
         fd.append('level', form.level.value.trim());
         fd.append('institution_code', form.institution_code ? form.institution_code.value : '');

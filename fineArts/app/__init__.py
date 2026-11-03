@@ -104,6 +104,12 @@ def _ensure_columns():
                 stmts.append('ALTER TABLE registration ADD COLUMN institution_id INT NULL')
             if 'institution' not in cols:
                 stmts.append('ALTER TABLE registration ADD COLUMN institution VARCHAR(100) NULL')
+            if 'name_pinyin' not in cols:
+                stmts.append('ALTER TABLE registration ADD COLUMN name_pinyin VARCHAR(100) NULL')
+            if 'passport' not in cols:
+                stmts.append('ALTER TABLE registration ADD COLUMN passport VARCHAR(50) NULL')
+            if 'phone' not in cols:
+                stmts.append('ALTER TABLE registration ADD COLUMN phone VARCHAR(30) NULL')
             if stmts:
                 with db.engine.begin() as conn:
                     for stmt in stmts:

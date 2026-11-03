@@ -17,6 +17,7 @@ from .. import photos
 from ..api import fail, ok, pagination_dict
 from ..excel_utils import COLUMNS, build_template, parse_workbook
 from ..models import db, Admin, Certificate, Registration, Institution
+from ..pinyin_utils import pinyin_of, to_pinyin
 from ..qr import generate_qr_png
 from ..tokens import make_qr_token
 from . import admin_bp
@@ -562,10 +563,16 @@ def api_registration_update(rid):
         return fail('身份证号格式不正确')
 
     reg.name = name
+    reg.name_pinyin = to_pinyin(name)     # 姓名改了，拼音跟着更新
     reg.gender = (payload.get('gender') or '').strip()
     reg.ethnicity = (payload.get('ethnicity') or '').strip()
     reg.nationality = (payload.get('nationality') or '').strip()
     reg.id_card = id_card
+    # 护照号/电话：表单里带了才改（未传时保留原值）
+    if 'passport' in payload:
+        reg.passport = (payload.get('passport') or '').strip().upper()
+    if 'phone' in payload:
+        reg.phone = (payload.get('phone') or '').strip()
 
     # 照片：仅在本次上传了新照片时替换（未选则保留原图）
     new_photo = None
@@ -681,8 +688,13 @@ def registrations_export():
     wb = Workbook()
     ws = wb.active
     ws.title = '报名数据'
-    headers = ['姓名', '身份证号', '性别', '报考科目', '报考级别', '民族', '国籍',
-               '所属机构', '报名时间', '照片']
+    # 导出列（顺序固定，供考级机构直接导入）：
+    #   姓名、拼音、身份证号、护照号码、性别、电话号码、专业、级别、民族、国籍、所属机构
+    # 「专业」= 报考科目（subject）；「级别」= 报考级别（level）。
+    headers = ['姓名', '拼音', '身份证号', '护照号码', '性别', '电话号码', '专业', '级别',
+               '民族', '国籍', '所属机构']
+    # 需要按文本保存的列（身份证号可能 18 位，Excel 会转成科学计数法）
+    TEXT_COLUMNS = {'护照号码', '身份证号'}
     header_fill = PatternFill('solid', fgColor='D9D9D9')
     header_font = Font(color='000000', bold=True)
     thin = Side(style='thin', color='D9D9D9')
@@ -694,11 +706,12 @@ def registrations_export():
         cell.font = header_font
         cell.alignment = Alignment(horizontal='center')
         cell.border = border
-        ws.column_dimensions[cell.column_letter].width = 18
+        # 身份证号/护照号码较长，给宽一点，避免显示成 ####
+        ws.column_dimensions[cell.column_letter].width = (
+            24 if title in ('护照号码', '身份证号') else 12)
 
-    # 图片文件名 = 姓名身份证.jpg；重名直接覆盖（id 大的视为最新，优先保留）
+    # 图片文件名 = 姓名+身份证.jpg；重名直接覆盖（id 大的视为最新，优先保留）
     photos_to_add = {}          # filename -> src
-    photo_file_of = {}          # reg.id  -> filename（供 Excel 展示）
 
     for reg in sorted(regs, key=lambda x: x.id or 0):
         if not reg.photo:
@@ -708,28 +721,27 @@ def registrations_export():
             continue
         filename = photos.export_basename(reg) + '.jpg'
         photos_to_add[filename] = src        # 同名覆盖
-        photo_file_of[reg.id] = filename
 
     for r, reg in enumerate(regs, start=2):
-        if not reg.photo:
-            photo_label = '无'
-        elif reg.id not in photo_file_of:
-            photo_label = '文件缺失'
-        else:
-            photo_label = photo_file_of[reg.id]
-
-        values = [reg.name, reg.id_card, reg.gender, reg.subject, reg.level,
-                  reg.ethnicity, reg.nationality, reg.institution,
-                  reg.created_at.strftime('%Y-%m-%d %H:%M:%S') if reg.created_at else '',
-                  photo_label]
+        values = [
+            reg.name,
+            pinyin_of(reg),              # 拼音：库里存的，没有就按姓名现算
+            reg.id_card or '',
+            reg.passport or '',
+            reg.gender or '',
+            reg.phone or '',                 # 电话号码
+            reg.subject or '',           # 专业
+            reg.level or '',             # 级别
+            reg.ethnicity or '',
+            reg.nationality or '',
+            reg.institution or '',
+        ]
         for c, value in enumerate(values, start=1):
             cell = ws.cell(row=r, column=c, value=value)
             cell.border = border
-            if c == 2:
+            if headers[c - 1] in TEXT_COLUMNS:
+                # 身份证号/护照号按文本存，避免 Excel 转科学计数法
                 cell.number_format = '@'
-            if c == len(values):
-                # 照片列写文件名，重名覆盖时便于核对
-                ws.column_dimensions[cell.column_letter].width = 42
 
     buf = io.BytesIO()
     wb.save(buf)

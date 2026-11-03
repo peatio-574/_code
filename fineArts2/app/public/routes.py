@@ -6,11 +6,14 @@ from flask import render_template, request
 
 from .. import photos
 from ..api import fail, ok
-from ..models import Institution, Registration, db
+from ..models import SUBJECTS, Institution, Registration, db
+from ..pinyin_utils import to_pinyin
 from . import public_bp
 
 
 ID_CARD_RE = re.compile(r'^(\d{15}|\d{17}[\dXx])$')
+#: 联系电话：允许手机号、座机（含区号/分机）、带 +86 等写法
+PHONE_RE = re.compile(r'^[\d+\-\s()]{5,30}$')
 
 
 @public_bp.route('/apply', methods=['GET', 'POST'])
@@ -36,6 +39,8 @@ def signup():
     ethnicity = (payload.get('ethnicity') or '').strip()
     nationality = (payload.get('nationality') or '中国').strip()
     id_card = (payload.get('id_card') or '').strip().upper()
+    passport = (payload.get('passport') or '').strip().upper()
+    phone = (payload.get('phone') or '').strip()
     subject = (payload.get('subject') or '').strip()
     level = (payload.get('level') or '').strip().replace('级', '')
 
@@ -58,8 +63,14 @@ def signup():
         errors.append('请填写身份证号')
     elif not ID_CARD_RE.match(id_card):
         errors.append('身份证号格式不正确')
+    if len(passport) > 50:
+        errors.append('护照号过长')
+    if phone and not PHONE_RE.match(phone):
+        errors.append('联系电话格式不正确')
     if not subject:
-        errors.append('请填写报考科目')
+        errors.append('请选择报考科目')
+    elif subject not in SUBJECTS:
+        errors.append('报考科目不在可选范围内')
     if not level:
         errors.append('请选择报考级别')
     if errors:
@@ -72,8 +83,10 @@ def signup():
         return fail(photo_error)
 
     record = Registration(
-        name=name, gender=gender, ethnicity=ethnicity, nationality=nationality,
-        id_card=id_card, subject=subject, level=level,
+        name=name, name_pinyin=to_pinyin(name),
+        gender=gender, ethnicity=ethnicity, nationality=nationality,
+        id_card=id_card, passport=passport, phone=phone,
+        subject=subject, level=level,
         photo=photo_file,
         institution_id=institution.id if institution else None,
         institution=institution.name if institution else '',

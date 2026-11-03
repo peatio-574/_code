@@ -63,8 +63,11 @@
         tr.appendChild(checkCell(item));
         tr.appendChild(photoCell(item));
         tr.appendChild(td(item.name));
+        tr.appendChild(td(item.name_pinyin));
         tr.appendChild(td(item.id_card));
+        tr.appendChild(td(item.passport));
         tr.appendChild(td(item.gender));
+        tr.appendChild(td(item.phone));
         tr.appendChild(td(subjectLevel(item)));
         tr.appendChild(td(item.ethnicity));
         tr.appendChild(td(item.nationality));
@@ -257,6 +260,9 @@
         setText('d_ethnicity', item.ethnicity);
         setText('d_nationality', item.nationality);
         setText('d_id_card', item.id_card);
+        setText('d_passport', item.passport || '');
+        setText('d_phone', item.phone || '');
+        setText('d_name_pinyin', item.name_pinyin || '');
         setText('d_institution', item.institution);
         setText('d_subject_level', subjectLevel(item));
         setText('d_created_at', item.created_at);
@@ -296,6 +302,8 @@
         editForm.elements['ethnicity'].value = item.ethnicity || '';
         editForm.elements['nationality'].value = item.nationality || '';
         editForm.elements['id_card'].value = item.id_card || '';
+        if (editForm.elements['passport']) editForm.elements['passport'].value = item.passport || '';
+        if (editForm.elements['phone']) editForm.elements['phone'].value = item.phone || '';
         editForm.elements['subject_level'].value = subjectLevel(item);
 
         // 照片：显示当前照片（无则显示「暂无照片」），并清空上次选择
@@ -325,6 +333,12 @@
         fd.append('ethnicity', editForm.elements['ethnicity'].value.trim());
         fd.append('nationality', editForm.elements['nationality'].value.trim());
         fd.append('id_card', editForm.elements['id_card'].value.trim().toUpperCase());
+        if (editForm.elements['passport']) {
+            fd.append('passport', editForm.elements['passport'].value.trim().toUpperCase());
+        }
+        if (editForm.elements['phone']) {
+            fd.append('phone', editForm.elements['phone'].value.trim());
+        }
         fd.append('subject_level', editForm.elements['subject_level'].value.trim());
         // 仅在选择了新照片时才提交（不选则后端保留原图）
         if (editPhotoInput && editPhotoInput.files && editPhotoInput.files[0]) {
@@ -420,6 +434,7 @@
             })
             .catch(function () { alert('导出失败，请重试'); });
     }
+
     /* 与后端 zip 内目录名一致的时间戳，便于识别 */
     function tsStamp() {
         var d = new Date();
