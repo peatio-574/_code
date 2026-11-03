@@ -78,10 +78,10 @@ SEARCH_URL = ('https://www.facebook.com/search/groups/?q=%s'
 # 搜索页里每一条结果的锚点（Facebook 用 role="presentation" 标记）
 RESULT_XPATH = '//a[@role="presentation"]'
 
-MAX_RESULTS = 100        # 单个关键词最多收集多少个主页
-MAX_SCROLL = 14          # 搜索页最多往下滚几次
+MAX_RESULTS = 300        # 单个关键词最多收集多少个主页
+MAX_SCROLL = 100          # 搜索页最多往下滚几次
 SCROLL_PX = 800          # 每次滚动距离
-STALE_ROUNDS = 3         # 连续几轮没有新结果就认为到底了
+STALE_ROUNDS = 4         # 连续几轮没有新结果就认为到底了
 SEARCH_DELAY = (2.0, 4.0)
 PAGE_DELAY = (1.5, 3.0)
 
