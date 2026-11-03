@@ -49,9 +49,9 @@ def create_app(config_name='default'):
     def _root():
         return redirect(url_for('public.signup'))
 
-    # 兼容旧写法：/new/manager* -> /new/manage*（301 保留方法语义之外的行为）
+    # 兼容旧写法：/new/manage* -> /new/manager*（301，避免旧书签/旧页面 404）
     admin_prefix = app.config['ADMIN_ROUTE_PREFIX']
-    legacy_prefix = prefix + '/manager'
+    legacy_prefix = prefix + '/manage'
     if legacy_prefix != admin_prefix:
         @app.route(legacy_prefix + '/', defaults={'_rest': ''})
         @app.route(legacy_prefix + '/<path:_rest>')

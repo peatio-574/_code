@@ -24,7 +24,7 @@ from . import admin_bp
 # 登录 / 退出
 # --------------------------------------------------------------------------- #
 def _admin_prefix():
-    return current_app.config.get('ADMIN_ROUTE_PREFIX', '/new/manage')
+    return current_app.config.get('ADMIN_ROUTE_PREFIX', '/new/manager')
 
 
 def _normalize_input(text):
@@ -195,7 +195,7 @@ def index():
 @admin_bp.route('/registrations', methods=['GET'])
 @login_required
 def registrations():
-    """报名管理页面（固定 HTML，数据由 /new/manage/api/registrations 填充）"""
+    """报名管理页面（固定 HTML，数据由 /new/manager/api/registrations 填充）"""
     if (getattr(current_user, 'role', '') or '') == 'institution':
         names = []
     else:
@@ -392,7 +392,7 @@ def registrations_export():
 
     zip 内部结构：
         <时间戳>/报名数据.xlsx
-        <时间戳>/姓名_身份证号_科目_级别.jpg
+        <时间戳>/姓名身份证号.jpg
     """
     raw_ids = []
     if request.method == 'POST':
@@ -431,7 +431,7 @@ def registrations_export():
         cell.border = border
         ws.column_dimensions[cell.column_letter].width = 18
 
-    # 图片文件名 = 姓名_身份证.jpg；重名直接覆盖（id 大的视为最新，优先保留）
+    # 图片文件名 = 姓名身份证.jpg；重名直接覆盖（id 大的视为最新，优先保留）
     photos_to_add = {}          # filename -> src
     photo_file_of = {}          # reg.id  -> filename（供 Excel 展示）
 
@@ -546,7 +546,7 @@ def _inst_serialize(inst):
 @admin_bp.route('/institutions', methods=['GET'])
 @login_required
 def institutions():
-    """机构管理页面（固定 HTML，数据由 /new/manage/api/institutions 填充）"""
+    """机构管理页面（固定 HTML，数据由 /new/manager/api/institutions 填充）"""
     return render_template('admin/institutions.html')
 
 

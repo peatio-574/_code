@@ -657,7 +657,7 @@ def registrations_export():
 
     zip 内部结构：
         <时间戳>/报名数据.xlsx
-        <时间戳>/姓名_身份证号_科目_级别.jpg
+        <时间戳>/姓名身份证号.jpg
     """
     raw_ids = []
     if request.method == 'POST':
@@ -696,7 +696,7 @@ def registrations_export():
         cell.border = border
         ws.column_dimensions[cell.column_letter].width = 18
 
-    # 图片文件名 = 姓名_身份证.jpg；重名直接覆盖（id 大的视为最新，优先保留）
+    # 图片文件名 = 姓名身份证.jpg；重名直接覆盖（id 大的视为最新，优先保留）
     photos_to_add = {}          # filename -> src
     photo_file_of = {}          # reg.id  -> filename（供 Excel 展示）
 

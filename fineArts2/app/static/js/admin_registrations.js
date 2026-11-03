@@ -1,4 +1,4 @@
-/* 后台报名管理：固定 HTML + JSON 接口（/new/manage/api/registrations）
+/* 后台报名管理：固定 HTML + JSON 接口（/new/manager/api/registrations）
    大分页（1000/5000 条）时使用「虚拟滚动」只渲染可视区域的行，避免卡顿。 */
 (function () {
     'use strict';
@@ -83,7 +83,7 @@
         img.alt = '照片';
         img.loading = 'lazy';
         // v 参数用于照片更新后刷新缓存
-        img.src = '/new/manage/api/registration/' + item.id +
+        img.src = '/new/manager/api/registration/' + item.id +
             '/photo?thumb=1&v=' + encodeURIComponent(item.photo || '0');
         img.title = '点击查看大图';
         img.addEventListener('click', function () { openDetail(item); });
@@ -213,9 +213,9 @@
             '&q=' + encodeURIComponent(state.q) +
             '&institution=' + encodeURIComponent(state.institution) +
             (state.sort ? ('&sort=' + encodeURIComponent(state.sort) + '&order=' + state.order) : '');
-        return fetch('/new/manage/api/registrations?' + qs, { credentials: 'same-origin' })
+        return fetch('/new/manager/api/registrations?' + qs, { credentials: 'same-origin' })
             .then(function (r) {
-                if (r.status === 401) { window.location = '/new/manage/login'; throw new Error('unauthorized'); }
+                if (r.status === 401) { window.location = '/new/manager/login'; throw new Error('unauthorized'); }
                 return r.json();
             })
             .then(function (res) {
@@ -229,7 +229,7 @@
 
     function doAction(id) {
         if (!window.confirm('确定要删除该报名信息吗？')) return;
-        fetch('/new/manage/registration/' + id + '/delete', { method: 'POST', credentials: 'same-origin' })
+        fetch('/new/manager/registration/' + id + '/delete', { method: 'POST', credentials: 'same-origin' })
             .then(function () { delete selectedIds[id]; render(); })
             .catch(function () { alert('操作失败，请重试'); });
     }
@@ -262,7 +262,7 @@
         setText('d_created_at', item.created_at);
         var photo = document.getElementById('d_photo');
         if (photo) {
-            photo.src = '/new/manage/api/registration/' + item.id +
+            photo.src = '/new/manager/api/registration/' + item.id +
                 '/photo?v=' + encodeURIComponent(item.photo || '0');
         }
         if (detailModal) detailModal.style.display = 'flex';
@@ -301,7 +301,7 @@
         // 照片：显示当前照片（无则显示「暂无照片」），并清空上次选择
         if (editPhotoImg && editPhotoBox) {
             if (item.has_photo) {
-                editPhotoImg.src = '/new/manage/api/registration/' + item.id +
+                editPhotoImg.src = '/new/manager/api/registration/' + item.id +
                     '/photo?v=' + encodeURIComponent(item.photo || '0');
                 editPhotoBox.classList.add('has-photo');
             } else {
@@ -330,7 +330,7 @@
         if (editPhotoInput && editPhotoInput.files && editPhotoInput.files[0]) {
             fd.append('photo', editPhotoInput.files[0]);
         }
-        fetch('/new/manage/api/registration/' + editId, { method: 'POST', credentials: 'same-origin', body: fd })
+        fetch('/new/manager/api/registration/' + editId, { method: 'POST', credentials: 'same-origin', body: fd })
             .then(function (r) { return r.json(); })
             .then(function (res) {
                 if (res.success) { closeEdit(); updateItem(res.data); }
@@ -403,8 +403,8 @@
 
     function exportData() {
         var ids = selectedList().map(function (v) { return parseInt(v, 10); });
-        if (ids.length === 0) { window.location = '/new/manage/registrations/export'; return; }
-        fetch('/new/manage/registrations/export', {
+        if (ids.length === 0) { window.location = '/new/manager/registrations/export'; return; }
+        fetch('/new/manager/registrations/export', {
             method: 'POST', credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ids: ids })
@@ -442,7 +442,7 @@
             var ids = selectedList().map(function (v) { return parseInt(v, 10); });
             if (ids.length === 0) { alert('请先选择要删除的报名'); return; }
             if (!window.confirm('确定要删除选中的 ' + ids.length + ' 条报名吗？')) return;
-            fetch('/new/manage/registrations/batch_delete', {
+            fetch('/new/manager/registrations/batch_delete', {
                 method: 'POST', credentials: 'same-origin',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids: ids })
