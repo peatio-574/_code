@@ -21,10 +21,8 @@ from html import unescape as html_unescape
 # 浏览器驱动：优先用 patchright（与 playwright API 完全兼容）。
 # 这样打包时只需捆绑一份驱动（约 100MB），可裁掉 playwright 驱动，显著减小体积。
 # patchright 是 playwright 的反检测 fork，对普通站点同样可用。
-try:
-    from patchright.async_api import async_playwright
-except ImportError:                                    # 未装 patchright 时回退
-    from playwright.async_api import async_playwright
+
+from playwright.async_api import async_playwright
 
 from getJobs import XLSX_HEADERS, BaseSpider, load_config
 from Logger import logger
