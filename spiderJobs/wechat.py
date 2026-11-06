@@ -493,7 +493,7 @@ class Wechat(BaseSpider):
 
     # ---------- 视觉模型 ----------
     #: 直接写死在这里。换号改这一行即可。
-    API_KEY = 'sk-69375fe393624f2a81b16575bfb0eea7'
+    API_KEY = 'sk-a69251bc743e48afa776ab443a92d4c9'
     BASE_URL = 'https://api.deepseek.com/chat/completions'
     MODEL = 'deepseek-flash'
     #: low / high / auto。表格必须 high，low 会把小字压糊，人数和学历全认错
