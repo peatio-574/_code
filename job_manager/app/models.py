@@ -170,7 +170,7 @@ class Job(db.Model):
     recruit_count = db.Column(db.Integer, default=1, comment='招聘人数')
     education_req = db.Column(db.String(50), default='', comment='学历要求')
     experience_req = db.Column(db.String(50), default='', comment='经验要求')
-    major_req = db.Column(db.String(200), default='', comment='专业要求')
+    major_req = db.Column(db.String(500), default='', comment='专业要求')
     work_location = db.Column(db.String(100), default='', comment='工作地点')
     address = db.Column(db.String(200), default='', comment='详细地址')
     deadline = db.Column(db.DateTime, nullable=True, comment='报名截止时间')
